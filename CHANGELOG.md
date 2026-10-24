@@ -1472,3 +1472,16 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Play values** - Scoring plays now match the official fantasy scoring far more closely. Penalty yards no longer count toward a player (a flag after the play keeps the full gain; a foul during the play credits yards to its spot); touchdowns followed by a two-point try keep the touchdown; players with Jr./Sr./II names and starters sharing an initial and surname are matched; fumbles, passes defended, quarterback hits, split sacks and tackles for loss are credited as the stat lines show them; team defenses score special-teams return yards and coverage tackles; and game bonuses such as 20 carries or 100 yards land on the play that reaches them.
 - **Win chance on every play** - Every scoring play shows its change in your win chance, with a decimal below 1%.
 - **Regression coverage** - Added coverage for the server archive, play pricing, penalties, and the scoring play breakdown.
+
+## v9.3.4 - Mobile Matchups Polish
+*2026-10-24*
+
+- **Matchups player cards on phones** - Each card shows the player's photo, then the name with a position chip, then the game (`SEA v. KC` or `PIT @ NO`). Long names wrap instead of being cut off, and the rank stays on desktop.
+- **Equal card heights** - A player with an injury designation no longer makes the card, and the opponent beside it, taller than the rest on touch screens.
+- **Record on one line** - The team record, points for, and points against under each Matchups score stay on one line on phones.
+- **Scoring play breakdown on touch** - Tapping a scoring play's points on a phone or tablet shows where they came from; tapping elsewhere on the row still replays from that play.
+- **Refresh button** - Matchups refresh is a single icon to the right of Select Matchup, and it spins while refreshing.
+- **Statistics pages on phones** - Player and team pages no longer scroll sideways; their tables and schedule strip still scroll side to side on their own.
+- **Live load diagnostics** - With Companion debug on, `companionDebug.liveReport()` prints a timeline of every live data request (total and server time, and whether it came from the disk archive, the server cache, or the provider) alongside the page's load milestones. Live API responses carry a `Server-Timing` header and the number of provider requests they cost.
+- **Update script** - `update.sh` downloads from the renamed `thejrudd/gridshift` repository and finishes the download before stopping the running app, so a failed download leaves it running.
+- **Documentation** - Updated the Companion Shared Rows, Fantasy Live, and Player Dashboard references.

@@ -74,6 +74,7 @@ import PlayerMatchupCompare from './PlayerMatchupCompare.jsx';
 import useMatchupLiveFeed from '../../hooks/useMatchupLiveFeed.js';
 import MatchupReplayBar from './matchup/MatchupReplayBar.jsx';
 import MatchupLiveChart from './matchup/MatchupLiveChart.jsx';
+import { traceLiveMilestone } from '../../utils/liveLoadTrace.js';
 import MatchupScoringPlays from './matchup/MatchupScoringPlays.jsx';
 import MatchupPlayerHoverCard from './matchup/MatchupPlayerHoverCard.jsx';
 import MatchupPointSourcesCard from './matchup/MatchupPointSourcesCard.jsx';
@@ -1870,6 +1871,16 @@ function CompanionMatchupView({
   const liveChartDataReady = live.feedReady || liveChartWaitExpiredKey === matchupIdentityKey;
   if (liveLayerActive && liveChartDataReady && liveChartKey !== matchupIdentityKey) setLiveChartKey(matchupIdentityKey);
   const showLiveChart = liveChartDataReady || liveChartKey === matchupIdentityKey;
+  useEffect(() => {
+    if (liveLayerActive && showLiveChart) {
+      traceLiveMilestone('chart shown', { detail: live.feedReady ? 'data complete' : `waited the ${LIVE_CHART_MAX_WAIT_MS / 1000}s cap` });
+    }
+    // Once per matchup: the chart's arrival, not each later render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveLayerActive && showLiveChart, matchupIdentityKey]);
+  useEffect(() => {
+    if (live.ready) traceLiveMilestone('page shown (live layer answered)');
+  }, [live.ready, matchupIdentityKey]);
 
   // The live layer reveals on page load, a week or matchup change, and a
   // return to the Matchups tab; never on a Lineup / Scoring plays switch.
@@ -2265,16 +2276,16 @@ function CompanionMatchupView({
           onClick={() => setMatchupRefreshTick((current) => current + 1)}
           disabled={matchupLoading}
           size="sm"
-          aria-label={`Refresh Week ${week} matchup`}
-          className="companion-matchup-refresh-trigger"
+          aria-label={matchupLoading ? `Refreshing Week ${week} matchup` : `Refresh Week ${week} matchup`}
+          title="Refresh"
+          className={`companion-matchup-refresh-trigger${matchupLoading ? ' is-refreshing' : ''}`}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M20 11a8.1 8.1 0 0 0-15.5-2.7L3 10" />
             <path d="M3 4v6h6" />
             <path d="M4 13a8.1 8.1 0 0 0 15.5 2.7L21 14" />
             <path d="M21 20v-6h-6" />
           </svg>
-          {matchupLoading ? 'Refreshing…' : 'Refresh now'}
         </CompanionSelectorButton>
       )}
     </div>
@@ -3419,14 +3430,6 @@ function getGameLabel(player) {
   return `${player.team} vs ${player.oppTeam}`;
 }
 
-function getCompactGameLabel(player) {
-  if (!player?.team) return null;
-  if (!player.oppTeam) return player.team;
-  if (player.isHome === true) return `${player.team} v. ${player.oppTeam}`;
-  if (player.isHome === false) return `${player.team}@${player.oppTeam}`;
-  return `${player.team}/${player.oppTeam}`;
-}
-
 function isPlayerGameFinal(player) {
   return hasFinalMatchupGameEvidence([player]);
 }
@@ -3506,7 +3509,9 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
-  const matchupMeta = [player.position, compact ? getCompactGameLabel(player) : getGameLabel(player)]
+  // Phones put the position in a chip beside the name, leaving the game alone
+  // on the second line.
+  const matchupMeta = [compact ? null : player.position, getGameLabel(player)]
     .filter(Boolean)
     .join(' ');
   const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} Overall` : null;
@@ -3557,7 +3562,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   ] : null;
   const hasMetricSlot = Boolean(scoreColumns) || isBye;
   const detailSegments = compact
-    ? [rankText].filter(Boolean)
+    ? []
     : [rankText, weatherText, projectionRangeText].filter(Boolean);
   const injuryStatus = player.availabilityStatus
     ? onOpenInjuries && player.id != null
@@ -3579,13 +3584,11 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       : <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
     : null;
   const rowAccent = player.teamTheme?.accent ?? 'var(--color-separator)';
-  const metricColumn = hasMetricSlot ? 'minmax(54px, auto)' : 'auto';
+  const metricColumn = hasMetricSlot ? `minmax(${compact ? 36 : 54}px, auto)` : 'auto';
   // The status badge rides beside the name rather than taking its own trailing
   // column, so the team logo and score columns stay aligned across every row.
   const gridTemplate = compact
-    ? isTeamDefense
-      ? `30px minmax(0, 1fr) ${metricColumn}`
-      : `minmax(0, 1fr) ${metricColumn}`
+    ? `30px minmax(0, 1fr) ${metricColumn}`
     : isTeamDefense
       ? `44px minmax(0, 1fr) ${metricColumn}`
       : `44px minmax(0, 1fr) 36px ${metricColumn}`;
@@ -3600,9 +3603,9 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       onClick={onSelect}
       showAccentRail={false}
       className={`companion-matchup-player-row${isTeamDefense ? ' is-team-defense' : ''}`}
-      showAvatar={!compact || isTeamDefense}
       useTeamLogoAsAvatar={isTeamDefense}
-      showPosition={false}
+      showPosition={compact}
+      positionPlacement="identity"
       showTeamLogo={!compact && !isTeamDefense}
       metaSegments={[matchupMeta, ...detailSegments]}
       columns={isBye ? [

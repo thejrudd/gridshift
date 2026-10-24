@@ -79,6 +79,7 @@ import { getBigPlayThreshold } from '../utils/liveFeedFilters.js';
 import { buildSlateAxis } from '../utils/matchupSlateAxis.js';
 import { resolveFantasyLiveAvailability, getLiveConfigurationMessage } from '../utils/fantasyLiveAvailability.js';
 import { LIVE_SANDBOX_ENABLED, isLiveMode, subscribeToRewind, useLiveSandbox } from '../dev/liveSandbox';
+import { traceLiveMilestone, traceLiveWork } from '../utils/liveLoadTrace.js';
 
 const LIVE_REFRESH_MS = 5000;
 const FREE_TIER_REFRESH_MS = 60000;
@@ -493,8 +494,13 @@ export default function useMatchupLiveFeed({
     let cancelled = false;
     const requestWeekKey = weekKey;
     setMatchupsLoading(true);
+    traceLiveMilestone('Sleeper matchups requested');
     loadMatchups(selectedLeagueId, week)
-      .then((rows) => { if (!cancelled) setMatchupsState({ key: requestWeekKey, rows: rows ?? [] }); })
+      .then((rows) => {
+        if (cancelled) return;
+        traceLiveMilestone('Sleeper matchups loaded', { detail: `${rows?.length ?? 0} rows` });
+        setMatchupsState({ key: requestWeekKey, rows: rows ?? [] });
+      })
       .catch(() => { if (!cancelled) setMatchupsState({ key: requestWeekKey, rows: [] }); })
       .finally(() => { if (!cancelled) setMatchupsLoading(false); });
     return () => { cancelled = true; };
@@ -588,6 +594,7 @@ export default function useMatchupLiveFeed({
       if (!isCurrentRequest()) return;
       const games = Array.isArray(gamesPayload?.data) ? gamesPayload.data : [];
       setLiveGamesState({ key: requestFeedKey, games });
+      if (!quiet) traceLiveMilestone('games loaded', { detail: `${games.length} games` });
       setGamesLoadedContext(requestContext);
 
       const gameIds = sortRelevantGames(games, matchupTeams).map((game) => game.id).filter(Boolean);
@@ -596,6 +603,7 @@ export default function useMatchupLiveFeed({
         if (!isCurrentRequest()) return;
         const groupedStats = statsPayload?.games && typeof statsPayload.games === 'object' ? statsPayload.games : {};
         setStatsByGame(Object.fromEntries(gameIds.map((gameId) => [String(gameId), groupedStats[String(gameId)] ?? []])));
+        if (!quiet) traceLiveMilestone('player stats loaded', { detail: `${gameIds.length} games` });
       } else {
         setStatsByGame({});
       }
@@ -651,6 +659,7 @@ export default function useMatchupLiveFeed({
       .then((rows) => {
         if (cancelled) return;
         setSleeperStatsState({ key: requestWeekKey, byPlayer: rows ?? {}, fetchedAt: Date.now() });
+        traceLiveMilestone('Sleeper stat lines loaded');
       })
       .catch(() => {});
     void load();
@@ -1159,6 +1168,7 @@ export default function useMatchupLiveFeed({
             playsFetchedRef.current.set(gameId, { at: Date.now(), final, progress: null });
             const cachedPlays = FINAL_GAME_PLAYS.get(gameId);
             storeGamePlays(requestFeedKey, gameId, cachedPlays);
+            traceLiveMilestone(`plays in: game ${gameId}`, { detail: `${cachedPlays.length} plays, kept from this visit` });
             return;
           }
           try {
@@ -1174,6 +1184,7 @@ export default function useMatchupLiveFeed({
             const fetchedPlays = Array.isArray(payload?.data) ? payload.data : [];
             if (sessionCacheable && fetchedPlays.length) rememberFinalGamePlays(gameId, fetchedPlays);
             storeGamePlays(requestFeedKey, gameId, fetchedPlays);
+            traceLiveMilestone(`plays in: game ${gameId}`, { detail: `${fetchedPlays.length} plays` });
           } catch {
             // Leave the marker unset so a later tick can retry.
             failed = true;
@@ -1226,7 +1237,9 @@ export default function useMatchupLiveFeed({
     // Only this week's games: plays fetched for another week's game list can
     // never reach the feed, whatever order the requests settle in.
     const currentPlaysByGame = Object.fromEntries(Object.entries(playsByGame).filter(([gameId]) => gamesById.has(String(gameId))));
-    const built = buildPlayEvents(currentPlaysByGame, starterNameIndex, activeScoringSettings, positionsById, gamesById);
+    const built = traceLiveWork('build play events', () => (
+      buildPlayEvents(currentPlaysByGame, starterNameIndex, activeScoringSettings, positionsById, gamesById)
+    ), `${Object.keys(currentPlaysByGame).length} games`);
     if (!sandbox?.replay) return built;
     return built.map((event) => {
       const slate = sandbox.toSlateProgress(event.gameId, event.progress);
@@ -1270,6 +1283,9 @@ export default function useMatchupLiveFeed({
   }, [demoFeedEnabled, liveGames, matchupTeams, playsByGame, playsExpected]);
   const statLineLoaded = !reconcilerEnabled || (sandboxActive && !sandboxReplay) || sleeperStatsFetchedAt != null;
   const feedReady = Boolean(currentMatchup) && playsLoaded && statLineLoaded;
+  useEffect(() => {
+    if (feedReady) traceLiveMilestone('feed complete (plays + Sleeper stat line)');
+  }, [feedReady]);
   if (feedReady) feedShownContextsRef.current.add(playRequestContextKey);
   // Play-by-play comes only from the GridShift server. When it cannot supply
   // it (the server or its provider is down, or out of requests) the live layer
@@ -1287,7 +1303,7 @@ export default function useMatchupLiveFeed({
   useEffect(() => {
     if (!reconcilerEnabled || !currentMatchup) return;
     const now = sandboxReplay ? sandbox.instantAt(sandbox.progress) : Date.now();
-    const next = reconcileLivePlays(reconciliationRef.current, {
+    const next = traceLiveWork('reconcile with Sleeper', () => reconcileLivePlays(reconciliationRef.current, {
       playEvents,
       sleeperPointsById: currentStarterPointsById,
       sleeperStatsById: starterSleeperStats,
@@ -1297,7 +1313,7 @@ export default function useMatchupLiveFeed({
       finalGameIds,
       settledPlayerIds: settledStarterIds,
       now: Number.isFinite(now) ? now : Date.now(),
-    });
+    }));
     reconciliationRef.current = next;
     setReconciliation(next);
   }, [activeScoringSettings, currentMatchup, currentStarterPointsById, finalGameIds, playEvents, positionsById, reconcilerEnabled, sandbox, sandboxReplay, settledStarterIds, starterSleeperStats, sleeperStatsFetchedAt]);
@@ -1436,7 +1452,7 @@ export default function useMatchupLiveFeed({
         }
       : null;
     const eventAxisIsAuthoritative = Boolean(sandbox?.replay || sandbox?.mode === 'preseason');
-    return buildPaceSeries({
+    return traceLiveWork('win chance series', () => buildPaceSeries({
       events: mergedFeed,
       sideKeyOf: (event) => playerSideKey.get(event.playerId) ?? null,
       totals: { a: leftSide?.pace.total ?? 0, b: rightSide?.pace.total ?? 0 },
@@ -1447,7 +1463,7 @@ export default function useMatchupLiveFeed({
       scoreAxisIsAuthoritative: true,
       liveSnapshot,
       reconcileToTotals: demoFeedEnabled,
-    });
+    }), `${mergedFeed.length} events`);
   }, [demoFeedEnabled, leftSide, mergedFeed, playerSideKey, replayGameTimelines, replayStarterTimelineById, rightSide, sandbox, slateProgress, winProb, winProbHistory]);
 
   const bigPlayThreshold = useMemo(() => getBigPlayThreshold(activeScoringSettings), [activeScoringSettings]);

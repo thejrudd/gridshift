@@ -60,7 +60,7 @@ export default function TeamPage({ team, onBack, onSelectPlayer, onViewSchedule,
   const dashboardColor = getLegibleTeamColor(getTeamVisualTheme(team.id, darkMode)?.primary, darkMode);
 
   return (
-    <div className="space-y-5">
+    <div className="statistics-detail-page space-y-5">
 
       {/* Back button */}
       <button

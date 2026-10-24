@@ -30,6 +30,7 @@
 
 ### Decisions and authority
 
+- Make the best decision that will elevate all three: the user experience (UX), developer experience (DX), and agent experience (AX) always, without breaking anything.
 - The user’s explicit request and choices take precedence over guidelines in a skill.
 - For a material product, design, architecture, security, data-integrity, billing, irreversible-action, or validation-boundary choice, ask before implementation. Present concise options, identify a recommendation, and let the user accept it or choose another.
 - For low-risk reversible implementation details, choose the lowest-risk interpretation and state the assumption; do not ask preference questions merely to offload routine decisions.
@@ -127,3 +128,4 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Guides are succinct and instructional.
 - Prefer plain-language labels over niche acronyms.
 - Fantasy-platform errors reference the connected platform dynamically rather than hardcoding a provider name.
+- Cut taglines, helper text and secondary labels. If a screen needs them to make sense, fix the layout.

@@ -58,7 +58,7 @@ Use `CompanionPlayerRow` for player rows in:
 - Companion League
 - Companion Rankings
 - Companion Waiver
-- Companion Matchup player rows
+- Companion Matchup player rows. On phones (≤480px) each card is the headshot (team logo for D/ST), then the name with an inline position chip (`positionPlacement="identity"`) and any status badge flowing after it, then the game (`SEA v. KC` / `PIT @ NO`); rank and weather stay desktop-only. The name line wraps between words rather than truncating, and the inline injury link sets `min-height: 0` so the global coarse-pointer 44px button rule cannot make injured rows taller (its `::before` keeps the 44px hit area).
 - Matchup preview "Who decided it" / movers cards (`PreviewPlayerCard` in `MatchupPreviewModal.jsx`): the shared row with the position folded into the meta line; the projection chip is a `CompanionPlayerStatus` with `localContrast={false}` on a theme-surface backing so its semantic tone stays readable on any team gradient. "Where the rosters lead" stays the mirrored number/bar comparison.
 - Heatmap player drilldown/performer lists
 - Trade roster picker, roster browse, and Upgrade Finder mover rows
@@ -83,6 +83,8 @@ Preferred shape:
   ]}
 />
 ```
+
+`positionPlacement` is `'column'` (default: the chip takes its own grid slot) or `'identity'` (the chip sits after the name, inside the identity line).
 
 Use explicit `gridTemplate` and `columnGridTemplate` values when a screen has fixed metric columns. Avoid relying on implicit CSS grid placement for logos, statuses, or metrics.
 
