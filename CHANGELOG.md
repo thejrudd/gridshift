@@ -1494,3 +1494,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Win chance chart** - A win chance saved while watching now replaces the reconstruction only for the play it was recorded at, with the same score. Previously one early save could hold the line flat for the rest of the day.
 - **Play text** - A kicker credited from a touchdown row shows the extra-point sentence rather than the scorer's run or catch, and a shared row with the kicker adds the extra point to the play's sentence. Every defender a play credits is named in its text: tacklers, pass breakups, forced fumbles, and quarterback hits.
 - **Regression coverage and documentation** - Added coverage for shared plays, per-stat corrections, saved win chance timing, extra-point and defender sentences, and updated the Fantasy Live and Play-By-Play Normalization references.
+
+## v9.3.6 - Live Score Double Count Fix
+*2026-10-26*
+
+- **Live starter totals** - During a live game, a Matchups starter row could show about double the player's points. Sleeper often credits a play before the play feed delivers it, and those late plays stayed pending and were added on top of Sleeper's total until the game ended. They now confirm against Sleeper, so the row matches the official total throughout the game.
+- **Regression coverage and documentation** - Added coverage for plays that arrive after Sleeper has counted them, and for a play Sleeper has not credited yet staying pending, and updated the Fantasy Live reference.
