@@ -95,6 +95,39 @@ test('points-provisional confirmation stops the displayed total double counting'
   assert.equal(player.adjustment, 0);
 });
 
+test('plays Sleeper credited before the feed delivered them confirm instead of counting twice', () => {
+  const first = makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_yd: 5 }, pts: 0.5, order: 10 });
+  const later = [
+    makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_yd: 34 }, pts: 3.4, order: 20 }),
+    makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_yd: 2, rush_td: 1 }, pts: 6.2, order: 30 }),
+  ];
+  // Sleeper already counts all three runs; the feed has delivered one.
+  const sleeperPointsById = { rb1: 10.1 };
+  let state = step(createReconciliationState(), { playEvents: [first], sleeperPointsById, now: 100 });
+  assert.equal(state.players.get('rb1').displayedPoints, 10.1);
+
+  state = step(state, { playEvents: [first, ...later], sleeperPointsById, now: 5100 });
+  const player = state.players.get('rb1');
+
+  assert.deepEqual(player.plays.map((play) => play.status), ['confirmed', 'confirmed', 'confirmed']);
+  assert.equal(player.pendingPoints, 0);
+  assert.equal(player.displayedPoints, 10.1);
+});
+
+test('a play Sleeper has not credited stays pending past a small carried residual', () => {
+  const first = makePlay({ stats: { rec: 1, rec_yd: 8 }, pts: 1.8, order: 10 });
+  const next = makePlay({ stats: { rec: 1, rec_yd: 50, rec_td: 1 }, pts: 12, order: 20 });
+  // Sleeper prices the first catch 0.3 higher and has not seen the touchdown.
+  const sleeperPointsById = { wr1: 2.1 };
+  let state = step(createReconciliationState(), { playEvents: [first], sleeperPointsById, now: 100 });
+
+  state = step(state, { playEvents: [first, next], sleeperPointsById, now: 5100 });
+  const player = state.players.get('wr1');
+
+  assert.deepEqual(player.plays.map((play) => play.status), ['confirmed', 'pending']);
+  assert.equal(player.displayedPoints, 14.1);
+});
+
 test('a turnover Sleeper has not taken away yet stays pending', () => {
   const plays = [
     makePlay({ playerId: 'qb1', position: 'QB', stats: { rec: 1, rec_yd: 8 }, pts: 1.8, order: 10 }),
