@@ -12,6 +12,7 @@
 
 import {
   buildStarterNameIndex,
+  describePlayForRole,
   matchPlayToStarters,
   normalizePlay,
 } from '../livePlaysFeed.js';
@@ -264,7 +265,7 @@ export function buildPlayerGame(detail, subject) {
       bo: before.opp,
       wp: winProb,
       wb: winProbBefore,
-      s: play.description || text,
+      s: (match ? describePlayForRole(play, match.role) : play.description) || text,
       raw: text,
       r: role,
       fs: match ? buildPlayStatDelta(play, match.role, match.detail, match.attributionRoles, { conversion: match.conversion, fumble: match.fumble }) : {},

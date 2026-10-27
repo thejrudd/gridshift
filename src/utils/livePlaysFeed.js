@@ -669,6 +669,17 @@ function crossedMilestones(before, after) {
   return crossed;
 }
 
+/**
+ * The sentence for one credited player. A touchdown row also carries the extra
+ * point, and the kicker credited from it must not be shown the scorer's run or
+ * catch.
+ */
+export function describePlayForRole(play, role) {
+  const extraPoint = play?.narrative?.extraPoint;
+  if (role === 'kicker' && extraPoint?.sentence) return extraPoint.sentence;
+  return play?.description ?? '';
+}
+
 export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positionsById, gamesById) {
   const events = [];
   const milestoneTotals = new Map();
@@ -761,8 +772,9 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
           sharedPlayId: String(play.id),
           playerId,
           position,
+          role,
           ...classification,
-          desc: play.description,
+          desc: describePlayForRole(play, role),
           pts,
           stats: statDelta,
           at: play.wallclock ?? Date.now(),
@@ -868,6 +880,19 @@ export function statLinesMatch(left, right) {
   ));
 }
 
+const SHARED_KIND_PRIORITY = ['td', 'to', 'fg', 'xp'];
+
+function round2(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function describeSharedPlay(primary, contributors) {
+  const description = primary.play?.description ?? primary.desc;
+  const extraPoint = primary.play?.narrative?.extraPoint;
+  if (!extraPoint || !contributors.some((contributor) => contributor.role === 'kicker')) return description;
+  return `${description} ${extraPoint.kicker} ${extraPoint.good ? 'made' : 'missed'} the extra point.`.replace(/\.\.+/g, '.');
+}
+
 /**
  * Collapses contributors from the same NFL snap only when they belong to the
  * same fantasy side. Opposing managers can each benefit from a shared snap
@@ -900,6 +925,8 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         pts: event.pts,
         stats: event.stats,
         position: event.position,
+        role: event.role,
+        desc: event.desc,
         kind: event.kind,
         mechanism: event.mechanism,
         estimated: event.estimated,
@@ -911,20 +938,45 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         // Undefined when absent, leaving demo and preseason rows unchanged.
         rawPts: event.rawPts,
         adjustment: event.adjustment,
+        adjustmentParts: event.adjustmentParts,
         displayPts: event.displayPts,
         status: event.status,
         confirmedBy: event.confirmedBy,
       }));
+      if (!rest.length) {
+        return {
+          ...primary,
+          // Use the shared-snap identity even before every same-side contributor
+          // has arrived. The row therefore keeps its selection/chart identity
+          // when a later replay snapshot adds the receiver to the quarterback's
+          // already-visible play (or vice versa).
+          id: `shared-${primary.sharedPlayId}-${group.sideKey}`,
+          contributorIds: [primary.playerId],
+          contributors,
+        };
+      }
+      const sum = (read) => round2(group.events.reduce((total, event) => total + (Number(read(event)) || 0), 0));
+      const reconciled = group.events.some((event) => event.rawPts !== undefined);
       return {
         ...primary,
-        // Use the shared-snap identity even before every same-side contributor
-        // has arrived. The row therefore keeps its selection/chart identity
-        // when a later replay snapshot adds the receiver to the quarterback's
-        // already-visible play (or vice versa).
         id: `shared-${primary.sharedPlayId}-${group.sideKey}`,
-        pts: Math.round(contributors.reduce((total, contributor) => (
-          total + (Number(contributor.pts) || 0)
-        ), 0) * 100) / 100,
+        // The snap's own sentence. A kicker credited from a touchdown row
+        // carries an extra-point sentence of their own (describePlayForRole),
+        // so a primary kicker must not stand in for the whole play.
+        desc: describeSharedPlay(primary, contributors),
+        pts: sum((event) => event.pts),
+        ...(reconciled ? {
+          rawPts: sum((event) => event.rawPts ?? (Number(event.pts) || 0) - (Number(event.adjustment) || 0)),
+          adjustment: sum((event) => event.adjustment),
+        } : {}),
+        ...(group.events.some((event) => event.displayPts !== undefined)
+          ? { displayPts: sum((event) => event.displayPts ?? event.pts) }
+          : {}),
+        // The most telling contributor kind names the row: a touchdown pass
+        // reads as a touchdown even when the quarterback came first.
+        kind: SHARED_KIND_PRIORITY.find((kind) => contributors.some((contributor) => contributor.kind === kind))
+          ?? primary.kind,
+        status: group.events.some((event) => event.status === 'pending') ? 'pending' : primary.status,
         contributorIds: contributors.map((contributor) => contributor.playerId),
         contributors,
       };

@@ -1,7 +1,7 @@
 {
   "name": "gridshift",
   "private": true,
-  "version": "9.3.4",
+  "version": "9.3.5",
   "description": "An interactive NFL season planner and fantasy football companion.",
   "license": "MIT",
   "repository": {

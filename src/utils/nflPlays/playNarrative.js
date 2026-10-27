@@ -526,6 +526,10 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
   return actors;
 }
 
+// Plays whose sentence names a passer who can be hit on the throw. A sack is
+// already the hit.
+const QB_HIT_KINDS = new Set(['pass', 'passing-touchdown', 'incompletion']);
+
 const SCRIMMAGE_KINDS = new Set(['pass', 'rush', 'passing-touchdown', 'fumble']);
 
 const DIRECTION = /\b(?:scrambles )?(?:up the middle|left end|right end|left tackle|right tackle|left guard|right guard|(?:short|deep) (?:left|middle|right))\b/i;
@@ -679,7 +683,7 @@ function yardModifier(yards) {
   return `${article(yards)} ${Math.abs(yards)}-yard`;
 }
 
-function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel = false }) {
+function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel = false, passDefenderNames = [], forcerNames = [] }) {
   const [first, second] = parsed.actors;
   const gain = parsed.yards;
   const tackle = tacklerNames.length
@@ -693,10 +697,12 @@ function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel =
         : `${first.name} found ${second.name} for ${gain < 0 ? 'a loss of ' : ''}${yardPhrase(gain)}${tackle}.`;
     case 'passing-touchdown':
       return `${first.name} found ${second.name} for ${yardModifier(parsed.yards)} touchdown.`;
-    case 'incompletion':
+    case 'incompletion': {
+      const brokenUp = passDefenderNames.length ? `, broken up by ${listNames(passDefenderNames)}` : '';
       return second
-        ? `${first.name} incomplete, intended for ${second.name}.`
-        : `${first.name} threw it away incomplete.`;
+        ? `${first.name} incomplete, intended for ${second.name}${brokenUp}.`
+        : brokenUp ? `${first.name} incomplete${brokenUp}.` : `${first.name} threw it away incomplete.`;
+    }
     case 'rush':
       if (touchdown) return `${first.name} ran it in from ${yardPhrase(gain)} out.`;
       // A kneel-down is scored as a run, but it is a deliberate clock play.
@@ -720,7 +726,8 @@ function buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel =
         : `${first.name} intercepted the pass.`;
     case 'fumble': {
       const recoverer = parsed.actors[2];
-      return `${first.name} fumbled, recovered by ${recoverer.name}${parsed.returnYards ? ` for ${yardPhrase(parsed.returnYards)}` : ''}.`;
+      const forced = forcerNames.length ? `, forced by ${listNames(forcerNames)}` : '';
+      return `${first.name} fumbled${forced}, recovered by ${recoverer.name}${parsed.returnYards ? ` for ${yardPhrase(parsed.returnYards)}` : ''}.`;
     }
     case 'punt': {
       if (second) return `${first.name} punted ${parsed.distance} yards, returned ${yardPhrase(parsed.returnYards)} by ${second.name}${tackle}.`;
@@ -824,6 +831,17 @@ export function parsePlayNarrative(play) {
   // gamebook sentence ("J.Love kneels to GB 34 for -1 yards.") says otherwise.
   const kneel = kind === 'rush' && !touchdown && /\bkneels?\b/i.test(rawText);
   const tacklerNames = kind === 'incompletion' || kind === 'sack' || kneel ? [] : parseTacklers(rawText);
+  // Defenders the official text credits beyond the tackle: who broke up the
+  // pass, forced the fumble, or hit the quarterback. Every credited player
+  // should be visible in the sentence, as tacklers already are.
+  const defensiveActors = parseDefensiveActors(rawText, { typeSlug: slug });
+  const defensiveNames = (role) => defensiveActors.filter((actor) => actor.role === role).map((actor) => actor.name);
+  const passDefenderNames = kind === 'incompletion' ? defensiveNames(PLAY_ROLES.PASS_DEFENDER) : [];
+  const forcerNames = kind === 'fumble' ? defensiveNames(PLAY_ROLES.FORCER) : [];
+  const passerName = QB_HIT_KINDS.has(kind)
+    ? parsed.actors.find((actor) => actor.role === PLAY_ROLES.PASSER)?.name ?? null
+    : null;
+  const qbHitterNames = passerName ? defensiveNames(PLAY_ROLES.QB_HITTER) : [];
   const direction = parseDirection(rawText);
 
   const actors = [
@@ -837,7 +855,7 @@ export function parsePlayNarrative(play) {
     if (carrier && !carrier.detail) carrier.detail = direction;
   }
 
-  const built = buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel });
+  const built = buildSentence(kind, parsed, { touchdown, tacklerNames, penalty, kneel, passDefenderNames, forcerNames });
   if (!built) return { confident: false, actors: [], sentence: null, playKind: slug, administrative: false, penalty };
 
   // A flag that wipes the play out entirely has to be said out loud — the
@@ -846,9 +864,24 @@ export function parsePlayNarrative(play) {
   const tryResult = conversion?.good === true ? ' Two-point try good.'
     : conversion?.good === false ? ' Two-point try failed.'
       : '';
+  const qbHit = qbHitterNames.length ? ` ${passerName} was hit by ${listNames(qbHitterNames)} on the throw.` : '';
   const sentence = finishSentence(negated
     ? `${built} Wiped out by ${penalty.infraction.toLowerCase()} on ${penalty.team}.`
-    : `${built}${tryResult}`);
+    : `${built}${qbHit}${tryResult}`);
+
+  // The scoring summary appends the extra point to the touchdown row
+  // ("Cam Skattebo 16 Yd Run (Dominic Zvada Kick)"). The kicker is credited
+  // from this row, so they need their own sentence: the play sentence names
+  // only the scorer.
+  const kicker = parsed.patResult ? actors.find((actor) => actor.role === PLAY_ROLES.KICKER) : null;
+  const scorer = actors.find((actor) => actor.role === (kind === 'rush' ? PLAY_ROLES.RUSHER : PLAY_ROLES.RECEIVER));
+  const extraPoint = kicker && !negated
+    ? {
+        good: parsed.patResult === 'Kick',
+        kicker: kicker.name,
+        sentence: finishSentence(`${kicker.name} ${parsed.patResult === 'Kick' ? 'made' : 'missed'} the extra point${scorer ? ` after a ${scorer.name} touchdown` : ''}.`),
+      }
+    : null;
 
   return {
     confident: true,
@@ -868,6 +901,7 @@ export function parsePlayNarrative(play) {
     good: parsed.good ?? null,
     outcome: parsed.outcome ?? null,
     patResult: parsed.patResult ?? null,
+    extraPoint,
     negated: Boolean(negated),
     penalty,
   };

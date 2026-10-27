@@ -286,3 +286,35 @@ test('a run for a loss says stopped, and a tackler named Kneeland is not a kneel
   assert.equal(narrative.sentence, 'Saquon Barkley was stopped for a loss of 2 yards, tackled by M.Kneeland.');
   assert.equal(narrative.label, 'Rush');
 });
+
+test('a touchdown row with its extra point gives the kicker a sentence of their own', () => {
+  const narrative = parsePlayNarrative({
+    typeSlug: 'passing-touchdown',
+    shortText: "Wan'Dale Robinson 39 Yd pass from Jameis Winston (Younghoe Koo Kick)",
+    rawText: "Wan'Dale Robinson 39 Yd pass from Jameis Winston (Younghoe Koo Kick)",
+  });
+  assert.equal(narrative.sentence, "Jameis Winston found Wan'Dale Robinson for a 39-yard touchdown.");
+  assert.deepEqual(narrative.extraPoint, {
+    good: true,
+    kicker: 'Younghoe Koo',
+    sentence: "Younghoe Koo made the extra point after a Wan'Dale Robinson touchdown.",
+  });
+});
+
+test('every credited defender is named in the sentence', () => {
+  const brokenUp = parsePlayNarrative({
+    typeSlug: 'pass-incompletion',
+    shortText: 'Sam Darnold Incomplete Pass, Intended For Jaxon Smith-Njigba',
+    rawText: '(12:04) (Shotgun) S.Darnold pass incomplete short right to J.Smith-Njigba (M.Delane) [G.Karlaftis].',
+  });
+  assert.equal(
+    brokenUp.sentence,
+    'Sam Darnold incomplete, intended for Jaxon Smith-Njigba, broken up by M.Delane. Sam Darnold was hit by G.Karlaftis on the throw.',
+  );
+  // A throwaway names no defender and keeps its plain sentence.
+  assert.equal(parsePlayNarrative({
+    typeSlug: 'pass-incompletion',
+    shortText: 'Sam Darnold Incomplete Pass',
+    rawText: 'S.Darnold pass incomplete deep left.',
+  }).sentence, 'Sam Darnold threw it away incomplete.');
+});
