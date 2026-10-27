@@ -159,6 +159,25 @@ blocked-kick text and emits no actors for those rows. If the narrative parser
 learns those shapes, route blocker/recoverer on `field-goal-blocked` and onside
 recoveries to `defenseTeamAbbr` and pin it with a test.
 
+## Per-player sentences
+
+One provider row can credit players who did different things. A touchdown row
+from the scoring summary also carries the extra point ("Cam Skattebo 16 Yd Run
+(Dominic Zvada Kick)"), so the kicker is credited from the touchdown row.
+`parsePlayNarrative()` returns `extraPoint: { good, kicker, sentence }` for that
+shape, and `livePlaysFeed.describePlayForRole(play, role)` picks the sentence
+for one credited player. Every per-player row uses it rather than
+`play.description`: Fantasy Live events (`buildPlayEvents`, which feeds the
+matchup feed and player drilldowns) and Statistics player plays
+(`playerSeasonGames.js`).
+
+Every defender the official text credits is named in the play sentence, so a
+row never shows points the sentence cannot explain: tacklers ("tackled by"),
+pass defenders on an incompletion ("broken up by"), the forcer on a fumble
+("forced by"), and quarterback hitters on a pass ("was hit by … on the
+throw"). `parsePlayNarrative()` reads them through `parseDefensiveActors()`,
+the same reader that credits them.
+
 ## Defensive and IDP fields
 
 The stat-delta helpers read a **consumer-shaped** play — `description`, `type`,

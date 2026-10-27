@@ -59,6 +59,7 @@ import {
 import {
   buildPlayEvents,
   buildStarterNameIndex,
+  groupSharedPlayEvents,
   mergePlayEvents,
   parseGlanceProgress,
   sortLiveFeedEvents,
@@ -1405,6 +1406,14 @@ export default function useMatchupLiveFeed({
     return map;
   }, [starterGameStateById]);
 
+  // One entry per snap per side: rostered players on the same side of the
+  // matchup (a quarterback and a defender on one play) share a row, a chart
+  // step and a dot. Opposing sides stay apart so each keeps its own movement.
+  const sharedFeed = useMemo(
+    () => groupSharedPlayEvents(mergedFeed, (event) => playerSideKey.get(event.playerId) ?? null),
+    [mergedFeed, playerSideKey],
+  );
+
   // The chart series: running totals, win chance and projected finals after
   // every scoring play (buildPaceSeries points carry x, a, b, p, expectedA/B).
   const paceModel = useMemo(() => {
@@ -1453,7 +1462,7 @@ export default function useMatchupLiveFeed({
       : null;
     const eventAxisIsAuthoritative = Boolean(sandbox?.replay || sandbox?.mode === 'preseason');
     return traceLiveWork('win chance series', () => buildPaceSeries({
-      events: mergedFeed,
+      events: sharedFeed,
       sideKeyOf: (event) => playerSideKey.get(event.playerId) ?? null,
       totals: { a: leftSide?.pace.total ?? 0, b: rightSide?.pace.total ?? 0 },
       slateProgress,
@@ -1463,8 +1472,8 @@ export default function useMatchupLiveFeed({
       scoreAxisIsAuthoritative: true,
       liveSnapshot,
       reconcileToTotals: demoFeedEnabled,
-    }), `${mergedFeed.length} events`);
-  }, [demoFeedEnabled, leftSide, mergedFeed, playerSideKey, replayGameTimelines, replayStarterTimelineById, rightSide, sandbox, slateProgress, winProb, winProbHistory]);
+    }), `${sharedFeed.length} events`);
+  }, [demoFeedEnabled, leftSide, sharedFeed, playerSideKey, replayGameTimelines, replayStarterTimelineById, rightSide, sandbox, slateProgress, winProb, winProbHistory]);
 
   const bigPlayThreshold = useMemo(() => getBigPlayThreshold(activeScoringSettings), [activeScoringSettings]);
 
@@ -1486,10 +1495,10 @@ export default function useMatchupLiveFeed({
   // roster it belongs to.
   const events = useMemo(() => {
     const rosterByKey = Object.fromEntries(sides.map((side) => [side.key, side.rosterId]));
-    return mergedFeed
+    return sharedFeed
       .filter((event) => isFantasyFeedEvent(event) && playerSideKey.has(event.playerId))
       .map((event) => ({ ...event, rosterId: rosterByKey[playerSideKey.get(event.playerId)] ?? null }));
-  }, [mergedFeed, playerSideKey, sides]);
+  }, [sharedFeed, playerSideKey, sides]);
 
   // Before the first scoring play (or without play-by-play) the chart still
   // needs a line: the forecast from kickoff to now, at the current totals.

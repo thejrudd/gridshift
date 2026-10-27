@@ -151,35 +151,59 @@ describe('buildPaceSeries', () => {
     assert.equal(last.settled, true);
   });
 
-  it('prefers a complete persisted snapshot from before the play and ignores future snapshots', () => {
-    const completeSnapshot = (t, p, a) => ({
-      t,
-      p,
-      a,
-      b: 4,
-      expectedA: a + 10,
-      expectedB: 14,
-      sigma: 8,
-      explain: { a: { current: a }, b: { current: 4 } },
-    });
+  const completeSnapshot = (t, p, a, b = 0) => ({
+    t,
+    p,
+    a,
+    b,
+    expectedA: a + 10,
+    expectedB: b + 10,
+    sigma: 8,
+    explain: { a: { current: a }, b: { current: b } },
+  });
+
+  it('uses a stored snapshot recorded after the play, before the next, at the same score', () => {
     const { points } = buildPaceSeries({
-      events: [event('e1', 'a', 0.25, 6, 'td', { timelineAt: 100 })],
+      events: [
+        event('e1', 'a', 0.25, 6, 'td', { timelineAt: 100 }),
+        event('e2', 'a', 0.3, 4, 'rush', { timelineAt: 200 }),
+      ],
       sideKeyOf,
-      totals: { a: 20, b: 4 },
+      totals: { a: 10, b: 0 },
       slateProgress: 0.4,
       historicalSnapshots: [
-        completeSnapshot(90, 61, 5),
-        completeSnapshot(110, 99, 20),
+        completeSnapshot(90, 55, 0),
+        completeSnapshot(110, 61, 6),
+        completeSnapshot(210, 99, 10),
       ],
-      snapshotAt: () => ({ p: 45, a: 6, b: 0 }),
+      snapshotAt: () => ({ p: 45 }),
       liveSnapshot: { p: 80, settled: false },
     });
 
     assert.equal(points[1].p, 61);
-    assert.equal(points[1].a, 5);
-    assert.equal(points[1].b, 4);
+    assert.equal(points[1].a, 6);
+    assert.equal(points[2].p, 99);
     assert.equal(points.at(-1).p, 80);
-    assert.equal(points.at(-1).a, 20);
+    assert.equal(points.at(-1).a, 10);
+  });
+
+  it('reconstructs plays that a stale or mismatched stored snapshot does not describe', () => {
+    const { points } = buildPaceSeries({
+      events: [
+        event('e1', 'a', 0.25, 6, 'td', { timelineAt: 100 }),
+        event('e2', 'b', 0.3, 4, 'rush', { timelineAt: 200 }),
+        event('e3', 'a', 0.35, 2, 'rush', { timelineAt: 300 }),
+      ],
+      sideKeyOf,
+      totals: { a: 8, b: 4 },
+      slateProgress: 0.4,
+      // One morning snapshot, then nothing recorded while plays kept scoring.
+      historicalSnapshots: [completeSnapshot(50, 42, 0)],
+      snapshotAt: (point) => ({ p: 40 + point.a - point.b }),
+      liveSnapshot: { p: 0, settled: true },
+    });
+
+    assert.deepEqual(points.slice(1, -1).map((point) => point.p), [46, 42, 44]);
   });
 
   it('passes only event-time player scoring into fallback snapshot reconstruction', () => {

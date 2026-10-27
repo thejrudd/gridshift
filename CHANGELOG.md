@@ -1485,3 +1485,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Live load diagnostics** - With Companion debug on, `companionDebug.liveReport()` prints a timeline of every live data request (total and server time, and whether it came from the disk archive, the server cache, or the provider) alongside the page's load milestones. Live API responses carry a `Server-Timing` header and the number of provider requests they cost.
 - **Update script** - `update.sh` downloads from the renamed `thejrudd/gridshift` repository and finishes the download before stopping the running app, so a failed download leaves it running.
 - **Documentation** - Updated the Companion Shared Rows, Fantasy Live, and Player Dashboard references.
+
+## v9.3.5 - Live Play Corrections
+*2026-10-26*
+
+- **Shared plays** - When two of your starters are credited on the same snap, such as a quarterback and receiver on one touchdown, Matchups shows one scoring-play row with both names, the combined points, and one chart step. The breakdown card lists each player's share. Players on opposite sides of the matchup keep separate rows.
+- **Official corrections by stat** - When the official stats differ from the plays, the difference is split by stat and placed on the play that stat most likely came from, shown in the breakdown as "Official Rec Yards +2" and so on. Anything no stat explains appears as an "Official scoring correction" row. A correction never takes a positive play below zero.
+- **Win chance chart** - A win chance saved while watching now replaces the reconstruction only for the play it was recorded at, with the same score. Previously one early save could hold the line flat for the rest of the day.
+- **Play text** - A kicker credited from a touchdown row shows the extra-point sentence rather than the scorer's run or catch, and a shared row with the kicker adds the extra point to the play's sentence. Every defender a play credits is named in its text: tacklers, pass breakups, forced fumbles, and quarterback hits.
+- **Regression coverage and documentation** - Added coverage for shared plays, per-stat corrections, saved win chance timing, extra-point and defender sentences, and updated the Fantasy Live and Play-By-Play Normalization references.

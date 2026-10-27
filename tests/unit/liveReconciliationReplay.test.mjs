@@ -116,7 +116,10 @@ function assertAdjustmentPinning(player, label) {
     : (rows.length ? rows[rows.length - 1].id : null);
   [...player.plays, ...rows].forEach((event) => {
     if (event.id === latestId) return;
-    assert.equal(event.adjustment, 0, `${label}: ${event.id} carried a residual it does not own`);
+    // Any other play carries only the part of the residual traced to one of
+    // its own stats (rule 16).
+    const traced = Math.round((event.adjustmentParts ?? []).reduce((total, part) => total + part.pts, 0) * 100) / 100;
+    assert.equal(event.adjustment, traced, `${label}: ${event.id} carried a residual it does not own`);
   });
 }
 

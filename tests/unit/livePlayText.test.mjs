@@ -14,7 +14,7 @@ test('Fantasy Live uses the Statistics Scores narrative for a provider touchdown
 
   assert.equal(
     play.description,
-    "Jameis Winston found Wan'Dale Robinson for a 39-yard touchdown.",
+    "Jameis Winston found Wan'Dale Robinson for a 39-yard touchdown. Jameis Winston was hit by B.Branch on the throw.",
   );
 });
 

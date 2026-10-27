@@ -17,6 +17,20 @@ const SIDE_OPTIONS = [
   { id: 'opp', label: 'Theirs' },
 ];
 
+// A combined row (two rostered players on one snap) breaks its points down
+// per player, each section adding up to that player's share.
+function buildRowPointsBreakdown(event, scoringSettings) {
+  if (!event.contributors || event.contributors.length < 2) return buildPlayPointsBreakdown(event, scoringSettings);
+  const sections = [...event.contributors]
+    .sort((left, right) => (Number(right.pts) || 0) - (Number(left.pts) || 0))
+    .map((contributor) => ({
+      key: String(contributor.playerId),
+      name: contributor.playerName,
+      ...buildPlayPointsBreakdown({ ...contributor, play: event.play }, scoringSettings),
+    }));
+  return { rows: [], sections, total: Number(event.pts) || 0 };
+}
+
 function signed(value, digits = 2) {
   const numeric = Number(value) || 0;
   return `${numeric >= 0 ? '+' : '−'}${Math.abs(numeric).toFixed(digits)}`;
@@ -165,7 +179,7 @@ export default function MatchupScoringPlays({
           const selected = selectedPlayId === event.id;
           const after = isAfter(event);
           const negative = Number(event.pts) < 0;
-          const meta = [window?.label, event.glance?.clock, Number.isFinite(Number(event.runningTotal)) ? `${Number(event.runningTotal).toFixed(1)} total` : null]
+          const meta = [window?.label, event.glance?.clock, event.runningTotal != null && Number.isFinite(Number(event.runningTotal)) ? `${Number(event.runningTotal).toFixed(1)} total` : null]
             .filter(Boolean)
             .join(' · ');
           return (
@@ -217,7 +231,7 @@ export default function MatchupScoringPlays({
       {pointsEvent && (
         <MatchupPlayPointsCard
           id={POINTS_CARD_ID}
-          breakdown={buildPlayPointsBreakdown(pointsEvent, scoringSettings)}
+          breakdown={buildRowPointsBreakdown(pointsEvent, scoringSettings)}
           anchor={pointsTarget.anchor}
           point={pointsTarget.point}
           accent={sideColors[pointsEvent.side]}

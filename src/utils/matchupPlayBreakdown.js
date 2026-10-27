@@ -8,7 +8,7 @@
 // official total; it gets its own row so the card always sums to the points the
 // row shows. Pure: no React, no fetching.
 
-import { buildFantasyScoringBreakdown } from './fantasyBreakdownRows.js';
+import { buildFantasyScoringBreakdown, getFantasyBreakdownLabel } from './fantasyBreakdownRows.js';
 import { getPricedTackleKey } from './playByPlay/playStatDelta.js';
 
 const EPSILON = 0.005;
@@ -45,8 +45,20 @@ export function buildPlayPointsBreakdown(event, scoringSettings) {
     adjustmentLabel: 'Rounding',
   });
   const out = rows.map(({ key, label, statVal, pts }) => ({ key, label, statVal, pts }));
-  if (Math.abs(adjustment) >= EPSILON) {
-    out.push({ key: 'official_adjustment', label: 'Adjusted to official stats', statVal: null, pts: adjustment });
+  // The official correction, by stat where reconciliation traced it to this
+  // play ("Official Rec Yards +2"), and one line for whatever no stat explains.
+  let unexplained = adjustment;
+  (event?.adjustmentParts ?? []).forEach(({ key, gap, pts }) => {
+    out.push({
+      key: `official_adjustment:${key}`,
+      label: `Official ${getFantasyBreakdownLabel(key)}`,
+      statVal: `${gap > 0 ? '+' : '−'}${Math.abs(gap)}`,
+      pts: round2(pts),
+    });
+    unexplained = round2(unexplained - pts);
+  });
+  if (Math.abs(unexplained) >= EPSILON) {
+    out.push({ key: 'official_adjustment', label: 'Official scoring correction', statVal: null, pts: unexplained });
   }
   return { rows: out, total };
 }

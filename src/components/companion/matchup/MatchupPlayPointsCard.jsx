@@ -4,7 +4,8 @@ import { usePointerFollow } from './usePointerFollow.js';
 // Desktop hover/focus card for a scoring play: the stats the play is scored
 // on, each with its points through the league's settings, plus the adjustment
 // that matched the player's plays to the official total. Rows always add up to
-// the points the play row shows (buildPlayPointsBreakdown()).
+// the points the play row shows (buildPlayPointsBreakdown()). A combined row
+// passes one section per player instead.
 
 const EDGE_MARGIN = 8;
 const ANCHOR_GAP = 6;
@@ -16,7 +17,25 @@ const formatSigned = (value) => `${value >= 0 ? '+' : '−'}${Math.abs(value).to
 
 function formatStat(value) {
   if (value == null) return null;
+  // A signed official correction ("+2") arrives already formatted.
+  if (typeof value === 'string') return value;
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function PointsRows({ rows }) {
+  return (
+    <ul className="matchup-play-points-card__rows">
+      {rows.map((row) => (
+        <li key={row.key} className={`matchup-play-points-card__row${row.key.startsWith('official_adjustment') ? ' is-adjustment' : ''}`}>
+          <span className="matchup-play-points-card__label">{row.label}</span>
+          <span className="matchup-play-points-card__stat tabular-nums">{formatStat(row.statVal)}</span>
+          <strong className={`matchup-play-points-card__points tabular-nums${row.pts < 0 ? ' is-negative' : ''}`}>
+            {formatSigned(row.pts)}
+          </strong>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export default function MatchupPlayPointsCard({ id, breakdown, anchor, point = null, accent }) {
@@ -53,17 +72,17 @@ export default function MatchupPlayPointsCard({ id, breakdown, anchor, point = n
         <span className="matchup-play-points-card__title">Where the points came from</span>
         <strong className="matchup-play-points-card__total tabular-nums">{formatSigned(breakdown.total)}</strong>
       </div>
-      <ul className="matchup-play-points-card__rows">
-        {breakdown.rows.map((row) => (
-          <li key={row.key} className={`matchup-play-points-card__row${row.key === 'official_adjustment' ? ' is-adjustment' : ''}`}>
-            <span className="matchup-play-points-card__label">{row.label}</span>
-            <span className="matchup-play-points-card__stat tabular-nums">{formatStat(row.statVal)}</span>
-            <strong className={`matchup-play-points-card__points tabular-nums${row.pts < 0 ? ' is-negative' : ''}`}>
-              {formatSigned(row.pts)}
-            </strong>
-          </li>
-        ))}
-      </ul>
+      {breakdown.sections?.length
+        ? breakdown.sections.map((section) => (
+          <div key={section.key} className="matchup-play-points-card__section">
+            <div className="matchup-play-points-card__player">
+              <span>{section.name}</span>
+              <strong className="tabular-nums">{formatSigned(section.total)}</strong>
+            </div>
+            <PointsRows rows={section.rows} />
+          </div>
+        ))
+        : <PointsRows rows={breakdown.rows} />}
     </div>
   );
 }

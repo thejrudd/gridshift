@@ -134,11 +134,11 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.3.4
+## What's New in v9.3.5
 
-- **Mobile Matchups cards** — Player photo, name with a position chip, and the game, at one height whether or not a player is injured.
-- **Scoring plays on touch** — Tap a play's points to see where they came from.
-- **No sideways scrolling** — Statistics player and team pages scroll vertically only on phones.
+- **Shared plays** — Your players credited on the same snap share one scoring-play row, with each player's points in the breakdown.
+- **Official corrections by stat** — Adjustments to official stats show which stat changed and sit on the play it came from.
+- **Steadier win chance chart** — The chart no longer holds flat while plays keep scoring.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
