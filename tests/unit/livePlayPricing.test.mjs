@@ -374,3 +374,25 @@ test('a scoring play breakdown prices each stat and always sums to the points sh
   assert.deepEqual(tackle.rows.map(({ key, pts }) => [key, pts]), [['idp_tkl_ast', 0.8], ['official_adjustment', 1]]);
   assert.equal(tackle.rows.reduce((sum, row) => sum + row.pts, 0), tackle.total);
 });
+
+test('the hover card names the stat an official correction was traced to', async () => {
+  const { buildPlayPointsBreakdown } = await import('../../src/utils/matchupPlayBreakdown.js');
+  const card = buildPlayPointsBreakdown(
+    {
+      position: 'WR',
+      pts: 2.5,
+      rawPts: 2,
+      adjustment: 0.5,
+      adjustmentParts: [{ key: 'rec_yd', gap: 2, pts: 0.2 }],
+      stats: { rec: 1, rec_yd: 10 },
+    },
+    { rec: 1, rec_yd: 0.1 },
+  );
+  assert.deepEqual(card.rows.map(({ key, label, statVal, pts }) => [key, label, statVal, pts]), [
+    ['rec', 'Reception', 1, 1],
+    ['rec_yd', 'Rec Yards', 10, 1],
+    ['official_adjustment:rec_yd', 'Official Rec Yards', '+2', 0.2],
+    ['official_adjustment', 'Official scoring correction', null, 0.3],
+  ]);
+  assert.equal(Math.round(card.rows.reduce((sum, row) => sum + row.pts, 0) * 100) / 100, card.total);
+});

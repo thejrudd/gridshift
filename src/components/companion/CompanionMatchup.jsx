@@ -79,7 +79,7 @@ import MatchupScoringPlays from './matchup/MatchupScoringPlays.jsx';
 import MatchupPlayerHoverCard from './matchup/MatchupPlayerHoverCard.jsx';
 import MatchupPointSourcesCard from './matchup/MatchupPointSourcesCard.jsx';
 import { buildMatchupPointSources, buildMatchupScoredSources } from '../../utils/matchupPointSources.js';
-import { buildReplayFrame, getGameStateAt } from '../../utils/matchupReplay.js';
+import { buildReplayFrame, getEventContributions, getGameStateAt } from '../../utils/matchupReplay.js';
 import { FantasyBaseOverride } from '../../context/SleeperContext';
 import { LIVE_SANDBOX_ENABLED, LiveSandboxPanel, useLiveSandbox } from '../../dev/liveSandbox';
 import { mergeSeasonScheduleResultsIntoMap } from '../../utils/seasonScheduleResults.js';
@@ -1950,16 +1950,29 @@ function CompanionMatchupView({
         const after = index != null ? live.series[index] : null;
         const before = index > 0 ? live.series[index - 1] : null;
         const swing = after && before && winMine(after) != null && winMine(before) != null ? winMine(after) - winMine(before) : null;
-        const total = (running.get(String(event.playerId)) ?? 0) + (Number(event.pts) || 0);
-        running.set(String(event.playerId), total);
+        // A combined row (two rostered players on one snap) moves each
+        // player's own total by their share; it shows no single total.
+        const contributions = getEventContributions(event);
+        const totals = contributions.map(({ playerId, pts }) => {
+          const total = (running.get(playerId) ?? 0) + pts;
+          running.set(playerId, total);
+          return total;
+        });
+        const nameOf = (playerId) => starterById.get(String(playerId))?.player?.name ?? getSleeperPlayerName(players?.[playerId] ?? {});
+        const combined = contributions.length > 1;
         return {
           ...event,
           side,
-          playerName: starterById.get(String(event.playerId))?.player?.name ?? getSleeperPlayerName(players?.[event.playerId] ?? {}),
+          playerName: combined
+            ? [...contributions].sort((left, right) => right.pts - left.pts).map(({ playerId }) => nameOf(playerId)).join(' & ')
+            : nameOf(event.playerId),
           // Play rows carry their text as `desc`; stat-update rows as `description`.
           description: event.desc ?? event.description ?? '',
+          contributors: combined
+            ? event.contributors.map((contributor) => ({ ...contributor, playerName: nameOf(contributor.playerId) }))
+            : event.contributors,
           swingMine: swing,
-          runningTotal: total,
+          runningTotal: combined ? null : totals[0] ?? null,
         };
       })
       .filter((event) => event.side);
@@ -2146,9 +2159,19 @@ function CompanionMatchupView({
       state = isPlayerGameFinal(player) ? 'final' : player.gameStarted ? 'live' : 'pre';
       progress = state === 'final' ? 1 : 0;
     }
+    // This player's share of each play, including combined rows they are part
+    // of; the row id stays the combined one so a click selects it.
     const plays = liveLayerActive
-      ? liveEvents.filter((event) => String(event.playerId) === String(player.id)
-        && (effectiveReplayAt == null || Number(event.progress) <= effectiveReplayAt + 1e-6))
+      ? liveEvents.flatMap((event) => {
+        if (effectiveReplayAt != null && Number(event.progress) > effectiveReplayAt + 1e-6) return [];
+        if (!event.contributors || event.contributors.length < 2) {
+          return String(event.playerId) === String(player.id) ? [event] : [];
+        }
+        const own = event.contributors.find((contributor) => String(contributor.playerId) === String(player.id));
+        return own
+          ? [{ ...event, pts: own.pts, stats: own.stats, kind: own.kind, description: own.desc ?? event.description }]
+          : [];
+      })
       : [];
     const points = liveLayerActive
       ? liveFrame?.pointsByPlayer.get(String(player.id)) ?? 0

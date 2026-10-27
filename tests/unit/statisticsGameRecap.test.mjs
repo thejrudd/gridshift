@@ -44,7 +44,7 @@ test('a lost fumble is recapped, and a tied quarter reads as tied', () => {
   const first = recap.sections.find((section) => section.heading === 'First quarter').paragraphs[0];
   assert.match(first, /The game was tied 7-7 after the first quarter\.$/);
   const third = recap.sections.find((section) => section.heading === 'Third quarter').paragraphs[0];
-  assert.match(third, /Miles Sanders fumbled, recovered by Quinyon Mitchell/);
+  assert.match(third, /Miles Sanders fumbled, forced by J\.Campbell, recovered by Quinyon Mitchell/);
 });
 
 test('a live game only recaps finished quarters', () => {

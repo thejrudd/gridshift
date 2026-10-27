@@ -240,16 +240,26 @@ export function buildPaceSeries({
   const fullSnapshots = (Array.isArray(historicalSnapshots) ? historicalSnapshots : [])
     .filter(isCompleteReplaySnapshot)
     .sort((left, right) => left.t - right.t);
-  const persistedAt = (at) => {
-    const moment = Number(at);
+  // A stored snapshot stands in for a play only when this browser recorded it
+  // after the play and before the next one, with the same score. Otherwise it
+  // describes another moment: the latest-before rule let one morning snapshot
+  // hold the whole afternoon flat while plays kept scoring.
+  const persistedAt = (point, nextAt) => {
+    const moment = Number(point.at);
     if (!Number.isFinite(moment)) return null;
+    const until = Number.isFinite(nextAt) ? nextAt : Number.POSITIVE_INFINITY;
     for (let index = fullSnapshots.length - 1; index >= 0; index -= 1) {
-      if (fullSnapshots[index].t <= moment) return fullSnapshots[index];
+      const snapshot = fullSnapshots[index];
+      if (snapshot.t >= until) continue;
+      if (snapshot.t < moment) return null;
+      const sameScore = Math.abs(Number(snapshot.a) - point.a) <= SNAPSHOT_SCORE_TOLERANCE
+        && Math.abs(Number(snapshot.b) - point.b) <= SNAPSHOT_SCORE_TOLERANCE;
+      return sameScore ? snapshot : null;
     }
     return null;
   };
-  const withSnapshot = (point, snapshot = null, context = null) => {
-    const resolved = snapshot ?? persistedAt(point.at) ?? snapshotAt?.(point, context) ?? {};
+  const withSnapshot = (point, snapshot = null, context = null, nextAt = null) => {
+    const resolved = snapshot ?? persistedAt(point, nextAt) ?? snapshotAt?.(point, context) ?? {};
     return {
       ...point,
       ...resolved,
@@ -330,7 +340,7 @@ export function buildPaceSeries({
     }, null, {
       event: item.event,
       currentByPlayer,
-    });
+    }, getReplayEventTime(scored[itemIndex + 1]?.event));
     points.push(replayPoint);
     if (item.event.hiddenFromMilestones) return;
     marks.push({
@@ -357,6 +367,8 @@ export function buildPaceSeries({
 
   return { points, marks };
 }
+
+const SNAPSHOT_SCORE_TOLERANCE = 0.1;
 
 function getReplayEventTime(event) {
   // A provider play without wall-clock data still has a canonical cross-game

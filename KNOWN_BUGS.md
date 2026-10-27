@@ -15,6 +15,9 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups' win chance chart could hold flat for hours while plays kept scoring, because a win chance saved early in the day stood in for every later play. | v9.3.5 |
+| Matchups scoring plays showed a kicker credited from a touchdown row with the scorer's run or catch instead of the extra point. | v9.3.5 |
+| Matchups scoring plays put the whole adjustment to official stats on the player's latest play, even when a specific stat on an earlier play explained it. | v9.3.5 |
 | Matchups' win chance chart sometimes loaded flat with no scoring plays: player stats were re-fetched from the live data provider on every poll, exhausting its rate limit, and a week's game list froze for hours once Thursday's game ended. | v9.3.3 |
 | Matchups scoring plays priced some plays wrongly: penalty yards counted toward the player (a 2-yard run showed −1.38), touchdowns with a two-point try lost the touchdown, Jr./Sr. players and starters sharing an initial and surname went unmatched, and team defense special-teams scoring was missing. | v9.3.3 |
 | Matchups scoring plays only showed a win chance change when it was 1% or more. | v9.3.3 |

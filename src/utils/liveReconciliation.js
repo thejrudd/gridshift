@@ -209,6 +209,56 @@ export function computeStatSurplus(sleeperStats, coveredStats) {
   return surplus;
 }
 
+// Stats a correction can be traced through. Tackles stay out: a play prices
+// its generic tackle as solo or assisted, so a tackle gap cannot be read off
+// Sleeper's line one key at a time.
+const ATTRIBUTABLE_STATS = [...PLAY_MATCH_STATS].filter((key) => !TACKLE_KEYS.includes(key));
+
+/**
+ * Splits a player's residual by stat (spec rule 16). Sleeper reports totals,
+ * never per-play numbers, so each stat's gap goes on the most recent confirmed
+ * play carrying that stat: stat lines are polled every 30-90s, so a change is
+ * almost always the newest play of that kind, and with nothing better to go on
+ * it is still the best guess.
+ *
+ * A gap is measured against `confirmedStats` (confirmed plays and stat-update
+ * rows). Sleeper lags the feed, so a pending play is not a correction: when
+ * Sleeper is ahead of the confirmed plays, `pendingStats` explains that much
+ * first, and a pending play Sleeper has not counted yet is never read as an
+ * overcount. Returns `{ partsById, remainder }`:
+ * per-play `[{ key, gap, pts }]`, and whatever no stat explains (rounding,
+ * tackles, stats no play carries), which the caller places as before.
+ */
+export function attributeAdjustmentByStat({
+  adjustment, confirmedPlays, confirmedStats, pendingStats = {}, sleeperStats, scoringSettings, position,
+}) {
+  const partsById = new Map();
+  let remainder = round2(adjustment);
+  if (!sleeperStats || !confirmedPlays.length) return { partsById, remainder };
+  const latestFirst = [...confirmedPlays].reverse();
+  const shifted = new Map();
+
+  ATTRIBUTABLE_STATS.forEach((key) => {
+    let gap = round2(lookupMatchStat(sleeperStats, key) - num(confirmedStats[key]));
+    if (gap > 0) gap = round2(Math.max(0, gap - num(pendingStats[key])));
+    if (!gap) return;
+    const target = latestFirst.find((play) => num(play.stats?.[key]) !== 0);
+    if (!target) return;
+    let pts = round2(calcPoints({ [key]: gap }, scoringSettings, position));
+    // A correction never flips a play below zero; the rest stays in the
+    // remainder, which the caller spreads (rule 15) or places on the latest play.
+    if (pts < 0 && num(target.pts) > 0) {
+      const floor = -(num(target.pts) + num(shifted.get(target.id)));
+      if (pts < floor) pts = round2(Math.min(0, floor));
+    }
+    if (!pts) return;
+    shifted.set(target.id, round2(num(shifted.get(target.id)) + pts));
+    partsById.set(target.id, [...(partsById.get(target.id) ?? []), { key, gap, pts }]);
+    remainder = round2(remainder - pts);
+  });
+  return { partsById, remainder };
+}
+
 function buildFallbackEvent({
   playerId, position, stats, pts, seq, now, gameId,
 }) {
@@ -559,8 +609,9 @@ export function reconcileLivePlays(previousState, inputs = {}) {
       confirmedPlays.reduce((total, play) => total + num(play.pts), 0)
         + rows.reduce((total, row) => total + num(row.pts), 0),
     );
-    // Residual is recomputed from scratch every step and pinned to the latest
-    // confirmed play; the play's own pts is never rewritten.
+    // Residual is recomputed from scratch every step; what no stat explains
+    // (rule 16) is pinned to the latest confirmed play. A play's own pts is
+    // never rewritten.
     const adjustment = hasSleeperPoints ? round2(sleeperPoints - confirmedPoints) : 0;
     // Normally the latest confirmed play. A player the play feed never covered
     // has only stat-update rows to hang it on, and those rows are never
@@ -572,22 +623,39 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     const residualRowId = residualPlayId || (rows.length ? rows[rows.length - 1].id : null);
     adjustments.set(playerId, adjustment);
 
+    // Rule 16. The part of the residual a stat explains sits on the play that
+    // stat most likely came from; only the remainder is placed below.
+    const confirmedStats = {};
+    confirmedPlays.forEach((play) => addStats(confirmedStats, play.stats));
+    rows.forEach((row) => addStats(confirmedStats, row.stats));
+    const pendingStats = {};
+    pendingPlays.forEach((play) => addStats(pendingStats, play.stats));
+    const { partsById, remainder } = attributeAdjustmentByStat({
+      adjustment,
+      confirmedPlays,
+      confirmedStats,
+      pendingStats,
+      sleeperStats: lineFresh ? sleeperStats : null,
+      scoringSettings,
+      position,
+    });
+
     // Rule 15. A settled starter whose estimated plays overshoot Sleeper (a
-    // negative residual) has the correction spread across their positive
+    // negative remainder) has the correction spread across their positive
     // confirmed plays in proportion to each play's points, instead of landing
     // on the last one, where it would zero or flip that play and leave the
     // line too high for the whole game. Rows stay positive and the running
-    // total tracks the official one throughout. A positive residual still
+    // total tracks the official one throughout. A positive remainder still
     // lands on the latest confirmed play.
     const spreadById = new Map();
     const positivePlays = confirmedPlays.filter((play) => num(play.pts) > 0);
     const positiveSum = positivePlays.reduce((total, play) => total + num(play.pts), 0);
-    if (settled && adjustment < 0 && positiveSum > 0 && positiveSum + adjustment >= 0) {
+    if (settled && remainder < 0 && positiveSum > 0 && positiveSum + remainder >= 0) {
       let assigned = 0;
       positivePlays.forEach((play, index) => {
         const share = index === positivePlays.length - 1
-          ? round2(adjustment - assigned)
-          : round2((adjustment * num(play.pts)) / positiveSum);
+          ? round2(remainder - assigned)
+          : round2((remainder * num(play.pts)) / positiveSum);
         assigned = round2(assigned + share);
         spreadById.set(play.id, share);
       });
@@ -596,9 +664,12 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     const outPlays = ownPlays.map((play) => {
       const isConfirmed = confirmedIds.has(play.id);
       const isUnconfirmed = unconfirmedIds.has(play.id);
-      const own = spreadById.size
+      const parts = isConfirmed ? partsById.get(play.id) ?? [] : [];
+      const statShare = round2(parts.reduce((total, part) => total + part.pts, 0));
+      const remainderShare = spreadById.size
         ? (isConfirmed ? spreadById.get(play.id) ?? 0 : 0)
-        : isConfirmed && play.id === residualPlayId ? adjustment : 0;
+        : isConfirmed && play.id === residualPlayId ? remainder : 0;
+      const own = round2(statShare + remainderShare);
       let playStatus = 'pending';
       if (isConfirmed) playStatus = 'confirmed';
       else if (isUnconfirmed) playStatus = 'unconfirmed';
@@ -613,6 +684,8 @@ export function reconcileLivePlays(previousState, inputs = {}) {
         status: playStatus,
         confirmedBy: isConfirmed ? (confirmedBy.get(play.id) ?? 'points') : null,
         adjustment: own,
+        // The stat-traced pieces of `adjustment`; the rest is unexplained.
+        adjustmentParts: parts,
         displayPts: isUnconfirmed ? 0 : round2(num(play.pts) + own),
       };
     });
@@ -622,7 +695,9 @@ export function reconcileLivePlays(previousState, inputs = {}) {
       : round2(pendingPoints);
 
     const outRows = rows.map((row) => {
-      const own = !spreadById.size && row.id === residualRowId ? adjustment : 0;
+      // A row only takes the remainder: stat-traced parts land on plays, and
+      // with no confirmed play there are no parts.
+      const own = !spreadById.size && row.id === residualRowId ? remainder : 0;
       return { ...row, adjustment: own, displayPts: round2(num(row.pts) + own) };
     });
 

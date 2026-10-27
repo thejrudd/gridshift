@@ -107,6 +107,22 @@ test('a made PAT uses the kicker actor without inheriting the touchdown', () => 
   assert.deepEqual(kicker.stats, { xpm: 1 });
   assert.equal(kicker.pts, 1);
   assert.equal(kicker.kind, 'xp');
+  // The kicker's row describes the extra point, not the scorer's run.
+  assert.equal(kicker.desc, 'Kansei Matsuzawa made the extra point after a Dare Ogunbowale touchdown.');
+  const rusher = events.find((event) => event.playerId === 'ogunbowale');
+  assert.equal(rusher.desc, 'Dare Ogunbowale ran it in from 19 yards out.');
+});
+
+test('a failed PAT row describes the miss to the kicker', () => {
+  const events = buildPlayEvents(
+    { 'game-hou': [RUSH_WITH_FAILED_PAT] },
+    buildStarterNameIndex(HOU_STARTERS),
+    KICK_SCORING,
+    new Map([['ogunbowale', 'RB'], ['matsuzawa', 'K']]),
+    new Map(),
+  );
+  const kicker = events.find((event) => event.playerId === 'matsuzawa');
+  assert.equal(kicker.desc, 'Kansei Matsuzawa missed the extra point after a Dare Ogunbowale touchdown.');
 });
 
 test('an unparsed provider sentence retains the conservative text-matching fallback', () => {
@@ -801,4 +817,49 @@ test('demo and preseason rows gain no reconciler fields from grouping', () => {
     assert.equal(contributor.status, undefined);
     assert.equal(contributor.confirmedBy, undefined);
   });
+});
+
+test('a same-side combined row sums reconciled points and keeps the snap sentence', () => {
+  const made = {
+    ...RUSH_WITH_FAILED_PAT,
+    id: 'hou-rush-td-3',
+    short_text: 'Dare Ogunbowale 19 Yd Rush (Kansei Matsuzawa Kick)',
+    text: 'Dare Ogunbowale 19 Yd Rush (Kansei Matsuzawa Kick)',
+  };
+  const events = buildPlayEvents(
+    { 'game-hou': [made] },
+    buildStarterNameIndex(HOU_STARTERS),
+    KICK_SCORING,
+    new Map([['ogunbowale', 'RB'], ['matsuzawa', 'K']]),
+    new Map(),
+  );
+  // Kicker first, as a newest-first sort can order them; the row must still
+  // read as the touchdown.
+  const ordered = [...events].sort((left) => (left.playerId === 'matsuzawa' ? -1 : 1))
+    .map((event) => (event.playerId === 'matsuzawa'
+      ? { ...event, rawPts: 1, adjustment: 0.5, pts: 1.5, displayPts: 1.5, status: 'pending' }
+      : { ...event, rawPts: event.pts, adjustment: 0, displayPts: event.pts }));
+  const [grouped] = groupSharedPlayEvents(ordered, () => 'viewer');
+  assert.equal(grouped.kind, 'td');
+  assert.equal(grouped.desc, 'Dare Ogunbowale ran it in from 19 yards out. Kansei Matsuzawa made the extra point.');
+  assert.equal(grouped.pts, 9.4);
+  assert.equal(grouped.displayPts, 9.4);
+  assert.equal(grouped.rawPts, 8.9);
+  assert.equal(grouped.adjustment, 0.5);
+  assert.equal(grouped.status, 'pending');
+  const kicker = grouped.contributors.find((contributor) => contributor.playerId === 'matsuzawa');
+  assert.equal(kicker.desc, 'Kansei Matsuzawa made the extra point after a Dare Ogunbowale touchdown.');
+});
+
+test('opposing sides of one snap stay separate rows', () => {
+  const events = buildPlayEvents(
+    { 'game-hou': [RUSH_WITH_FAILED_PAT] },
+    buildStarterNameIndex(HOU_STARTERS),
+    KICK_SCORING,
+    new Map([['ogunbowale', 'RB'], ['matsuzawa', 'K']]),
+    new Map(),
+  );
+  const grouped = groupSharedPlayEvents(events, (event) => (event.playerId === 'matsuzawa' ? 'b' : 'a'));
+  assert.equal(grouped.length, 2);
+  grouped.forEach((row) => assert.equal(row.contributors.length, 1));
 });

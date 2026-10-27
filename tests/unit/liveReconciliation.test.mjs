@@ -391,6 +391,91 @@ test('a stat correction produces a negative residual', () => {
   assert.equal(player.displayedPoints, 2.2);
 });
 
+test('a stat gap lands on the latest play carrying that stat, not the latest play', () => {
+  const catchPlay = makePlay({ playerId: 'rb1', position: 'RB', stats: { rec: 1, rec_yd: 10 }, pts: 2, order: 10 });
+  const run = makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_att: 1, rush_yd: 5 }, pts: 0.5, order: 20 });
+  const state = step(createReconciliationState(), {
+    playEvents: [catchPlay, run],
+    // Sleeper credits the catch 2 yards longer, plus 0.2 nothing explains.
+    sleeperPointsById: { rb1: 2.9 },
+    sleeperStatsById: { rb1: { rec: 1, rec_yd: 12, rush_att: 1, rush_yd: 5 } },
+    sleeperStatsFetchedAt: 100,
+    now: 100,
+  });
+  const player = state.players.get('rb1');
+  const [caught, ran] = player.plays;
+  assert.deepEqual(caught.adjustmentParts, [{ key: 'rec_yd', gap: 2, pts: 0.2 }]);
+  assert.equal(caught.adjustment, 0.2);
+  assert.equal(caught.displayPts, 2.2);
+  assert.deepEqual(ran.adjustmentParts, []);
+  assert.equal(ran.adjustment, 0.2, 'the unexplained remainder stays on the latest play');
+  assert.equal(player.adjustment, 0.4);
+  assert.equal(Math.round((caught.displayPts + ran.displayPts) * 100) / 100, 2.9);
+});
+
+test('a counting-stat correction comes off the play that carried it', () => {
+  const first = makePlay({ stats: { rec: 1, rec_yd: 20, rec_td: 1 }, pts: 9, order: 10 });
+  const second = makePlay({ stats: { rec: 1, rec_yd: 6 }, pts: 1.6, order: 20 });
+  let state = step(createReconciliationState(), {
+    playEvents: [first, second],
+    sleeperPointsById: { wr1: 10.6 },
+    sleeperStatsById: { wr1: { rec: 2, rec_yd: 26, rec_td: 1 } },
+    sleeperStatsFetchedAt: 100,
+    now: 100,
+  });
+  // The touchdown is later overturned at the 1.
+  state = step(state, {
+    playEvents: [],
+    sleeperPointsById: { wr1: 4.6 },
+    sleeperStatsById: { wr1: { rec: 2, rec_yd: 26 } },
+    sleeperStatsFetchedAt: 200,
+    now: 200,
+  });
+  const [scored, later] = state.players.get('wr1').plays;
+  assert.deepEqual(scored.adjustmentParts, [{ key: 'rec_td', gap: -1, pts: -6 }]);
+  assert.equal(scored.displayPts, 3);
+  assert.equal(later.adjustment, 0);
+  assert.equal(later.displayPts, 1.6);
+});
+
+test('a pending play Sleeper has not counted yet is not read as a correction', () => {
+  const first = makePlay({ stats: { rec: 1, rec_yd: 10 }, pts: 2, order: 10 });
+  const second = makePlay({ stats: { rec: 1, rec_yd: 9 }, pts: 1.9, order: 20 });
+  let state = step(createReconciliationState(), {
+    playEvents: [first],
+    sleeperPointsById: { wr1: 2 },
+    sleeperStatsById: { wr1: { rec: 1, rec_yd: 10 } },
+    sleeperStatsFetchedAt: 100,
+    now: 100,
+  });
+  state = step(state, {
+    playEvents: [second],
+    sleeperPointsById: { wr1: 2 },
+    sleeperStatsById: { wr1: { rec: 1, rec_yd: 10 } },
+    sleeperStatsFetchedAt: 110,
+    now: 110,
+  });
+  const [confirmed, pending] = state.players.get('wr1').plays;
+  assert.equal(pending.status, 'pending');
+  assert.equal(confirmed.adjustment, 0);
+  assert.deepEqual(confirmed.adjustmentParts, []);
+});
+
+test('a stale stat line leaves the whole residual on the latest play', () => {
+  const catchPlay = makePlay({ playerId: 'rb1', position: 'RB', stats: { rec: 1, rec_yd: 10 }, pts: 2, order: 10 });
+  const run = makePlay({ playerId: 'rb1', position: 'RB', stats: { rush_att: 1, rush_yd: 5 }, pts: 0.5, order: 20 });
+  const state = step(createReconciliationState(), {
+    playEvents: [catchPlay, run],
+    sleeperPointsById: { rb1: 2.7 },
+    sleeperStatsById: { rb1: { rec: 1, rec_yd: 12, rush_att: 1, rush_yd: 5 } },
+    sleeperStatsFetchedAt: 0,
+    now: 500000,
+  });
+  const [caught, ran] = state.players.get('rb1').plays;
+  assert.equal(caught.adjustment, 0);
+  assert.equal(ran.adjustment, 0.2);
+});
+
 test('an unexplained stat line becomes a row only after the grace period', () => {
   const inputs = {
     playEvents: [],

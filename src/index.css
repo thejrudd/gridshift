@@ -21591,7 +21591,10 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .matchup-play__name {
   flex: none;
+  max-width: 60%;
+  overflow: hidden;
   font-weight: 700;
+  text-overflow: ellipsis;
 }
 
 .matchup-play__desc {
@@ -22009,6 +22012,37 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 .matchup-play-points-card__row.is-adjustment {
   padding-top: 6px;
   border-top: 1px solid var(--color-separator);
+}
+
+/* One rule above the official corrections, not one per stat. */
+.matchup-play-points-card__row.is-adjustment + .matchup-play-points-card__row.is-adjustment {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.matchup-play-points-card__section {
+  display: grid;
+  gap: 6px;
+}
+
+.matchup-play-points-card__section + .matchup-play-points-card__section {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.matchup-play-points-card__player {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--type-meta);
+  font-weight: 700;
+}
+
+.matchup-play-points-card__player strong {
+  font-family: var(--matchup-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-body);
+  font-weight: 800;
 }
 
 .matchup-sources-card__note b {
