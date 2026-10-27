@@ -15,6 +15,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups starter rows could show about double a player's points during a live game: plays the live feed delivered after Sleeper had already counted them stayed pending and were added on top of Sleeper's total until the game ended. | v9.3.6 |
 | Matchups' win chance chart could hold flat for hours while plays kept scoring, because a win chance saved early in the day stood in for every later play. | v9.3.5 |
 | Matchups scoring plays showed a kicker credited from a touchdown row with the scorer's run or catch instead of the extra point. | v9.3.5 |
 | Matchups scoring plays put the whole adjustment to official stats on the player's latest play, even when a specific stat on an earlier play explained it. | v9.3.5 |

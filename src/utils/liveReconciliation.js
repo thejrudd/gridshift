@@ -400,9 +400,8 @@ export function reconcileLivePlays(previousState, inputs = {}) {
   const fallbackSeq = new Map(previous.fallbackSeq);
   const surplusWatch = new Map(previous.surplusWatch);
   const adjustments = new Map();
-  // Last step's residuals, minus any whose row a newly arrived play retires
-  // below: a residual that no longer sits on a row must not keep blocking the
-  // play that replaces it from confirming.
+  // Last step's residuals, minus what newly arrived plays explain below: a
+  // residual that stood in for a play must not keep that play from confirming.
   const carriedAdjustments = new Map(previous.adjustments);
 
   // Ingest. A play id already seen keeps its first-seen record, so replaying
@@ -414,6 +413,14 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     // how long Sleeper has had this play in front of it, and a backfilled play
     // can carry a kickoff-era timestamp.
     firstSeen.set(event.id, now);
+    // Sleeper often credits a play before the feed delivers it, and the
+    // positive residual that then sat on the previous play stood in for this
+    // one. Carried whole, it would leave nothing to confirm the play against,
+    // so the play would count again on top of Sleeper until the game ends.
+    const carried = num(carriedAdjustments.get(event.playerId));
+    if (carried > 0 && num(event.pts) > 0) {
+      carriedAdjustments.set(event.playerId, round2(Math.max(0, carried - num(event.pts))));
+    }
     // Plays that finally arrive for a stat line already explained by a
     // fallback row retire it (spec rule 6).
     let rows = fallbacks.get(event.playerId);
