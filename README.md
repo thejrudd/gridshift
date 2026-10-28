@@ -134,9 +134,9 @@ Draft Sync is an optional capability of the existing API sidecar, not a required
 | PWA | vite-plugin-pwa + Workbox |
 | Production serving | nginx (Docker) + optional Node API sidecar |
 
-## What's New in v9.3.6
+## What's New in v9.3.7
 
-- **Live scores no longer double** — A player's Matchups total stays at the official number during live games.
+- **Player game-log arrows** — Use the arrows to scroll More Stats without opening a game.
 
 For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -2786,6 +2786,14 @@ const GameLog = ({
   const expandedGameStats = showMoreStats && !fantasyOnly;
   const useExpandedStatLayout = fantasyOnly || expandedGameStats;
   const [scrollIndicators, setScrollIndicators] = useState({ left: false, right: false });
+  const scrollGameLog = (direction) => {
+    const element = tableContainerRef.current;
+    if (!element) return;
+    element.scrollBy({
+      left: direction * Math.max(160, Math.round(element.clientWidth * 0.75)),
+      behavior: 'smooth',
+    });
+  };
   const expandedGameIdentityWidths = isMobileGameLogLayout
     ? MOBILE_COMPACT_GAME_IDENTITY_WIDTHS
     : EXPANDED_GAME_IDENTITY_WIDTHS;
@@ -3225,17 +3233,17 @@ const GameLog = ({
         </table>
       </div>
       {shouldShowScrollIndicators && scrollIndicators.left && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-[color:var(--color-bg)] via-[color:color-mix(in_srgb,var(--color-bg)_85%,transparent)] to-transparent pl-2 pr-8">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-[color:var(--color-label-secondary)] shadow-sm">
-            <span className="text-lg leading-none" aria-hidden="true">‹</span>
-          </div>
+        <div className="pointer-events-none absolute inset-y-0 z-40 flex items-center bg-gradient-to-r from-[color:var(--color-bg)] via-[color:color-mix(in_srgb,var(--color-bg)_85%,transparent)] to-transparent pl-2 pr-8" style={{ left: freezeIdentityColumns ? `${expandedIdentityWidth}px` : 0 }}>
+          <button type="button" aria-label="Scroll game log left" onClick={(event) => { event.stopPropagation(); scrollGameLog(-1); }} className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-lg leading-none text-[color:var(--color-label-secondary)] shadow-sm" aria-hidden="true">‹</span>
+          </button>
         </div>
       )}
       {shouldShowScrollIndicators && scrollIndicators.right && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-[color:var(--color-bg)] via-[color:color-mix(in_srgb,var(--color-bg)_85%,transparent)] to-transparent pl-8 pr-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-[color:var(--color-label-secondary)] shadow-sm">
-            <span className="text-lg leading-none" aria-hidden="true">›</span>
-          </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-40 flex items-center bg-gradient-to-l from-[color:var(--color-bg)] via-[color:color-mix(in_srgb,var(--color-bg)_85%,transparent)] to-transparent pl-8 pr-2">
+          <button type="button" aria-label="Scroll game log right" onClick={(event) => { event.stopPropagation(); scrollGameLog(1); }} className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--color-separator)] bg-[color:color-mix(in_srgb,var(--color-bg-secondary)_95%,transparent)] text-lg leading-none text-[color:var(--color-label-secondary)] shadow-sm" aria-hidden="true">›</span>
+          </button>
         </div>
       )}
     </div>
