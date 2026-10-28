@@ -152,7 +152,15 @@ Phase 5.0 (integration spike) in core, implemented on branch `stage5-0-integrati
 - Standings renders through the contract: the Sleeper path is an adapter over the same data and produces identical markup; a GridShift league's Standings reads `GET /api/leagues`, `/api/leagues/:id`, `/teams`, `/standings`, `/weeks`, and `/matchups`.
 - Sign-in uses the platform's email-link flow through a same-origin dev proxy; `npm run dev:platform` runs core with a local platform API (PGlite).
 
-Open decisions for the user (proposals; the spike implements the lowest-risk option, easy to change):
+Decisions on the spike's open questions (user, 2026-10-28), replacing the proposals below:
+
+- Production wiring: same-origin reverse proxy of the platform routes from core's host.
+- One active league: when a GridShift league is selected, every tab follows it; views not yet on the contract show an unavailable state, never Sleeper data (from 5.2).
+- Account features (invite acceptance, usernames, account settings, admin league creation) stay in the platform's `web/` for now; sign-in is in core.
+- Player identity: use core's existing cross-provider identity layer (`src/utils/providerPlayerIdentity.js`, as `src/utils/fantasyProjections.js` uses it for BALLDONTLIE rows) to line GridShift-league players up with core's Sleeper-keyed data. Core and the platform are meant to unify, so the platform may borrow core code for this.
+- Ports: the platform runs on 3101 in the core dev arrangement.
+
+Original proposals (kept for history):
 
 1. Production wiring: same-origin reverse proxy of the platform routes from core's host (implemented for dev, recommended) versus cross-origin calls with CORS and `SameSite=None` cookies.
 2. Scope of the GridShift selection: League tab only (spike) versus one active league for every tab, with views not yet on the contract showing an unavailable state (recommended for 5.2).
@@ -196,3 +204,4 @@ Resolve decisions when their implementation stage approaches; do not require eve
 - 2026-10-07: User selected invite-only username/password sign-in; no email service required.
 - 2026-10-07: Implemented isolated IR eligibility/settings/action policy rules and 10 focused tests. The next slice is identity/invitations/league creation; existing leagues remain unchanged by this unconnected module.
 - 2026-10-28: Stage 5.0 spike implemented in core: league provider contract, Sleeper adapter (no behavior change), GridShift-league Standings from the platform API, and the core-plus-local-platform dev environment. Five open decisions recorded above.
+- 2026-10-28: User decided the Stage 5.0 open questions: same-origin proxy in production; one active league across tabs; account features stay in `web/`; player identity through core's cross-provider identity layer (`providerPlayerIdentity.js`), with platform reuse of core code permitted.

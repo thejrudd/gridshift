@@ -115,3 +115,10 @@ Production is not set up: a production host would need the same same-origin forw
 - **Season model.** Sleeper league lineage (seasons, renewals) has no GridShift equivalent yet; a GridShift league is one season. A completed GridShift season (final table, championship result) is not modelled.
 - **Session and access.** The client reads `GET /api/auth/get-session`; expired sessions show "Sign in to view this league." Invites are counted but cannot be accepted in core yet.
 - **Two clients, one origin list.** The platform uses the first `APP_ORIGINS` entry for invite and email-change links (its `web/` pages). With core first, those links point at pages core does not have.
+
+## Decisions (user, 2026-10-28)
+
+- Production uses the same-origin proxy described above.
+- One active league: every tab follows the selected league; a view not yet on the contract shows its unavailable state.
+- Player identity: GridShift-league players are matched to core's Sleeper-keyed data through `src/utils/providerPlayerIdentity.js` (unique normalized name, canonical NFL team, compatible position family), the same layer `fantasyProjections.js` uses for BALLDONTLIE rows. Unmatched players render without Sleeper-sourced extras; matched ones never import Sleeper league data.
+- Account features stay in the platform's `web/`; sign-in is in core.
