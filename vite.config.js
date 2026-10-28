@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { resolve as resolvePath } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
@@ -133,9 +133,27 @@ self.addEventListener('activate', (event) => {
   }
 }
 
-export default defineConfig(({ command }) => ({
+// Optional GridShift fantasy platform API (docs/League Provider Contract.md).
+// Unset by default: no proxy entry is added and the GridShift-league provider
+// stays off. When set, the platform's auth, account, league, and invite routes
+// are proxied so the browser calls them same-origin and the platform's session
+// cookie stays first-party. These paths do not overlap the sidecar routes below.
+function gridshiftPlatformProxy(mode) {
+  const target = String(loadEnv(mode, process.cwd(), 'VITE_GRIDSHIFT_').VITE_GRIDSHIFT_PLATFORM_URL ?? '').trim()
+  if (!target) return {}
+  return {
+    '^/api/(auth|me|leagues|invites)(/|\\?|$)': {
+      target,
+      changeOrigin: true,
+      secure: false,
+    },
+  }
+}
+
+export default defineConfig(({ command, mode }) => ({
   server: {
     proxy: {
+      ...gridshiftPlatformProxy(mode),
       '/ktc-proxy': {
         target: 'https://keeptradecut.com',
         changeOrigin: true,

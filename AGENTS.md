@@ -84,6 +84,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Player Dashboard.md — Statistics player page tabs: data routes, identity resolution, play credit, rank pools, opponent context, and UI rules.
 - docs/Team Dashboard.md — Statistics team page: position leaders, depth chart, season tabs, data route, fantasy scoring, and UI rules.
 - docs/Independent Fantasy Platform Plan.md — agreed direction, proposals, open questions, architecture, phases, validation, and implementation status for the independent fantasy platform.
+- docs/League Provider Contract.md — provider-neutral league data contract (Sleeper and GridShift leagues), capabilities, the per-view audit and migration list, and the core-plus-local-platform dev environment.
 - For QA, testing, validation, or regression-review tasks, use docs/Agent Workflow.md and the relevant feature references; do not load unrelated material.
 
 ## Design system — Broadcast Editorial
@@ -112,6 +113,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Trade proposal-card changes require docs/Trade Proposal Cards.md.
 - Companion or Trade-adjacent row changes require docs/Companion Shared Rows.md and the shared primitives.
 - Independent fantasy platform work requires reading docs/Independent Fantasy Platform Plan.md before implementation; update it in the same pass whenever agreed scope, rules, architecture, phases, validation, or implementation status changes. Keep agreed decisions distinct from proposals and open questions, and do not describe planned features as implemented.
+- Moving a fantasy view onto the league provider contract, or changing the contract or the GridShift-league provider, requires docs/League Provider Contract.md in the same pass; the Sleeper path must stay identical and Sleeper data must never reach a GridShift league.
 - Filtered ranked lists calculate rank before filtering and render the carried rank.
 - productionAdjustedValue preserves null propagation and returns ktcVal rather than converting missing values to zero.
 

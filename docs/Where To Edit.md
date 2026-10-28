@@ -21,6 +21,7 @@ Routing table: match the task to a section, open the listed files, and read the 
 | Provider gateway, quotas, caches, sidecar server | [Live Data Server, Budgets, And Scaling](#live-data-server-budgets-and-scaling) |
 | Sleeper connection and league loading | [Fantasy Connection And League Data](#fantasy-connection-and-league-data) |
 | Independent leagues, membership, commissioner controls, roster mutations, IR policies, waivers, chat/DMs | [Independent Fantasy Platform](#independent-fantasy-platform) |
+| League data providers (Sleeper or GridShift league), the provider contract, the platform API client, the core-plus-platform dev environment | [League Provider Contract](#league-provider-contract) |
 | League history, season standings, transactions | [League History, Standings, And Activity](#league-history-standings-and-activity) |
 | ESPN player search, profiles, stat tables | [ESPN Player Data And Profiles](#espn-player-data-and-profiles) |
 | Player page tabs: Overview, position tabs, Every play | [Statistics Player Dashboard](#statistics-player-dashboard) |
@@ -263,6 +264,21 @@ The existing shared fantasy entry points are in `src/context/SleeperContext.jsx`
 
 Add engine/API ownership here as later implementation lands.
 
+## League Provider Contract
+
+Read first: [[League Provider Contract]] (contract shapes, capabilities, the per-view audit and migration list, dev setup). A fantasy view that moves onto the contract must keep the Sleeper path identical and must never show Sleeper data for a GridShift league.
+
+| File | Owns |
+| --- | --- |
+| `src/utils/leagueProviderContract.js` | Provider ids, capabilities, contract shapes |
+| `src/utils/sleeperLeagueAdapter.js`, `src/utils/gridshiftLeagueAdapter.js` | Per-provider pure mappers into the contract |
+| `src/api/gridshiftPlatformApi.js` | Optional GridShift platform API client (same-origin, off unless `VITE_GRIDSHIFT_PLATFORM_URL` is set) |
+| `src/context/LeagueSourceContext.jsx`, `src/context/LeagueSourceContext.js` | Selected league provider for the League tab |
+| `src/hooks/useGridShiftStandings.js` | GridShift Standings loading |
+| `src/components/companion/GridShiftLeagueAccess.jsx` | GridShift sign-in and league list inside `CompanionConnect` |
+| `vite.config.js`, `scripts/dev-platform.mjs` | Dev proxy and the core-plus-local-platform launcher (`npm run dev:platform`) |
+| `tests/unit/leagueProviderStandings.test.mjs` | Sleeper parity and GridShift mapping |
+
 ## Fantasy Connection And League Data
 
 | File | Owns |
@@ -271,7 +287,7 @@ Add engine/API ownership here as later implementation lands.
 | `src/api/sleeperApi.js` | Sleeper API client |
 | `src/components/companion/CompanionConnect.jsx` | Connect flow |
 
-Sleeper is the supported fantasy connection. Current-week consumers should use `currentFantasyWeek` from this context rather than re-deriving from `last_scored_leg` or issuing their own `/state/nfl` request. Completed-week analytics may continue to use `last_scored_leg` when they explicitly need a settled-data boundary.
+Sleeper is the supported fantasy connection; GridShift leagues are an optional second provider behind the [[League Provider Contract]]. Current-week consumers should use `currentFantasyWeek` from this context rather than re-deriving from `last_scored_leg` or issuing their own `/state/nfl` request. Completed-week analytics may continue to use `last_scored_leg` when they explicitly need a settled-data boundary.
 
 ## League History, Standings, And Activity
 
@@ -283,7 +299,7 @@ Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and th
 | --- | --- |
 | `src/utils/leagueHistory.js` | Season snapshot cache, participant identity, matchup/standings/bracket calculations, transaction normalization, record leaders, Draft Blueprint summaries |
 | `src/hooks/useLeagueHistoryData.js` | Selected-season-plus-prior-lineage loading, focused error/retry state |
-| `src/components/companion/CompanionStandings.jsx` | Current + historical tables, divisions, evidence-backed brackets (Toilet Bowl vs consolation) |
+| `src/components/companion/CompanionStandings.jsx` | Current + historical tables, divisions, evidence-backed brackets (Toilet Bowl vs consolation); renders the provider-neutral `StandingsModel` ([[League Provider Contract]]) |
 | `src/components/companion/CompanionHistory.jsx` | Lifetime leaderboard, champions, rivalries, records |
 | `src/components/companion/CompanionActivity.jsx` | Transaction ledger, filters, drillable visuals, commissioner events hidden by default |
 | `src/components/companion/LeagueHistoryIcon.jsx` | Shared archive glyph |
