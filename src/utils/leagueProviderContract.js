@@ -6,9 +6,11 @@
 // seasons, or roster numbers to a view. Full contract, per-view audit, and
 // migration status: docs/League Provider Contract.md.
 //
-// Phase 5.0 implements the Standings slice only. Every other shape below is
-// written down so later phases build against one agreed contract, but no view
-// reads it yet.
+// Phase 5.0 implemented the Standings slice; phase 5.2 adds Matchups, Rosters
+// (with lineup editing), and League Activity for GridShift leagues, and moves
+// Sleeper League Activity onto the contract. Views not listed in `consumed`
+// keep their Sleeper data path and show an unavailable state for a GridShift
+// league.
 
 /** Provider ids. `sleeper` is the default and needs no configuration. */
 export const LEAGUE_PROVIDER_IDS = Object.freeze({
@@ -62,17 +64,21 @@ export const LEAGUE_PROVIDERS = Object.freeze({
       C.LEAGUE, C.TEAMS, C.ROSTERS, C.MATCHUPS, C.STANDINGS, C.PLAYERS, C.STATS, C.SCORING,
       C.TRANSACTIONS, C.ACTIVITY, C.HISTORY, C.BRACKETS, C.DRAFT_PICKS, C.PROJECTIONS, C.LIVE_SCORING,
     ]),
-    consumed: Object.freeze([C.STANDINGS]),
+    // Matchups and Rosters still read SleeperContext directly for a Sleeper
+    // league (same screens, Sleeper data path unchanged).
+    consumed: Object.freeze([C.STANDINGS, C.ACTIVITY]),
   }),
   [LEAGUE_PROVIDER_IDS.GRIDSHIFT]: Object.freeze({
     id: LEAGUE_PROVIDER_IDS.GRIDSHIFT,
     label: 'GridShift',
-    // The platform API serves all of these; phase 5.0 wires Standings only.
+    // The platform API serves all of these; core reads the `consumed` ones.
     capabilities: Object.freeze([
       C.LEAGUE, C.TEAMS, C.ROSTERS, C.MATCHUPS, C.STANDINGS, C.PLAYERS, C.STATS, C.SCORING,
       C.TRANSACTIONS, C.ACTIVITY, C.COMMISSIONER, C.DRAFT, C.LIVE_TRANSACTIONS, C.LINEUP_EDITING,
     ]),
-    consumed: Object.freeze([C.STANDINGS]),
+    consumed: Object.freeze([
+      C.LEAGUE, C.TEAMS, C.ROSTERS, C.MATCHUPS, C.STANDINGS, C.PLAYERS, C.ACTIVITY, C.LINEUP_EDITING,
+    ]),
   }),
 });
 
@@ -137,4 +143,46 @@ export function canUseLeagueCapability(providerId, capability) {
  * @property {object | null} brackets         `normalizeSeasonBrackets` shape; Sleeper only for now.
  * @property {object | null} finalPlacements  `buildFinalPlacements` shape; Sleeper only for now.
  * @property {StandingsPostseason | null} postseason
+  *
+ * @typedef {object} ActivityAsset
+ * @property {string} playerId      Provider-scoped player id.
+ * @property {string} playerName
+ * @property {string | null} position
+ * @property {string | null} nflTeam
+ * @property {{ teamName: string, avatarHash: string | null } | null} team
+ * @property {string} [sleeperId]   GridShift only: matched core catalog id ('' when unmatched).
+ * @property {string | null} [drillId] GridShift only: id for core's player page, or null.
+ *
+ * @typedef {object} ActivityEntry
+ * @property {string} id
+ * @property {string} season
+ * @property {'trade' | 'waiver' | 'free_agent' | 'commissioner' | 'draft' | 'adjustment' | 'settings' | 'league'} type
+ *   The first four are shared with Sleeper; the rest are GridShift-only events.
+ * @property {string} label
+ * @property {number} timestamp     Milliseconds.
+ * @property {number | null} week
+ * @property {Array<{ teamName: string }>} teams
+ * @property {ActivityAsset[]} adds
+ * @property {ActivityAsset[]} drops
+ * @property {object[]} draftPicks  Sleeper traded draft picks.
+ * @property {string[]} [tags]      GridShift: filter tags (`lineup`, `ir`, `lock`, `commissioner`, ...).
+ * @property {Array<{ label: string, before: string, after: string }>} [changes]  GridShift: before/after.
+ * @property {string | null} [description]
+ *
+ * @typedef {object} ActivityModel
+ * @property {LeagueProviderId} provider
+ * @property {'loading' | 'error' | 'signed-out' | 'empty' | 'unsupported' | 'ready'} status
+ * @property {string} season
+ * @property {string} error
+ * @property {() => void} retry
+ * @property {ActivityEntry[]} entries  Newest first.
+ * @property {Array<{ id: string, label: string }>} filters
+ * @property {boolean} hideCommissionerByDefault  Sleeper hides commissioner actions behind a toggle.
+ *
+ * @typedef {object} LineupView
+ *   GridShift `GET …/teams/:teamId/lineup?week=` as returned: `assignment`
+ *   (slot type → player ids or null), `lockedPlayerIds`, `irEligiblePlayerIds`,
+ *   `irEligibility` (player id → `{ eligible, reason, message }`), `rosterLock`
+ *   (`{ locked, reasons, allowLineupChanges }`). Core never decides legality:
+ *   every change is a `PUT` the platform validates.
  */

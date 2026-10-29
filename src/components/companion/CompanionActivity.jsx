@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLeagueSource } from '../../context/LeagueSourceContext.js';
 import { useFantasyStats } from '../../context/SleeperContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
+import { useGridShiftActivity } from '../../hooks/useGridShiftLeague.js';
 import useLeagueHistoryData from '../../hooks/useLeagueHistoryData.js';
 import {
   getCompanionInitials,
@@ -8,25 +10,30 @@ import {
   getNflTeamLogoUrl,
   getSleeperAvatarUrl,
 } from '../../utils/companionAssetVisuals.js';
-import { buildActivitySeasonGroups } from '../../utils/leagueHistory.js';
+import { matchesGridShiftActivityFilter } from '../../utils/gridshiftActivity.js';
+import { LEAGUE_PROVIDER_IDS } from '../../utils/leagueProviderContract.js';
+import { buildSleeperActivityModel } from '../../utils/sleeperLeagueAdapter.js';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme.js';
+import EmptyState from '../ui/EmptyState.jsx';
 import LeagueHistoryIcon from './LeagueHistoryIcon.jsx';
 import LeagueHistoryState from './LeagueHistoryState.jsx';
 
-const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'trade', label: 'Trades' },
-  { id: 'pick', label: 'Picks' },
-  { id: 'waiver', label: 'Waivers' },
-  { id: 'free_agent', label: 'Free agents' },
-];
-
+// One League Activity view for both providers (Stage 5.2): a Sleeper league's
+// entries come from the Sleeper adapter (unchanged output), a GridShift
+// league's from the platform activity feed (src/utils/gridshiftActivity.js),
+// which adds settings, adjustments, locks, IR moves, draft, and commissioner
+// changes with before/after.
 const TYPE_META = {
   trade: { label: 'Trade', tone: 'signature', icon: 'swap' },
   pick: { label: 'Draft capital', tone: 'orange', icon: 'diamond' },
   waiver: { label: 'Waiver', tone: 'blue', icon: 'plus' },
   free_agent: { label: 'Free agent', tone: 'green', icon: 'plus' },
   commissioner: { label: 'Commissioner', tone: 'neutral', icon: 'diamond' },
+  // GridShift-league events.
+  draft: { label: 'Draft', tone: 'orange', icon: 'diamond' },
+  adjustment: { label: 'Score', tone: 'blue', icon: 'target' },
+  settings: { label: 'Settings', tone: 'neutral', icon: 'diamond' },
+  league: { label: 'League', tone: 'neutral', icon: 'diamond' },
 };
 
 const MOVE_META = {
@@ -34,6 +41,7 @@ const MOVE_META = {
   drop: { label: 'Dropped by', tone: 'red', icon: 'minus' },
   trade: { label: 'Traded to', tone: 'signature', icon: 'swap' },
   pick: { label: 'Sent to', tone: 'orange', icon: 'diamond' },
+  draft: { label: 'Drafted by', tone: 'orange', icon: 'diamond' },
 };
 
 const COLLAPSE_THRESHOLD = 4;
@@ -50,6 +58,7 @@ function activityDisplayType(entry) {
 }
 
 function matchesFilter(entry, filter) {
+  if (Array.isArray(entry.tags)) return matchesGridShiftActivityFilter(entry, filter);
   if (filter === 'all') return true;
   if (filter === 'pick') return entry.draftPicks.length > 0;
   return entry.type === filter;
@@ -65,7 +74,7 @@ function buildActivityMoves(entry) {
     if (entry.type === 'trade') tradedPlayerIds.add(asset.playerId);
     moves.push({
       id: `${entry.id}:add:${asset.playerId}`,
-      kind: entry.type === 'trade' ? 'trade' : 'add',
+      kind: entry.type === 'trade' ? 'trade' : entry.type === 'draft' ? 'draft' : 'add',
       asset,
       sourceTeam: source?.team ?? null,
       team: asset.team,
@@ -107,17 +116,20 @@ function FantasyTeamAvatar({ team }) {
 }
 
 function ActivityPlayerVisual({ asset, darkMode, onViewPlayer }) {
+  // GridShift assets carry a matched core catalog id ('' when unmatched).
+  const sleeperId = asset.sleeperId ?? asset.playerId;
   const imageUrls = useMemo(() => getCompanionPlayerImageUrls({
-    id: asset.playerId,
-    sleeperId: asset.playerId,
+    id: sleeperId,
+    sleeperId,
     espnId: asset.espnId,
-  }), [asset.espnId, asset.playerId]);
+  }), [asset.espnId, sleeperId]);
   const [failedImageCount, setFailedImageCount] = useState(0);
   const [logoFailed, setLogoFailed] = useState(false);
   const imageUrl = imageUrls[failedImageCount] ?? null;
   const theme = getTeamVisualTheme(asset.nflTeam, darkMode, { logoSide: 'end' });
   const logoUrl = getNflTeamLogoUrl(theme.logoKey);
-  const isDrillable = Boolean(asset.playerId && typeof onViewPlayer === 'function');
+  const drillId = asset.drillId !== undefined ? asset.drillId : asset.playerId;
+  const isDrillable = Boolean(drillId && typeof onViewPlayer === 'function');
   const PlayerVisualTag = isDrillable ? 'button' : 'div';
 
   return (
@@ -131,7 +143,7 @@ function ActivityPlayerVisual({ asset, darkMode, onViewPlayer }) {
         '--activity-player-muted': theme.gradientMuted ?? 'var(--color-label-secondary)',
       }}
       aria-label={isDrillable ? `Open ${asset.playerName} statistics` : undefined}
-      onClick={isDrillable ? () => onViewPlayer(asset.playerId) : undefined}
+      onClick={isDrillable ? () => onViewPlayer(drillId) : undefined}
     >
       <span className="league-activity-player__overlay" aria-hidden="true" />
       <span className="league-activity-player__portrait" aria-hidden="true">
@@ -146,7 +158,7 @@ function ActivityPlayerVisual({ asset, darkMode, onViewPlayer }) {
         ) : getCompanionInitials(asset.playerName)}
       </span>
       <span className="league-activity-player__identity">
-        <strong>{asset.playerName}</strong>
+        <strong title={asset.playerName}>{asset.playerName}</strong>
         <small>{[asset.position, asset.nflTeam].filter(Boolean).join(' · ') || 'NFL player'}</small>
       </span>
       {(logoUrl || asset.nflTeam) && (
@@ -175,10 +187,10 @@ function ActivityTeamDestination({ move, meta }) {
       </span>
       <span className="league-activity-move__team">
         <FantasyTeamAvatar team={move.team} />
-        <strong>{move.team.teamName}</strong>
+        <strong title={move.team.teamName}>{move.team.teamName}</strong>
       </span>
       {move.kind === 'trade' && move.sourceTeam && (
-        <small>from {move.sourceTeam.teamName}</small>
+        <small title={move.sourceTeam.teamName}>from {move.sourceTeam.teamName}</small>
       )}
     </span>
   );
@@ -203,6 +215,25 @@ function ActivityMove({ move, darkMode, onViewPlayer }) {
       <ActivityPlayerVisual asset={move.asset} darkMode={darkMode} onViewPlayer={onViewPlayer} />
       <ActivityTeamDestination move={move} meta={meta} />
     </li>
+  );
+}
+
+// Before/after rows for GridShift-league events (settings, adjustments, locks,
+// IR moves, commissioner changes).
+function ActivityChanges({ changes }) {
+  return (
+    <ul className="league-activity-changes">
+      {changes.map((change, index) => (
+        <li key={`${change.label}:${index}`}>
+          <span className="league-activity-changes__label" title={change.label}>{change.label}</span>
+          <span className="league-activity-changes__values">
+            <span className="league-activity-changes__before" title={change.before}>{change.before}</span>
+            <span className="league-activity-changes__arrow" aria-label="changed to">→</span>
+            <strong className="league-activity-changes__after" title={change.after}>{change.after}</strong>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -248,41 +279,82 @@ function ActivityEntry({ entry, darkMode, onViewPlayer }) {
               </button>
             )}
           </>
-        ) : (
-          <p>{entry.teams.length ? entry.teams.map((team) => team.teamName).join(' · ') : 'League settings or roster state changed.'}</p>
+        ) : entry.changes?.length ? null : (
+          <p>{entry.description ?? (entry.teams.length ? entry.teams.map((team) => team.teamName).join(' · ') : 'League settings or roster state changed.')}</p>
         )}
+        {entry.changes?.length > 0 && <ActivityChanges changes={entry.changes} />}
+        {entry.changes?.length > 0 && (entry.description || entry.teams.length > 0) && (
+          <p>{entry.description ?? entry.teams.map((team) => team.teamName).join(' · ')}</p>
+        )}
+        {moves.length > 0 && entry.description && <p>{entry.description}</p>}
       </div>
     </article>
   );
 }
 
 export default function CompanionActivity({ onViewPlayer = null }) {
+  const { gridshiftLeague } = useLeagueSource();
+  return gridshiftLeague
+    ? <GridShiftActivity league={gridshiftLeague} onViewPlayer={onViewPlayer} />
+    : <SleeperActivity onViewPlayer={onViewPlayer} />;
+}
+
+function SleeperActivity({ onViewPlayer }) {
   const history = useLeagueHistoryData();
-  const { darkMode } = useTheme();
   const { players, loadPlayers } = useFantasyStats();
+  useEffect(() => { if (!players) void loadPlayers(); }, [loadPlayers, players]);
+  const model = useMemo(() => buildSleeperActivityModel(history, players), [history, players]);
+  const state = <LeagueHistoryState platform={history.platform} loading={history.loading} error={history.error} empty={model.entries.length === 0} noun="League activity" season={history.season} priorSeasonCount={Math.max(0, history.eligibleLeagueHistory.length - 1)} onRetry={history.retry} />;
+  return <ActivityView model={model} stateView={state} onViewPlayer={onViewPlayer} />;
+}
+
+function GridShiftActivity({ league, onViewPlayer }) {
+  // Core's NFL player catalog, only to match portraits and player pages.
+  const { players, loadPlayers } = useFantasyStats();
+  useEffect(() => { if (!players) void loadPlayers(); }, [loadPlayers, players]);
+  const model = useGridShiftActivity(league.leagueId, league.season, players);
+  return <ActivityView model={model} stateView={<GridShiftActivityState model={model} />} onViewPlayer={onViewPlayer} />;
+}
+
+function GridShiftActivityState({ model }) {
+  if (model.status === 'loading') return <EmptyState title="Loading league activity..." />;
+  if (model.status === 'signed-out') return <EmptyState title="Sign in to view this league." />;
+  if (model.status === 'error') {
+    return (
+      <EmptyState
+        title="League activity is unavailable right now."
+        hint={model.error}
+        action={<button type="button" className="league-history-state-action" onClick={model.retry}>Try again</button>}
+      />
+    );
+  }
+  return <EmptyState title={`No activity recorded for ${model.season || 'this league year'} yet.`} />;
+}
+
+function ActivityView({ model, stateView, onViewPlayer }) {
+  const { darkMode } = useTheme();
   const [filter, setFilter] = useState('all');
   const [showCommissioner, setShowCommissioner] = useState(false);
-  useEffect(() => { if (!players) void loadPlayers(); }, [loadPlayers, players]);
-  const groups = useMemo(() => buildActivitySeasonGroups(history.snapshots ?? [], players ?? {}), [history.snapshots, players]);
-  const selectedGroup = groups.find((group) => group.season === history.season) ?? null;
-  const entries = selectedGroup?.entries ?? [];
-  const commissionerCount = entries.filter((entry) => entry.type === 'commissioner').length;
+  const entries = model.entries;
+  const hidesCommissioner = model.hideCommissionerByDefault;
+  const commissionerCount = hidesCommissioner ? entries.filter((entry) => entry.type === 'commissioner').length : 0;
   const publicEntryCount = entries.length - commissionerCount;
   const visibleEntries = entries.filter((entry) => (
-    (entry.type !== 'commissioner' || showCommissioner)
+    (!hidesCommissioner || entry.type !== 'commissioner' || showCommissioner)
     && matchesFilter(entry, filter)
   ));
-  const state = <LeagueHistoryState platform={history.platform} loading={history.loading} error={history.error} empty={entries.length === 0} noun="League activity" season={history.season} priorSeasonCount={Math.max(0, history.eligibleLeagueHistory.length - 1)} onRetry={history.retry} />;
-  if (history.platform !== 'sleeper' || history.loading || history.error || entries.length === 0) {
-    return <div className="league-history-page league-history-page--state">{state}</div>;
+  if (model.status !== 'ready') {
+    return <div className="league-history-page league-history-page--state">{stateView}</div>;
   }
   return (
     <div className="league-history-page league-activity-page" data-tour="league-activity-content">
       <header className="league-history-heading">
-        <div><span className="league-history-eyebrow">League ledger</span><h1>Activity</h1><p><strong>{publicEntryCount} completed move{publicEntryCount === 1 ? '' : 's'}</strong> in the <strong>{history.season}</strong> league year — trades, waivers, signings, and draft capital changing hands.</p></div>
+        {model.provider === LEAGUE_PROVIDER_IDS.SLEEPER
+          ? <div><span className="league-history-eyebrow">League ledger</span><h1>Activity</h1><p><strong>{publicEntryCount} completed move{publicEntryCount === 1 ? '' : 's'}</strong> in the <strong>{model.season}</strong> league year — trades, waivers, signings, and draft capital changing hands.</p></div>
+          : <div><span className="league-history-eyebrow">League ledger</span><h1>Activity</h1><p><strong>{entries.length} event{entries.length === 1 ? '' : 's'}</strong> in the <strong>{model.season}</strong> season.</p></div>}
       </header>
       <div className="league-activity-filters" role="group" aria-label="Activity filters">
-        {FILTERS.map((item) => (
+        {model.filters.map((item) => (
           <button key={item.id} type="button" className={filter === item.id ? 'is-active' : ''} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}>{item.label}</button>
         ))}
         {commissionerCount > 0 && (

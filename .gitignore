@@ -54,6 +54,7 @@ tests/unit/*
 !tests/fixtures/
 tests/fixtures/*
 !tests/fixtures/tradeFixtures.js
+!tests/fixtures/gridshiftPlatformStage52.json
 !tests/drilldown/
 
 # Local docs drafts

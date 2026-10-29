@@ -328,6 +328,17 @@ function LeagueContextHeader({
   );
 }
 
+// Fantasy views a GridShift league cannot show yet (Stage 5.2): they render a
+// plain unavailable state until they move onto the provider contract (5.2b).
+const FANTASY_VIEW_TITLES = {
+  rankings: 'Rankings',
+  schedule: 'Schedule',
+  injuries: 'Injuries',
+  heatmap: 'Heatmap',
+  defenses: 'Defenses',
+  scoring: 'Scoring',
+};
+
 // GridShift league header (Stage 5.1 reference screen): league name, season,
 // and Switch on the flat primitives, in the League sub-nav on desktop only.
 function GridShiftLeagueHeader({ name, season, onSwitchLeague, className = '' }) {
@@ -524,9 +535,12 @@ function AppInner() {
     myRoster,
     currentFantasyWeek,
   } = useFantasyLeague();
-  // A selected GridShift league replaces the Sleeper league on the League tab
-  // only (Stage 5.0); every other tab keeps the Sleeper path unchanged.
+  // One active league (user decision 2026-10-28, Stage 5.2): a selected
+  // GridShift league replaces the Sleeper league on every tab. Views on the
+  // provider contract (Standings, Activity, Matchups, Rosters) show it; every
+  // other view shows a plain unavailable state, never Sleeper league data.
   const { gridshiftLeague } = useLeagueSource();
+  const sleeperLeagueActive = hasLeague && !gridshiftLeague;
   const rankingsFilterContextKey = hasLeague && selectedLeagueId && league && !seasonSwitching
     ? `${platform ?? ''}:${selectedLeagueId}:${season ?? ''}`
     : null;
@@ -545,8 +559,8 @@ function AppInner() {
   // Global search. The index is built lazily on first open and never triggers a
   // fetch of its own — see useGlobalSearch.
   const searchLeague = useMemo(
-    () => (hasLeague ? { rosters, leagueUsers, getUserDisplayName } : null),
-    [hasLeague, rosters, leagueUsers, getUserDisplayName],
+    () => (sleeperLeagueActive ? { rosters, leagueUsers, getUserDisplayName } : null),
+    [sleeperLeagueActive, rosters, leagueUsers, getUserDisplayName],
   );
   const {
     open: searchOpen,
@@ -562,7 +576,7 @@ function AppInner() {
   // With no league this is an empty map, and the palette then says nothing about
   // ownership rather than calling everyone a free agent.
   const searchFantasyOwnership = useMemo(() => (
-    hasLeague
+    sleeperLeagueActive
       ? buildFantasyOwnership({
         rosters,
         leagueUsers,
@@ -570,7 +584,7 @@ function AppInner() {
         myRosterId: myRoster()?.roster_id ?? null,
       })
       : null
-  ), [getUserDisplayName, hasLeague, leagueUsers, myRoster, rosters]);
+  ), [getUserDisplayName, sleeperLeagueActive, leagueUsers, myRoster, rosters]);
 
   const currentLeagueSeason = [...linkedLeagueSeasonOptions]
     .map((value) => String(value))
@@ -582,7 +596,7 @@ function AppInner() {
   const tradeDisabledTitle = tradeSeasonUnavailable
     ? `Trade is only available for the current ${currentLeagueSeason} league season.`
     : undefined;
-  const tradeProposalActions = useTradeProposals({ enabled: !tradeDisabled });
+  const tradeProposalActions = useTradeProposals({ enabled: !tradeDisabled && !gridshiftLeague });
 
   const {
     getPredictionCount,
@@ -804,7 +818,8 @@ function AppInner() {
     ? draftStatusOverrideId
     : String(activeDraftNoticeDraft.draft_id);
   const showDraftActivityNotice = Boolean(
-    DRAFT_ACTIVITY_NOTICE_TABS.has(activeTab)
+    !gridshiftLeague
+    && DRAFT_ACTIVITY_NOTICE_TABS.has(activeTab)
     && activeTab !== 'draft'
     && shouldShowSleeperDraftGlobalNotice({
       draft: activeDraftNoticeDraft,
@@ -2144,7 +2159,7 @@ function AppInner() {
           onToggleDarkMode={toggleDarkMode}
           onMenuOpen={() => setActionSheetOpen(true)}
           onSearchOpen={openSearch}
-          seasonSelector={hasLeague && (activeTab === 'fantasy' || (activeTab === 'league' && !gridshiftLeague) || activeTab === 'trade' || activeTab === 'draft') ? (
+          seasonSelector={sleeperLeagueActive && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? (
             <SeasonChip
               season={season}
               seasons={linkedLeagueSeasonOptions}
@@ -2202,13 +2217,22 @@ function AppInner() {
         )}
 
         {/* Fantasy sub-navigation */}
-        {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
+        {activeTab === 'fantasy' && (hasLeague || gridshiftLeague || liveSandboxRoute) && (
           <div className="season-subnav league-subnav">
             <div className="companion-subnav-row">
               <div className="min-w-0 flex-1">
                 <CompanionSubNav activeView={companionView} onViewChange={navigateCompanionView} />
               </div>
               {/* Desktop: shares the row with the tabs, aligned with tab text */}
+              {gridshiftLeague ? (
+                <div className="hidden lg:flex items-center shrink-0 pb-[7px]">
+                  <GridShiftLeagueHeader
+                    name={gridshiftLeague.name}
+                    season={gridshiftLeague.season}
+                    onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                  />
+                </div>
+              ) : (
               <div className="hidden lg:flex items-center shrink-0 pb-[9px]">
                 <LeagueContextHeader
                   league={league}
@@ -2220,6 +2244,7 @@ function AppInner() {
                   className="flex items-center gap-2"
                 />
               </div>
+              )}
             </div>
           </div>
         )}
@@ -2254,7 +2279,7 @@ function AppInner() {
           </div>
         )}
 
-        {activeTab === 'trade' && hasLeague && !tradeNavDisabled && (
+        {activeTab === 'trade' && sleeperLeagueActive && !tradeNavDisabled && (
           <div className="season-subnav league-subnav">
             <TradeSubNav activeView={tradeView} onViewChange={navigateTradeView} onViewIntent={prewarmTradeView} unreadCount={tradeProposalActions.unreadCount} />
             {/* Desktop: bottom-right of subnav bar, aligned with tab text */}
@@ -2278,7 +2303,7 @@ function AppInner() {
           </div>
         )}
 
-        {activeTab === 'draft' && hasLeague && (
+        {activeTab === 'draft' && sleeperLeagueActive && (
           <div className="season-subnav league-subnav">
             <DraftSubNav
               activeView={draftView}
@@ -2309,7 +2334,7 @@ function AppInner() {
         )}
 
         {/* Scoring override banner — frozen above scroll area */}
-        {activeTab === 'fantasy' && hasLeague && companionView !== 'scoring' && (
+        {activeTab === 'fantasy' && sleeperLeagueActive && companionView !== 'scoring' && (
           <ScoringOverrideBanner preserveContentScrollDuringUpdate={preserveContentScrollDuringUpdate} />
         )}
 
@@ -2517,25 +2542,31 @@ function AppInner() {
             </Suspense>
           )}
 
-          {(activeTab === 'fantasy' || (activeTab === 'league' && !gridshiftLeague)) && !hasLeague && !liveSandboxRoute && (
+          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && !gridshiftLeague && !liveSandboxRoute && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect onGridShiftLeagueSelected={() => navigateLeagueView('standings')} />
             </Suspense>
           )}
 
-          {activeTab === 'trade' && !hasLeague && !tradeShareToken && (
+          {activeTab === 'trade' && !hasLeague && !gridshiftLeague && !tradeShareToken && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect />
             </Suspense>
           )}
 
-          {activeTab === 'draft' && !hasLeague && (
+          {activeTab === 'draft' && !hasLeague && !gridshiftLeague && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
               <CompanionConnect />
             </Suspense>
           )}
 
-          {activeTab === 'trade' && !tradeNavDisabled && tradeSeasonUnavailable && (
+          {(activeTab === 'trade' || activeTab === 'draft') && gridshiftLeague && (
+            <div className="league-history-page league-history-page--state">
+              <EmptyState title={`${activeTab === 'trade' ? 'Trade' : 'Draft'} is not available for this league yet.`} />
+            </div>
+          )}
+
+          {activeTab === 'trade' && !gridshiftLeague && !tradeNavDisabled && tradeSeasonUnavailable && (
             <SeasonHintBanner
               capability="current-only"
               feature="Trade"
@@ -2544,7 +2575,7 @@ function AppInner() {
             />
           )}
 
-          {activeTab === 'trade' && !tradeNavDisabled && !tradeSeasonUnavailable && tradeShareToken && (
+          {activeTab === 'trade' && !gridshiftLeague && !tradeNavDisabled && !tradeSeasonUnavailable && tradeShareToken && (
             <Suspense fallback={<SectionLoading label="Loading shared trade" />}>
               <TradeShareLanding
                 shareToken={tradeShareToken}
@@ -2561,7 +2592,7 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'trade' && hasLeague && !tradeNavDisabled && !tradeSeasonUnavailable && !tradeShareToken && (
+          {activeTab === 'trade' && sleeperLeagueActive && !tradeNavDisabled && !tradeSeasonUnavailable && !tradeShareToken && (
             <Suspense fallback={<SectionLoading label="Loading Trade" />}>
               {tradeView === 'inbox' ? (
                 <TradeInbox
@@ -2622,7 +2653,13 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
+          {activeTab === 'fantasy' && gridshiftLeague && !['rosters', 'matchups'].includes(companionView) && (
+            <div className="league-history-page league-history-page--state">
+              <EmptyState title={`${FANTASY_VIEW_TITLES[companionView] ?? 'This view'} is not available for this league yet.`} />
+            </div>
+          )}
+
+          {activeTab === 'fantasy' && (hasLeague || gridshiftLeague || liveSandboxRoute) && (
             <>
               {companionView === 'rosters' && (
                 <Suspense fallback={<SectionLoading label="Loading Rosters" />}>
@@ -2653,7 +2690,7 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'rankings'  && (
+              {!gridshiftLeague && companionView === 'rankings'  && (
                 <Suspense fallback={<SectionLoading label="Loading Rankings" />}>
                   <CompanionRankings
                     positionFilter={rankingsPosition}
@@ -2713,7 +2750,7 @@ function AppInner() {
                   </Suspense>
                 </div>
               )}
-              {companionView === 'schedule' && (
+              {!gridshiftLeague && companionView === 'schedule' && (
                 <Suspense fallback={<SectionLoading label="Loading Schedule" />}>
                   <CompanionSchedule
                     key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`}
@@ -2741,7 +2778,7 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'injuries' && (
+              {!gridshiftLeague && companionView === 'injuries' && (
                 <Suspense fallback={<SectionLoading label="Loading Injuries" />}>
                   <CompanionInjuries
                     key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`}
@@ -2753,7 +2790,7 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'heatmap'   && (
+              {!gridshiftLeague && companionView === 'heatmap'   && (
                 <Suspense fallback={<SectionLoading label="Loading Heatmap" />}>
                   <CompanionHeatmap
                     routeState={heatmapRouteState}
@@ -2768,7 +2805,7 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'defenses'   && (
+              {!gridshiftLeague && companionView === 'defenses'   && (
                 <Suspense fallback={<SectionLoading label="Loading Defense" />}>
                   <CompanionDefense
                     routeState={defenseRouteState}
@@ -2799,7 +2836,7 @@ function AppInner() {
                   />
                 </Suspense>
               )}
-              {companionView === 'scoring'   && (
+              {!gridshiftLeague && companionView === 'scoring'   && (
                 <Suspense fallback={<SectionLoading label="Loading Scoring" />}>
                   <CompanionScoring />
                 </Suspense>
@@ -2812,9 +2849,17 @@ function AppInner() {
               <Suspense fallback={<SectionLoading label="Loading Standings" />}>
                 <CompanionStandings />
               </Suspense>
+            ) : leagueView === 'activity' ? (
+              <Suspense fallback={<SectionLoading label="Loading League Activity" />}>
+                <CompanionActivity
+                  onViewPlayer={(sleeperId) => {
+                    void navigateToCompanionSleeperPlayer(sleeperId, 'League Activity');
+                  }}
+                />
+              </Suspense>
             ) : (
               <div className="league-history-page league-history-page--state">
-                <EmptyState title={`${leagueView === 'history' ? 'History' : 'Activity'} is not available for this league yet.`} />
+                <EmptyState title="History is not available for this league yet." />
               </div>
             )
           )}
@@ -2845,7 +2890,7 @@ function AppInner() {
             </>
           )}
 
-          {activeTab === 'draft' && hasLeague && (
+          {activeTab === 'draft' && sleeperLeagueActive && (
             draftLeagueSelectionReady ? (
               <Suspense fallback={<SectionLoading label="Loading Draft" />}>
                 <DraftAssistant
@@ -2924,9 +2969,11 @@ function AppInner() {
           onInstall={isInstallable && !isInstalled ? handleInstall : null}
           onMyTeam={handleMyTeam}
           favoriteTeam={favoriteTeam}
-          league={hasLeague && (activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft') ? league : null}
-          leagueSeason={season}
-          leagueSeasonOptions={linkedLeagueSeasonOptions}
+          league={(activeTab === 'fantasy' || activeTab === 'league' || activeTab === 'trade' || activeTab === 'draft')
+            ? (gridshiftLeague ? { name: gridshiftLeague.name, season: gridshiftLeague.season } : hasLeague ? league : null)
+            : null}
+          leagueSeason={gridshiftLeague ? gridshiftLeague.season : season}
+          leagueSeasonOptions={gridshiftLeague ? [] : linkedLeagueSeasonOptions}
           leagueSeasonSwitching={seasonSwitching}
           onLeagueSeasonChange={changeSeason}
           onSwitchLeague={() => {

@@ -84,6 +84,18 @@ import { FantasyBaseOverride } from '../../context/SleeperContext';
 import { LIVE_SANDBOX_ENABLED, LiveSandboxPanel, useLiveSandbox } from '../../dev/liveSandbox';
 import { mergeSeasonScheduleResultsIntoMap } from '../../utils/seasonScheduleResults.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
+import { useLeagueSource } from '../../context/LeagueSourceContext.js';
+import {
+  useGridShiftLeagueBase,
+  useGridShiftMatchupData,
+  useGridShiftMatchupLineups,
+  useGridShiftWeekPoints,
+} from '../../hooks/useGridShiftLeague.js';
+import {
+  buildGridShiftMatchupRows,
+  buildGridShiftWeekMatchups,
+  buildGridShiftWeekOptions,
+} from '../../utils/gridshiftLeagueAdapter.js';
 
 const TOTAL_WEEKS = 18;
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
@@ -297,6 +309,16 @@ function getMatchupForecastSourceLabel(winProbability) {
 // one so the live layer is testable outside game windows. Production renders
 // the view directly (the sandbox is compiled out).
 export default function CompanionMatchup(props) {
+  // One Matchups screen for both providers (Stage 5.2). A GridShift league
+  // renders the same masthead, week and matchup pickers, and head-to-head rows
+  // from the platform's matchups, lineups, and points; the Sleeper view below
+  // keeps its own data path unchanged.
+  const { gridshiftLeague } = useLeagueSource();
+  if (gridshiftLeague) return <GridShiftMatchupView key={gridshiftLeague.leagueId} league={gridshiftLeague} {...props} />;
+  return <SleeperCompanionMatchup {...props} />;
+}
+
+function SleeperCompanionMatchup(props) {
   const sandbox = useLiveSandbox();
   const connected = useSleeperBase();
   // The sandbox league has one replayable week. Any other week the route names
@@ -2836,6 +2858,195 @@ function CompanionMatchupView({
   );
 }
 
+// ── GridShift league (Stage 5.2) ─────────────────────────────────────────────
+
+const GRIDSHIFT_SCORE_LABELS = {
+  final: 'Final score',
+  provisional: 'Live score',
+  scheduled: 'Score pending',
+};
+
+function GridShiftMatchupView({ league, selectedWeek = null, onWeekChange = null, onViewPlayer }) {
+  const { darkMode } = useTheme();
+  const { players: catalog, loadPlayers } = useSleeperBase();
+  useEffect(() => { if (!catalog) void loadPlayers?.(); }, [catalog, loadPlayers]);
+  const base = useGridShiftLeagueBase(league.leagueId, catalog);
+  const results = useGridShiftMatchupData(league.leagueId);
+  const weekInfo = useMemo(() => buildGridShiftWeekOptions(base.data?.weeks), [base.data?.weeks]);
+  const requested = Number(selectedWeek);
+  const week = weekInfo.options.some((option) => option.week === requested) ? requested : weekInfo.currentWeek;
+  const weekStatus = weekInfo.options.find((option) => option.week === week)?.status ?? null;
+  const matchups = useMemo(() => (base.data && results.data ? buildGridShiftWeekMatchups({
+    teams: base.data.teams, matchups: results.data.matchups, standings: results.data.standings, viewer: base.viewer, week,
+  }) : []), [base.data, base.viewer, results.data, week]);
+  const [pickedMatchupId, setPickedMatchupId] = useState(null);
+  const matchup = matchups.find((entry) => entry.id === pickedMatchupId) ?? matchups[0] ?? null;
+  const teamIds = useMemo(() => [matchup?.mine?.teamId, matchup?.opponent?.teamId].filter(Boolean), [matchup?.mine?.teamId, matchup?.opponent?.teamId]);
+  const lineups = useGridShiftMatchupLineups(league.leagueId, week, teamIds);
+  const points = useGridShiftWeekPoints(league.leagueId, week);
+  const [showWeekPicker, setShowWeekPicker] = useState(false);
+  const [showMatchupPicker, setShowMatchupPicker] = useState(false);
+  const [isMineHovered, setIsMineHovered] = useState(false);
+  const [isOppHovered, setIsOppHovered] = useState(false);
+  const mineGlow = useCardGlow({ enabled: isMineHovered, color: '#5AADFF', darkMode, coreColor: darkMode ? '#FFFFFF' : null, outerColor: '#5AADFF' });
+  const oppGlow = useCardGlow({ enabled: isOppHovered, color: '#5AADFF', darkMode, coreColor: darkMode ? '#FFFFFF' : null, outerColor: '#5AADFF' });
+  const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const rows = useMemo(() => (matchup && lineups.data ? buildGridShiftMatchupRows({
+    mineLineup: lineups.data[matchup.mine?.teamId] ?? null,
+    opponentLineup: lineups.data[matchup.opponent?.teamId] ?? null,
+    points: points.data,
+    players: base.players,
+    weekStatus,
+  }) : []).map((row) => ({
+    ...row,
+    mine: row.mine ? { ...row.mine, teamTheme: getPlayerRowTeamTheme(row.mine.team, darkMode) } : null,
+    opponent: row.opponent ? { ...row.opponent, teamTheme: getPlayerRowTeamTheme(row.opponent.team, darkMode) } : null,
+  })), [base.players, darkMode, lineups.data, matchup, points.data, weekStatus]);
+  const nameFontSize = useMemo(() => getUnifiedPlayerNameFontSize(rows.flatMap((row) => [row.mine?.name, row.opponent?.name]).filter(Boolean), isCompactPhone), [isCompactPhone, rows]);
+
+  const failed = [base, results].find((query) => query.status === 'error' || query.status === 'signed-out');
+  if (failed) {
+    return (
+      <div className="page-frame-workbench pb-6">
+        <EmptyState title={failed.status === 'signed-out' ? 'Sign in to view this league.' : 'Matchups are unavailable right now.'} description={failed.status === 'signed-out' ? null : failed.error} />
+        {failed.status === 'error' && <div className="flex justify-center"><button type="button" className="league-history-state-action" onClick={failed.retry}>Try again</button></div>}
+      </div>
+    );
+  }
+  if (base.status !== 'ready' || results.status !== 'ready') {
+    return <div className="page-frame-workbench pb-6"><MatchupSkeleton controls={null} /></div>;
+  }
+  if (!week || !matchup) {
+    return <div className="page-frame-workbench pb-6"><EmptyState title={week ? `No matchups scheduled for Week ${week}.` : 'No matchups are scheduled for this league yet.'} /></div>;
+  }
+
+  const championship = matchup.kind === 'championship';
+  const scoreLabel = GRIDSHIFT_SCORE_LABELS[matchup.status] ?? 'Score pending';
+  const formatTotal = (side) => (side?.total == null ? '—' : side.total.toFixed(2));
+  const summary = (side) => (side?.record ? {
+    record: `${side.record.wins}-${side.record.losses}${side.record.ties ? `-${side.record.ties}` : ''}`,
+    pointsFor: side.record.pointsFor.toFixed(1),
+    pointsAgainst: side.record.pointsAgainst.toFixed(1),
+  } : null);
+  const adjustments = [matchup.mine, matchup.opponent].filter((side) => side && side.adjustments);
+  const matchupGroups = matchups.map((entry) => ({
+    key: entry.id,
+    includesUser: Boolean(entry.mine?.isViewer || entry.opponent?.isViewer),
+    sides: [entry.mine, entry.opponent].filter(Boolean).map((side) => ({ name: side.name, isUser: side.isViewer, roster: null })),
+  }));
+  const openPlayer = (player) => {
+    if (!player?.sleeperId || !onViewPlayer) return null;
+    return () => onViewPlayer(player.sleeperId, { sleeperId: player.sleeperId, name: player.name, position: player.position, team: player.team });
+  };
+  const championshipWeek = Number(weekInfo.championshipWeek) || null;
+
+  return (
+    <div className="page-frame-workbench pb-6">
+      <div className="mb-4">
+        <div className="companion-matchup-controls companion-matchup-controls__row mx-2 sm:mx-4 mb-3">
+          <CompanionSelectorButton onClick={() => setShowWeekPicker(true)} size="sm" aria-label={`Choose matchup week. Week ${week} selected.`} aria-haspopup="dialog" aria-expanded={showWeekPicker} className="companion-matchup-week-trigger">
+            Week {week}
+          </CompanionSelectorButton>
+          {matchups.length > 1 && (
+            <CompanionSelectorButton onClick={() => setShowMatchupPicker(true)} size="sm" aria-label="Select matchup" aria-haspopup="dialog" aria-expanded={showMatchupPicker} className="companion-matchup-picker-trigger">
+              Select Matchup
+            </CompanionSelectorButton>
+          )}
+        </div>
+        <MatchupMasthead
+          key={`${league.leagueId}:${week}:${matchup.id}`}
+          myName={matchup.mine?.name ?? 'Team'}
+          opponentName={matchup.opponent?.name ?? 'To be decided'}
+          mySeedLabel={championship ? 'Championship' : null}
+          opponentSeedLabel={null}
+          myInitials={buildTeamInitials(matchup.mine?.name ?? '')}
+          opponentInitials={buildTeamInitials(matchup.opponent?.name ?? '')}
+          myAvatarUrl={null}
+          opponentAvatarUrl={null}
+          myTeamSummary={summary(matchup.mine)}
+          opponentTeamSummary={summary(matchup.opponent)}
+          showTeamSummary={Boolean(summary(matchup.mine) && summary(matchup.opponent))}
+          myPalette={null}
+          opponentPalette={null}
+          myScore={formatTotal(matchup.mine)}
+          opponentScore={formatTotal(matchup.opponent)}
+          myScoreLabel={scoreLabel}
+          opponentScoreLabel={scoreLabel}
+          myProjectedFinal={null}
+          opponentProjectedFinal={null}
+          leftIsUser={Boolean(matchup.mine?.isViewer)}
+          rightIsUser={Boolean(matchup.opponent?.isViewer)}
+          matchupOutcome={{ mine: 'pending', opp: 'pending' }}
+          myForecast={null}
+          oppForecast={null}
+          winProbability={null}
+          loading={false}
+          onOpenPreview={undefined}
+          onOpenMine={undefined}
+          onOpenOpponent={undefined}
+          myHeaderGlow={mineGlow}
+          opponentHeaderGlow={oppGlow}
+          isMineHeaderHovered={isMineHovered}
+          isOpponentHeaderHovered={isOppHovered}
+          setIsMineHeaderHovered={setIsMineHovered}
+          setIsOpponentHeaderHovered={setIsOppHovered}
+          showProbabilityBar={false}
+        />
+        {adjustments.length > 0 && (
+          <p className="gs-note gs-text-secondary mx-2 sm:mx-4 companion-matchup-adjustment-note">
+            {adjustments.map((side) => `${side.name}: ${side.adjustments > 0 ? '+' : ''}${side.adjustments.toFixed(2)} commissioner adjustment`).join(' · ')}
+          </p>
+        )}
+      </div>
+      {lineups.status === 'ready' ? (
+        <RevealList resetKey={`${league.leagueId}:${week}:${matchup.id}`}>
+          {rows.map((row) => (
+            <HeadToHeadRow
+              key={row.key}
+              mine={row.mine}
+              opp={row.opponent}
+              bench={row.bench}
+              slotPos={row.slotLabel}
+              sharedPlayerNameFontSize={nameFontSize}
+              onSelectMine={openPlayer(row.mine)}
+              onSelectOpp={openPlayer(row.opponent)}
+            />
+          ))}
+        </RevealList>
+      ) : lineups.status === 'error' || lineups.status === 'signed-out' ? (
+        <EmptyState title="Lineups are unavailable right now." description={lineups.error} />
+      ) : (
+        <div className="flex flex-col gap-1 sm:gap-2">{Array.from({ length: 9 }, (_, i) => <MatchupSkeletonRow key={i} />)}</div>
+      )}
+      <MatchupWeekPickerModal
+        open={showWeekPicker}
+        onClose={() => setShowWeekPicker(false)}
+        weekOptions={weekInfo.options.map((option) => option.week)}
+        week={week}
+        byeWeeks={null}
+        playoffStart={championshipWeek ?? Infinity}
+        totalWeeks={weekInfo.options[weekInfo.options.length - 1]?.week ?? 0}
+        onSelect={(nextWeek) => {
+          setPickedMatchupId(null);
+          onWeekChange?.(nextWeek);
+          setShowWeekPicker(false);
+        }}
+      />
+      <MatchupPickerModal
+        open={showMatchupPicker}
+        onClose={() => setShowMatchupPicker(false)}
+        matchupGroups={matchupGroups}
+        selectedMatchupIndex={Math.max(0, matchups.findIndex((entry) => entry.id === matchup.id))}
+        userById={new Map()}
+        onSelect={(index) => {
+          setPickedMatchupId(matchups[index]?.id ?? null);
+          setShowMatchupPicker(false);
+        }}
+      />
+    </div>
+  );
+}
+
 function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
   const numericPoints = Number(points);
   const hasPoints = Number.isFinite(numericPoints);
@@ -3068,7 +3279,7 @@ function MatchupMasthead({
           {seedLabel && <span>{seedLabel}</span>}
         </span>
       )}
-      <span className="companion-matchup-masthead__team-name">{name}</span>
+      <span className="companion-matchup-masthead__team-name" title={name}>{name}</span>
       <span className="companion-matchup-masthead__score-label">{scoreLabel}</span>
       <strong className="companion-matchup-masthead__score tabular-nums">{score}</strong>
       {projectedFinal != null && (
@@ -3643,7 +3854,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
       separateAction={Boolean(onOpenInjuries && player.availabilityStatus && player.id != null)}
       name={player.name}
-      title=""
+      title={player.name}
       style={{
         borderRadius: 0,
         borderLeftWidth: isRight ? 1 : 4,

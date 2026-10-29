@@ -333,7 +333,8 @@ test('GridShift Standings states are provider-neutral', () => {
 test('capabilities report what each provider supplies and what core reads', () => {
   assert.equal(canUseLeagueCapability('sleeper', LEAGUE_CAPABILITIES.STANDINGS), true);
   assert.equal(canUseLeagueCapability('gridshift', LEAGUE_CAPABILITIES.STANDINGS), true);
-  assert.equal(canUseLeagueCapability('gridshift', LEAGUE_CAPABILITIES.MATCHUPS), false);
+  // Stage 5.2 put Matchups on the contract; History is still not served.
+  assert.equal(canUseLeagueCapability('gridshift', LEAGUE_CAPABILITIES.HISTORY), false);
   assert.equal(getLeagueProvider('sleeper').capabilities.includes(LEAGUE_CAPABILITIES.COMMISSIONER), false);
   assert.equal(getLeagueProvider('gridshift').capabilities.includes(LEAGUE_CAPABILITIES.COMMISSIONER), true);
   assert.equal(getLeagueProvider('gridshift').capabilities.includes(LEAGUE_CAPABILITIES.HISTORY), false);
