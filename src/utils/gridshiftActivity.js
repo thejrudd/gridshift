@@ -1,18 +1,21 @@
 // GridShift-league League Activity (Stage 5.2): maps the platform's activity
 // feed (`GET /api/leagues/:id/activity`) into the entry shape League Activity
 // renders for Sleeper (`normalizeActivityTransaction` in leagueHistory.js),
-// plus the platform-only events: settings, score adjustments, locks, IR moves,
-// draft, and commissioner changes, with before/after where the platform
-// records it.
+// plus the platform-only events: settings (including roster-lock and freeze
+// changes), score adjustments, draft, and commissioner roster changes, with
+// before/after where the platform records it.
 //
 // Only platform data goes in (team and player names come from the platform);
 // the optional catalog index links a player to core's own player page.
 //
-// Not shown: trade proposals, declines, and cancellations (negotiation, not a
-// completed move), and waiver-claim failures and run summaries (claims are
-// private until awarded; Plan: "private pending claims ... must not appear").
+// Not shown: lineup changes, including commissioner-set lineups and IR-slot
+// moves (user decision 2026-10-29: Activity is for roster adds, drops, and
+// changes, not for moving players in and out of slots); trade proposals,
+// declines, and cancellations (negotiation, not a completed move); and
+// waiver-claim failures and run summaries (claims are private until awarded;
+// Plan: "private pending claims ... must not appear").
 
-import { getLineupSlotLabel, LINEUP_SLOT_ORDER } from './gridshiftLineup.js';
+import { getLineupSlotLabel } from './gridshiftLineup.js';
 import { matchCatalogPlayerId } from './gridshiftLeagueAdapter.js';
 
 export const GRIDSHIFT_ACTIVITY_FILTERS = Object.freeze([
@@ -21,13 +24,13 @@ export const GRIDSHIFT_ACTIVITY_FILTERS = Object.freeze([
   { id: 'waiver', label: 'Waivers' },
   { id: 'free_agent', label: 'Free agents' },
   { id: 'draft', label: 'Draft' },
-  { id: 'lineup', label: 'Lineups & IR' },
   { id: 'adjustment', label: 'Scores' },
   { id: 'settings', label: 'Settings' },
   { id: 'commissioner', label: 'Commissioner' },
 ]);
 
 const SKIPPED_KINDS = new Set([
+  'lineup.set_by_commissioner',
   'trade.proposed', 'trade.declined', 'trade.cancelled',
   'waiver.claim_failed', 'waivers.processed',
 ]);
@@ -122,31 +125,6 @@ function formatPickClock(seconds) {
   if (value >= 3600 && value % 3600 === 0) return `${value / 3600} h`;
   if (value >= 60 && value % 60 === 0) return `${value / 60} min`;
   return `${value} s`;
-}
-
-function slotOf(assignment, playerId) {
-  for (const type of LINEUP_SLOT_ORDER) {
-    if ((assignment?.[type] ?? []).includes(playerId)) return type;
-  }
-  return null;
-}
-
-/** Players whose slot changed in a commissioner's lineup edit. */
-export function diffGridShiftLineup(before, after, nameOf) {
-  const ids = new Set();
-  for (const assignment of [before, after]) {
-    for (const entries of Object.values(assignment ?? {})) for (const id of entries ?? []) if (id) ids.add(id);
-  }
-  const changes = [];
-  let ir = false;
-  for (const id of ids) {
-    const from = slotOf(before, id);
-    const to = slotOf(after, id);
-    if (from === to) continue;
-    if (from === 'IR' || to === 'IR') ir = true;
-    changes.push({ label: nameOf(id), before: from ? getLineupSlotLabel(from) : 'Not in lineup', after: to ? getLineupSlotLabel(to) : 'Not in lineup' });
-  }
-  return { changes, ir };
 }
 
 /**
@@ -334,15 +312,6 @@ export function buildGridShiftActivityEntries({ activity, teams, players = new M
           description: payload.after?.state === 'waivers' ? 'Placed on waivers' : 'Now a free agent',
         }));
         break;
-      case 'lineup.set_by_commissioner': {
-        const { changes, ir } = diffGridShiftLineup(payload.before, payload.after, nameOfPlayer);
-        entries.push(base(row, 'commissioner', ir ? 'IR move by the commissioner' : 'Lineup set by the commissioner', {
-          teams: [teamRef(payload.teamId)].filter(Boolean),
-          tags: ['commissioner', 'lineup', ...(ir ? ['ir'] : [])],
-          changes,
-        }));
-        break;
-      }
       case 'score.adjusted': {
         const points = finite(payload.points, 0);
         const team = teamName.get(String(payload.teamId)) ?? 'Team';
@@ -487,7 +456,6 @@ export function buildGridShiftActivityEntries({ activity, teams, players = new M
 /** Whether an entry belongs under a GridShift activity filter. */
 export function matchesGridShiftActivityFilter(entry, filter) {
   if (filter === 'all') return true;
-  if (filter === 'lineup') return entry.tags.includes('lineup') || entry.tags.includes('ir') || entry.tags.includes('lock');
   if (filter === 'settings') return entry.tags.includes('settings');
   return entry.tags.includes(filter) || entry.type === filter;
 }

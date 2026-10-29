@@ -21,7 +21,6 @@ import {
 } from '../../src/utils/gridshiftLeagueAdapter.js';
 import {
   buildGridShiftActivityEntries,
-  diffGridShiftLineup,
   diffGridShiftSettings,
   matchesGridShiftActivityFilter,
 } from '../../src/utils/gridshiftActivity.js';
@@ -366,7 +365,7 @@ test('matchup rows pair slots with week points; a player no longer rostered keep
 const ENTRIES = buildGridShiftActivityEntries({ activity: P.activity, teams: P.teams, players: PLAYERS, season: '2026' });
 const entry = (label) => ENTRIES.find((item) => item.label === label);
 
-test('activity covers trades, waivers, free agents, draft, settings, adjustments, locks, IR moves, and commissioner changes', () => {
+test('activity covers trades, waivers, free agents, draft, settings, adjustments, lock changes, and commissioner changes', () => {
   const trade = entry('Trade completed');
   assert.equal(trade.type, 'trade');
   assert.deepEqual(trade.adds.map((asset) => [asset.playerName, asset.team.teamName]).sort(), [
@@ -382,9 +381,9 @@ test('activity covers trades, waivers, free agents, draft, settings, adjustments
   assert.equal(draft.adds.length, 44);
   assert.equal(draft.adds[0].playerName, 'Patrick Mahomes');
   assert.equal(entry('Draft set up').description, 'Snake order · 11 rounds · 1 h per pick');
-  const ir = entry('IR move by the commissioner');
-  assert.deepEqual(ir.changes, [{ label: 'Christian McCaffrey', before: 'RB', after: 'IR' }]);
-  assert.ok(ir.tags.includes('ir') && ir.tags.includes('commissioner'));
+  // Lineup and IR-slot moves are not activity (user decision, 2026-10-29), even when a commissioner sets them.
+  assert.ok(P.activity.activity.some((row) => row.kind === 'lineup.set_by_commissioner'));
+  assert.equal(ENTRIES.some((item) => /lineup|IR move/i.test(item.label)), false);
   const adjustment = entry('Score adjusted');
   assert.deepEqual(adjustment.changes, [{ label: 'Supercalifragilisticexpialidocious Blitz total', before: '113.46', after: '117.96' }]);
   assert.equal(adjustment.description, '+4.50 points · Stat correction: missed sack credit');
@@ -409,11 +408,12 @@ test('activity filters use the GridShift tags', () => {
   assert.equal(count('trade'), 1);
   assert.equal(count('waiver'), 1);
   assert.equal(count('free_agent'), 2);
-  assert.equal(count('lineup'), 5, 'the IR move, two roster-lock changes, the freeze change, and the IR-rule change');
+  assert.equal(count('settings'), 4, 'four league settings changes, two of them roster-lock changes');
+  assert.equal(ENTRIES.filter((item) => item.tags.includes('lock')).length, 3, 'two roster-lock changes and the freeze change');
   assert.ok(count('commissioner') >= 8);
 });
 
-test('settings and lineup diffs read before/after as the platform recorded them', () => {
+test('settings diffs read before/after as the platform recorded them', () => {
   const diff = diffGridShiftSettings(
     { settings: { injury: { ineligiblePolicy: 'lock_roster_moves' }, roster: { slots: { FLEX: 1 } } } },
     { settings: { injury: { ineligiblePolicy: 'warn_only' }, roster: { slots: { FLEX: 2 } } } },
@@ -424,7 +424,6 @@ test('settings and lineup diffs read before/after as the platform recorded them'
   ]);
   assert.equal(diff.ir, true);
   assert.equal(diff.lock, false);
-  assert.deepEqual(diffGridShiftLineup({ IR: ['a'], RB: [null] }, { IR: [null], RB: ['a'] }, () => 'A').changes, [{ label: 'A', before: 'IR', after: 'RB' }]);
 });
 
 // ── The same screens on a GridShift league (no Sleeper data) ────────────────
@@ -443,11 +442,12 @@ function gridshiftHooks({ editor = {} } = {}) {
 }
 const SLEEPER_ONLY_TEXT = ['Alpha Dogs', 'Beta Blitz', 'Quinn Passer', 'Rex Runner', 'Sleeper'];
 
-test('League Activity renders a GridShift league with before/after rows and no Sleeper data', () => {
+test('League Activity renders a GridShift league with before/after rows and no lineup moves or Sleeper data', () => {
   const html = h.render(h.CompanionActivity, {}, { base: sleeperBase(), history: ACTIVITY_HISTORIES.ready, source: SOURCE, gridshift: gridshiftHooks() });
-  assert.match(html, /<strong>25 events<\/strong> in the <strong>2026<\/strong> season\./);
-  assert.match(html, /IR move by the commissioner/);
-  assert.match(html, /league-activity-changes__before" title="RB">RB<\/span>.*league-activity-changes__after" title="IR">IR<\/strong>/s);
+  assert.match(html, /<strong>24 events<\/strong> in the <strong>2026<\/strong> season\./);
+  assert.equal(html.includes('IR move'), false);
+  assert.match(html, /Roster lock changed/);
+  assert.match(html, /league-activity-changes__before" title="Blocked">Blocked<\/span>.*league-activity-changes__after" title="Allowed">Allowed<\/strong>/s);
   assert.match(html, /Drafted by/);
   assert.match(html, /<strong title="Supercalifragilisticexpialidocious Blitz">Supercalifragilisticexpialidocious Blitz<\/strong>/);
   assert.equal(html.includes('Commissioner · '), false, 'commissioner changes are shown, not hidden behind a toggle');

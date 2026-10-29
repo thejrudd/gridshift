@@ -165,7 +165,7 @@ export function canUseLeagueCapability(providerId, capability) {
  * @property {ActivityAsset[]} adds
  * @property {ActivityAsset[]} drops
  * @property {object[]} draftPicks  Sleeper traded draft picks.
- * @property {string[]} [tags]      GridShift: filter tags (`lineup`, `ir`, `lock`, `commissioner`, ...).
+ * @property {string[]} [tags]      GridShift: filter tags (`lock`, `ir` for IR-rule settings, `commissioner`, ...).
  * @property {Array<{ label: string, before: string, after: string }>} [changes]  GridShift: before/after.
  * @property {string | null} [description]
  *

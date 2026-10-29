@@ -21,8 +21,9 @@ import LeagueHistoryState from './LeagueHistoryState.jsx';
 // One League Activity view for both providers (Stage 5.2): a Sleeper league's
 // entries come from the Sleeper adapter (unchanged output), a GridShift
 // league's from the platform activity feed (src/utils/gridshiftActivity.js),
-// which adds settings, adjustments, locks, IR moves, draft, and commissioner
-// changes with before/after.
+// which adds settings (roster lock and freeze included), adjustments, draft,
+// and commissioner roster changes with before/after. Lineup and IR-slot moves
+// are not activity (user decision, 2026-10-29).
 const TYPE_META = {
   trade: { label: 'Trade', tone: 'signature', icon: 'swap' },
   pick: { label: 'Draft capital', tone: 'orange', icon: 'diamond' },

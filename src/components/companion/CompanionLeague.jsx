@@ -34,6 +34,7 @@ import { getDraftSlotForRoster } from '../../utils/draftPickDisplay.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
   CompanionPlayerMetric,
+  CompanionPlayerStatus,
 } from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import UiEmptyState from '../ui/EmptyState';
@@ -732,11 +733,25 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           status={null}
           columns={[
             isCompactPhone && (
-              <div key="status" className="flex items-center justify-center">
+              <div key="status" className="flex flex-col items-center justify-center gap-1">
                 <PlayerStatusBadge status={player.availabilityStatus} compact />
+                {/* GridShift rows only: a roster note such as "Left roster" as a compact badge. */}
+                {player.rosterBadge && (
+                  <CompanionPlayerStatus label={player.rosterBadge.short} title={player.rosterBadge.label} className="companion-roster-note-badge is-compact" />
+                )}
               </div>
             ),
-            !isCompactPhone && (
+            !isCompactPhone && (player.rosterBadge ? (
+              <div key="status" className="flex items-center gap-1.5 justify-start self-center min-w-0">
+                <PlayerStatusLogoCluster
+                  logoKey={player.teamTheme.logoKey}
+                  status={player.availabilityStatus}
+                  detail={player.availabilityDetail}
+                  className="justify-start self-center"
+                />
+                <CompanionPlayerStatus label={player.rosterBadge.label} title={player.rosterBadge.label} className="companion-roster-note-badge" />
+              </div>
+            ) : (
               <PlayerStatusLogoCluster
                 key="status"
                 logoKey={player.teamTheme.logoKey}
@@ -744,7 +759,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
                 detail={player.availabilityDetail}
                 className="justify-start self-center"
               />
-            ),
+            )),
             !isCompactPhone && <div key="spacer" />,
             <CompanionPlayerMetric
               key="rank"
@@ -975,8 +990,10 @@ function GridShiftLineup({ leagueId, teamId, week, players, canEdit, isCompactPh
         rank: player.positionRank ? { posLabel: player.position, rank: player.positionRank } : null,
         isReserve: false,
         isKeeper: false,
+        // Traded or dropped after this week's lineup was saved: a badge in the
+        // status column, so the position and team keep their meta line.
+        rosterBadge: row.leftRoster ? { label: 'Left roster', short: 'Left' } : null,
         extraMeta: [
-          row.leftRoster ? 'Left roster' : null,
           // Editable rows show the lock on their action; read-only rows say it here.
           row.locked && !canEdit && !isCompactPhone ? 'Locked' : null,
           row.slot.type === 'IR' ? (row.irEligible ? 'IR eligible' : 'Not IR eligible') : null,

@@ -30510,6 +30510,8 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 .companion-lineup-action.is-locked { opacity: 0.6; }
 .companion-roster-player-row.is-move-source { outline: 2px solid var(--color-signature); outline-offset: -2px; }
 .companion-roster-player-row.is-move-dimmed { opacity: 0.55; }
+.companion-roster-note-badge { white-space: nowrap; }
+.companion-roster-note-badge.is-compact { min-width: 0; padding: 1px 2px; font-size: 8px; letter-spacing: 0; line-height: 1.1; }
 .companion-lineup-empty-slot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 14px; border: 1px dashed var(--color-divider-strong); background: transparent; }
 .companion-lineup-empty-slot.is-target { border-style: solid; border-color: var(--color-signature); }
 .companion-lineup-empty-slot .gs-text-meta { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

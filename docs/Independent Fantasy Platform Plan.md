@@ -31,7 +31,7 @@ Keep agreed requirements, proposed defaults, open decisions, and implemented beh
 | Trading | Propose, counter, decline, cancel, accept, and execute player trades with ownership/eligibility/capacity revalidation and atomic transfers |
 | Competition | Weekly lineup snapshots; schedule/matchups; scoring; provisional/final results; correction handling; standings and a defined test-season endpoint |
 | Communication | Persistent league chat and member-to-member DMs; unread indicators; optional notifications and preferences; participant-only DM access |
-| Activity | Extend the existing League Activity feed with committed GridShift events, commissioner changes, score adjustments, and IR movements |
+| Activity | Extend the existing League Activity feed with committed GridShift events, commissioner changes, score adjustments, and IR movements (refined 2026-10-29: Activity covers roster adds, drops, and changes; lineup and IR-slot moves are not shown) |
 | Test operations | Inspect actions; reset/clone isolated test state; backups and tested restoration; deterministic deadline/claim/correction scenarios |
 
 League waiver priority and a manager's ordered claims are separate concepts. Roster composition defines slots; position limits constrain ownership. Lineup locks and transaction locks must be separately understandable. Exact scoring/slot counts, processing times, and competition rules remain open below.
@@ -161,9 +161,9 @@ Phase 5.2 (shared league screens) in core, on branch `stage5-2-shared-league-scr
 
 - Matchups, Rosters (lineup by slot with the platform's locks and IR reasons, and lineup editing), and League Activity show a GridShift league through the [[League Provider Contract]]; each is the same screen component for Sleeper and GridShift leagues, and the Sleeper rendering is unchanged (text pinned to main). Standings was done in 5.0/5.1.
 - Lineup edits apply in real time with no Save button (user decision, 2026-10-29): Move, then a destination; the change shows at once, is saved through the platform's server rules, and rolls back with the platform's reason shown if refused.
-- League Activity adds GridShift rows for settings, score adjustments, locks, IR moves, draft, free agents, waivers, trades, and commissioner changes, with before/after where the platform records it.
+- League Activity adds GridShift rows for free agents, waivers, trades, draft, settings (roster lock and freeze included), score adjustments, and commissioner roster changes, with before/after where the platform records it. Lineup and IR-slot moves are not activity (user decision, 2026-10-29).
 - One active league: with a GridShift league selected, every tab follows it and views not yet on the contract show a plain centered unavailable state.
-- Platform gaps found (manager lineup and IR changes and kickoff locks record no activity; a started week's saved lineup is not reconciled after mid-week roster changes; no projections or live layer) are listed in the contract doc.
+- Platform gaps found (a started week's saved lineup is not reconciled after mid-week roster changes; the platform will auto-fit it on save, per the user's 2026-10-29 decision; no projections or live layer) are listed in the contract doc.
 
 Decisions on the 5.1 reference screens (user, 2026-10-29):
 
@@ -231,4 +231,5 @@ Resolve decisions when their implementation stage approaches; do not require eve
 - 2026-10-29: Stage 5.1 design foundation implemented on two reference screens (Standings with the GridShift league header; Rosters); in progress until the user approves the look.
 - 2026-10-29: User decided GridShift lineup changes apply in real time without a Save button, with the fewest taps; core mirrors it with optimistic updates and rollback on a platform refusal.
 - 2026-10-29: Stage 5.2 shared league screens implemented in core (Matchups, Rosters with lineup editing, League Activity; one active league across tabs).
+- 2026-10-29: User decided on the Stage 5.2 report: (1) phone Matchups names stay one line with an ellipsis and the full name in the title; (2) League Activity is for roster adds, drops, and changes, not for moving players in and out of slots, so lineup changes, including commissioner-set lineups and IR-slot moves, are not shown, and their missing activity records are not a platform gap; (3) the platform will auto-fit a started week's lineup on save (departed players removed, newly added players benched), and core keeps its mid-week handling meanwhile; (4) Sleeper Matchups and Rosters keep their own data path until 5.2b.
 - 2026-10-29: User reviewed the 5.1 reference screens: approved once team and player names stay on one line with an ellipsis (done); GridShift league header desktop-only; Rosters position colour bars restored; flat Sleeper Standings and the 32 to 44px page title confirmed; moving the League and Fantasy tab bars to `.gs-tab` approved for the rollout.

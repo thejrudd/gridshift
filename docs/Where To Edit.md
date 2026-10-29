@@ -277,7 +277,7 @@ Read first: [[League Provider Contract]] (contract shapes, capabilities, the per
 | `src/hooks/useGridShiftStandings.js` | GridShift Standings loading |
 | `src/hooks/useGridShiftLeague.js` | GridShift Rosters, lineup editing (optimistic save with rollback), Matchups, and Activity loading |
 | `src/utils/gridshiftLineup.js` | GridShift lineup arrangement: slot order, offered moves, optimistic move, refusal text |
-| `src/utils/gridshiftActivity.js` | GridShift activity feed to League Activity entries (settings, adjustments, locks, IR moves, draft, commissioner changes with before/after) |
+| `src/utils/gridshiftActivity.js` | GridShift activity feed to League Activity entries (free agents, waivers, trades, draft, settings including roster lock and freeze, adjustments, commissioner roster changes with before/after; no lineup or IR-slot moves) |
 | `src/App.jsx` | One-active-league gates: GridShift league shows Standings, Activity, Matchups, Rosters; every other view a plain unavailable state |
 | `src/components/companion/GridShiftLeagueAccess.jsx` | GridShift sign-in and league list inside `CompanionConnect` |
 | `vite.config.js`, `scripts/dev-platform.mjs` | Dev proxy and the core-plus-local-platform launcher (`npm run dev:platform`) |
