@@ -41,7 +41,7 @@ function StandingRows({ rows, historical, playoffTeamCount }) {
         return (
           <tr key={row.participantId} className={inPlayoffs ? 'is-playoff-team' : ''}>
             <td className="is-center"><span className={`league-seed${inPlayoffs ? ' is-playoff-seed' : ''}`}>{row.seed}</span></td>
-            <td className="is-start"><strong className="gs-text-row-title">{row.teamName}</strong><small className="gs-text-secondary">{row.managerName}{inPlayoffs ? ' · Playoffs' : ''}</small></td>
+            <td className="is-start league-standing-team"><strong className="gs-text-row-title" title={row.teamName}>{row.teamName}</strong><small className="gs-text-secondary" title={row.managerName}>{row.managerName}{inPlayoffs ? ' · Playoffs' : ''}</small></td>
             <td className="is-center league-standing-record"><b>{row.wins}</b><span>-</span><em>{row.losses}</em>{row.ties > 0 && <><span>-</span><i>{row.ties}</i></>}</td>
             <td className="is-center is-desktop-only"><span className="league-standing-form" aria-label={`Recent form: ${row.recentForm.join(', ') || 'none'}`}>{row.recentForm.map((result, index) => <i key={`${result}-${index}`} className={`is-${result.toLowerCase()}`} title={result === 'W' ? 'Win' : result === 'L' ? 'Loss' : 'Tie'} />)}</span></td>
             <td>{formatScore(row.pointsFor)}</td>
@@ -60,7 +60,7 @@ function FinalPlacementRows({ rows }) {
         <div className="league-final-placement" key={row.participantId}>
           <span className="league-final-placement__rank">{ordinal(row.placement)}</span>
           <span className="league-final-placement__team">
-            <strong>{row.teamName}</strong>
+            <strong title={row.teamName}>{row.teamName}</strong>
             <small>{row.managerName}</small>
           </span>
         </div>
@@ -138,7 +138,7 @@ function BracketMatch({ matchup, title, final = false, minor = false, winnerLabe
       <article className="league-bracket-matchup is-bye">
         <div className="league-bracket-matchup__bye-row">
           <span className="league-bracket-matchup__seed">{matchup.team1Seed ?? '—'}</span>
-          <span className="league-bracket-matchup__team"><strong>{matchup.team1?.teamName ?? 'TBD'}</strong><small>{matchup.team1?.managerName ?? 'Awaiting result'}</small></span>
+          <span className="league-bracket-matchup__team"><strong title={matchup.team1?.teamName ?? undefined}>{matchup.team1?.teamName ?? 'TBD'}</strong><small>{matchup.team1?.managerName ?? 'Awaiting result'}</small></span>
           <span className="league-bracket-matchup__bye">BYE</span>
         </div>
       </article>
@@ -153,7 +153,7 @@ function BracketMatch({ matchup, title, final = false, minor = false, winnerLabe
           {toiletBowl
             ? <span className="league-toilet-bowl-glyph" aria-hidden="true">🚽</span>
             : <LeagueHistoryIcon name="trophy" tone="signature" variant="medallion" />}
-          <span><small>{winnerLabel}</small><strong>{outcome.teamName}</strong></span>
+          <span><small>{winnerLabel}</small><strong title={outcome.teamName}>{outcome.teamName}</strong></span>
         </div>
       )}
       {title && <span className="league-bracket-matchup__cap">{title}</span>}
@@ -162,7 +162,7 @@ function BracketMatch({ matchup, title, final = false, minor = false, winnerLabe
         return (
           <div key={side.team?.id ?? index} className={winner ? 'is-winner' : ''}>
             <span className="league-bracket-matchup__seed">{side.seed ?? '—'}</span>
-            <span className="league-bracket-matchup__team"><strong>{side.team?.teamName ?? 'TBD'}</strong><small>{side.team?.managerName ?? 'Awaiting result'}</small></span>
+            <span className="league-bracket-matchup__team"><strong title={side.team?.teamName ?? undefined}>{side.team?.teamName ?? 'TBD'}</strong><small>{side.team?.managerName ?? 'Awaiting result'}</small></span>
             <span className="league-bracket-matchup__score">{formatScore(side.score)}</span>
           </div>
         );

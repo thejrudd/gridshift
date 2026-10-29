@@ -73,12 +73,13 @@ const SLEEPER_HISTORIES = {
 
 // SHA-256 of CompanionStandings' markup for each fixture. loading, error,
 // empty, and espn are the markup of main at 9c8b5bd (before the provider
-// contract). current and completed were re-pinned in Stage 5.1, when
+// contract). current and completed were re-pinned in Stage 5.1 (and after the
+// user's review, for one-line team names with titles), when
 // Standings became a design reference screen (flat primitives); their text
 // content is still pinned to 9c8b5bd by SLEEPER_TEXT_GOLDEN below.
 const SLEEPER_GOLDEN = {
-  current: '57378efab0a3ac873f6c527329d4268d24ab08a268a61effa7a1456303d23714',
-  completed: 'e8e928b6e0f1c691900f3d78ec076d4a6de3c554e6ad668a4faba191b78b6c3a',
+  current: '76f5881bb70721137c6953733c4016d1c15a34fce5d2d9b91f4b705aef1534cd',
+  completed: '150960ac9b52eb85fd9ff8de5054b4737fd4fd2c63295770d748c07866da2ef3',
   loading: '56804c25b2b66db34232f581d28e255078f9f5bc626a9a40f6a5f96f7b8cf395',
   error: '3e325414ea40a46c84555ae21c65467d23895ff7e75cbee614c8100816bdcc04',
   empty: '23b37b1406bf3b3931ca486d697ffc16456f827fd781f8d83fd45d448bdaf100',
@@ -309,6 +310,8 @@ test('the same Standings component renders a GridShift league with no Sleeper da
   assert.match(html, /<h1[^>]*>2026 Standings<\/h1>/);
   assert.match(html, /Results through completed <strong>Week 7<\/strong>/);
   assert.match(html, /<strong[^>]*>Drew Brees Knees<\/strong><small[^>]*>drew<\/small>/);
+  // One-line team names (ellipsis in CSS) keep the full name in a title.
+  assert.match(html, /<strong class="gs-text-row-title" title="Drew Brees Knees">/);
   assert.match(html, /Championship <strong>Week 8<\/strong> — the top two teams meet\./);
   assert.ok(html.indexOf('Drew Brees Knees') < html.indexOf('Gridiron Gamblers'));
   // Nothing from the connected Sleeper league leaks in.

@@ -151,6 +151,7 @@ Declared in `:root` in `src/index.css`. Each role aliases a base token, so `.dar
 | `--color-text-disabled` | `--color-label-tertiary` | Disabled controls only |
 | `--color-surface-page` | `--color-bg` | Sections, tables, rows |
 | `--color-surface-object` | `--color-bg-secondary` | Dialogs, sheets, draggable items only |
+| `--color-position-bar-fg` | `--color-signature-fg` | Text on the full-width position colour bars (fixed bright `POSITION_COLORS`, same in both modes) |
 | `--color-divider` / `--color-divider-strong` | `--color-separator` / `--color-separator-opaque` | Row lines / section heading rule |
 | `--color-state-hover` / `--color-state-active` | `--color-fill-secondary` / `--color-fill` | Hover and pressed backgrounds |
 | `--color-state-selected` | `--color-signature` | Selected-tab underline, selected-row rail (decorative) |

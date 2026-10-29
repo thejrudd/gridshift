@@ -166,6 +166,8 @@
   --color-surface-object: var(--color-bg-secondary);
   --color-divider: var(--color-separator);
   --color-divider-strong: var(--color-separator-opaque);
+  /* Text on the fixed, bright position colours (POSITION_COLORS), both modes. */
+  --color-position-bar-fg: var(--color-signature-fg);
 
   /* Interaction states, shared by every interactive element. */
   --color-state-hover: var(--color-fill-secondary);
@@ -30375,6 +30377,24 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 .league-standings-table td:first-child { width: 56px; }
 .league-standings-table td strong,
 .league-standings-table td small { display: block; }
+/* Team and manager names stay on one line with an ellipsis. A fixed table
+   layout gives the metric columns set widths and the team column the rest,
+   so text-overflow can work. The full name is in the title attribute. */
+.league-standings-table { table-layout: fixed; }
+.league-standings-table th:not(:first-child):not(.is-start) { width: 104px; }
+.league-standings-table td.league-standing-team strong,
+.league-standings-table td.league-standing-team small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.league-standings-page .league-bracket-matchup__team strong,
+.league-standings-page .league-champion-banner strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.league-standings-page .league-champion-banner > span { min-width: 0; }
 .league-standings-table td small { margin-top: 2px; }
 .league-standings-table tr.is-playoff-team small { color: var(--color-text-secondary); }
 .league-standings-page .league-seed { width: 28px; height: 28px; border-radius: 50%; background: var(--color-fill); box-shadow: none; font-size: var(--type-body); }
@@ -30404,6 +30424,7 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   .league-standings-table td { padding-right: 8px; padding-left: 8px; }
   .league-standings-table th:first-child,
   .league-standings-table td:first-child { width: 44px; padding-left: 0; }
+  .league-standings-table th:not(:first-child):not(.is-start) { width: 76px; }
 }
 
 /* League header (GridShift league, Stage 5.1 reference screen) */
@@ -30415,28 +30436,25 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 }
 .gs-league-header__name { min-width: 0; font-size: var(--text-secondary-size); font-weight: 650; color: var(--color-text-primary); }
 .gs-league-header__season { color: var(--color-text-secondary); }
-.gs-league-header--page .gs-league-header__season { margin-right: auto; }
-.gs-league-header--page {
-  justify-content: space-between;
-  padding: 0 var(--league-history-page-gutter, 16px) 12px;
-  border-bottom: 1px solid var(--color-divider);
-}
-@media (min-width: 1024px) {
-  .gs-league-header--page .gs-league-header__season { margin-right: auto; }
-.gs-league-header--page { display: none; }
-}
 
 /* Fantasy Rosters on the flat primitives (Stage 5.1 reference screen).
    Player rows stay on the Companion shared row system; only the position
-   headings, column header, and interaction states change here. */
+   bars, column header, name overflow, and interaction states change here. */
 .companion-roster-column-header { margin-bottom: 4px; border-bottom: 1px solid var(--color-divider); }
-.companion-roster-position-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0 8px;
+.companion-roster-position-bar {
+  padding: 8px 16px;
+  color: var(--color-position-bar-fg);
 }
-.companion-roster-position-heading.is-following { margin-top: 20px; }
+.companion-roster-position-bar .gs-text-meta { margin: 0; color: inherit; letter-spacing: 0.16em; }
+.companion-roster-position-bar.is-following { margin-top: 16px; }
+/* Player names stay on one line; the row's title and accessible name carry
+   the full name. */
+.companion-roster-player-row .companion-player-row__identity-label {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .companion-roster-player-row { transition: transform var(--state-transition); }
 .companion-roster-player-row:active { transform: scale(0.995); }
 .companion-roster-player-row:focus-visible { outline-offset: var(--focus-ring-offset); }

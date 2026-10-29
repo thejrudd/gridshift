@@ -329,8 +329,7 @@ function LeagueContextHeader({
 }
 
 // GridShift league header (Stage 5.1 reference screen): league name, season,
-// and Switch on the flat primitives. Desktop sits in the League sub-nav;
-// phones show it at the top of the League page.
+// and Switch on the flat primitives, in the League sub-nav on desktop only.
 function GridShiftLeagueHeader({ name, season, onSwitchLeague, className = '' }) {
   return (
     <div className={`gs-league-header ${className}`.trim()} data-testid="gridshift-league-header">
@@ -2808,14 +2807,6 @@ function AppInner() {
             </>
           )}
 
-          {activeTab === 'league' && gridshiftLeague && (
-            <GridShiftLeagueHeader
-              name={gridshiftLeague.name}
-              season={gridshiftLeague.season}
-              onSwitchLeague={() => setLeagueSwitcherOpen(true)}
-              className="gs-league-header--page"
-            />
-          )}
           {activeTab === 'league' && gridshiftLeague && (
             leagueView === 'standings' ? (
               <Suspense fallback={<SectionLoading label="Loading Standings" />}>

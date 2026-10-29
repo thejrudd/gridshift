@@ -116,8 +116,10 @@ function getLeagueLayout(isCompactPhone, bodyColPx) {
       nameCol: 'minmax(0,1fr)',
       // avatar | name | metric block | chevron. The status badge lives inside the
       // metric block so it never shifts the season value out of its column.
+      // Names stay on one line (ellipsis), so the metric block is kept as
+      // narrow as its values allow to leave the name the most room.
       rowTemplate: '38px minmax(0,1fr) auto 10px',
-      metricTemplate: '26px 48px 80px',
+      metricTemplate: '24px 44px 64px',
       metricGap: 8,
       sidePadding: 8,
       tradeWidth: 30,
@@ -628,14 +630,10 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
           return [
             <div
               key={`${pos}-heading`}
-              className={`companion-roster-position-heading mx-2 sm:mx-4${groupIndex > 0 ? ' is-following' : ''}`}
+              className={`companion-roster-position-bar mx-2 sm:mx-4${groupIndex > 0 ? ' is-following' : ''}`}
+              style={{ background: POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)' }}
             >
-              <span
-                className="gs-section__marker"
-                style={{ '--gs-section-marker': POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)' }}
-                aria-hidden="true"
-              />
-              <h2 className="gs-text-section">{pos}</h2>
+              <h2 className="gs-text-meta">{pos}</h2>
             </div>,
             ...grouped[pos].map(player => (
               <LeagueResponsivePlayerRow
