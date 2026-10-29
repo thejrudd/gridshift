@@ -125,3 +125,7 @@ For compact phones, it is fine to hide lower-priority logos or columns, but do n
 - Player status badges can sit on any part of a gradient; they must use local contrast.
 - Matchup score values and labels should use shared metric colors together, not separate hardcoded colors.
 - Shared row CSS lives in `src/index.css`; do not add per-screen duplicate row systems unless the surface is intentionally not a selector/player row.
+
+## Stage 5.1 reference screen: Fantasy › Rosters
+
+Rosters is one of the two design-foundation reference screens ([[Design System Quick Ref]] › Design Foundation), approved by the user on 2026-10-29. The player rows are unchanged `CompanionPlayerRow`s. Around them: each position group keeps its full-width position colour bar, with the label in meta text coloured `--color-position-bar-fg`; the column header uses meta text; Players / Draft Picks is a secondary `Tabs` rail instead of a segmented control; the row and its Trade action carry `.gs-focusable` for a visible keyboard focus ring and a pressed state. Player names stay on one line with an ellipsis (`.companion-roster-player-row .companion-player-row__identity-label`); the full name stays in the row's `title` and its accessible name ("Open …"). On phones the metric block is narrowed (`24px 44px 64px`) to give names more room. The team selector rail and team menu are unchanged (they already keep team names on one line).

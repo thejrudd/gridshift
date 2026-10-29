@@ -6,7 +6,9 @@ import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
 import { getLeagueProvider } from '../../utils/leagueProviderContract.js';
 import { buildSleeperStandingsModel } from '../../utils/sleeperLeagueAdapter.js';
 import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
+import DataTable from '../ui/DataTable.jsx';
 import EmptyState from '../ui/EmptyState.jsx';
+import Section, { PageHeader, SectionHeader } from '../ui/Section.jsx';
 import LeagueHistoryIcon from './LeagueHistoryIcon.jsx';
 import LeagueHistoryState from './LeagueHistoryState.jsx';
 
@@ -27,37 +29,27 @@ function ordinal(value) {
 }
 
 function SectionHeading({ title, meta, icon, id }) {
-  return (
-    <div className="league-history-section__heading">
-      <span className="league-history-section__title">
-        {icon && <LeagueHistoryIcon name={icon} size="sm" />}
-        <h2 id={id}>{title}</h2>
-      </span>
-      {meta && <span>{meta}</span>}
-    </div>
-  );
+  return <SectionHeader id={id} title={title} meta={meta} icon={icon && <LeagueHistoryIcon name={icon} size="sm" />} />;
 }
 
 function StandingRows({ rows, historical, playoffTeamCount }) {
   return (
-    <div className="league-standings-table-scroll">
-      <table className="league-standings-table">
-        <thead><tr><th>Seed</th><th>Team</th><th>Record</th><th className="is-desktop-only">Last 5</th><th>PF</th><th className="is-desktop-only">PA</th></tr></thead>
-        <tbody>{rows.map((row) => {
-          const inPlayoffs = historical && playoffTeamCount > 0 && row.seed <= playoffTeamCount;
-          return (
-            <tr key={row.participantId} className={inPlayoffs ? 'is-playoff-team' : ''}>
-              <td><span className={`league-seed${inPlayoffs ? ' is-playoff-seed' : ''}`}>{row.seed}</span></td>
-              <td><strong>{row.teamName}</strong><small>{row.managerName}{inPlayoffs ? ' · Playoffs' : ''}</small></td>
-              <td className="league-standing-record"><b>{row.wins}</b><span>-</span><em>{row.losses}</em>{row.ties > 0 && <><span>-</span><i>{row.ties}</i></>}</td>
-              <td className="is-desktop-only"><span className="league-standing-form" aria-label={`Recent form: ${row.recentForm.join(', ') || 'none'}`}>{row.recentForm.map((result, index) => <i key={`${result}-${index}`} className={`is-${result.toLowerCase()}`} title={result === 'W' ? 'Win' : result === 'L' ? 'Loss' : 'Tie'} />)}</span></td>
-              <td>{formatScore(row.pointsFor)}</td>
-              <td className="is-desktop-only">{formatScore(row.pointsAgainst)}</td>
-            </tr>
-          );
-        })}</tbody>
-      </table>
-    </div>
+    <DataTable className="league-standings-table" scrollClassName="league-standings-table-scroll">
+      <thead><tr><th className="is-center">Seed</th><th className="is-start">Team</th><th className="is-center">Record</th><th className="is-center is-desktop-only">Last 5</th><th>PF</th><th className="is-desktop-only">PA</th></tr></thead>
+      <tbody>{rows.map((row) => {
+        const inPlayoffs = historical && playoffTeamCount > 0 && row.seed <= playoffTeamCount;
+        return (
+          <tr key={row.participantId} className={inPlayoffs ? 'is-playoff-team' : ''}>
+            <td className="is-center"><span className={`league-seed${inPlayoffs ? ' is-playoff-seed' : ''}`}>{row.seed}</span></td>
+            <td className="is-start league-standing-team"><strong className="gs-text-row-title" title={row.teamName}>{row.teamName}</strong><small className="gs-text-secondary" title={row.managerName}>{row.managerName}{inPlayoffs ? ' · Playoffs' : ''}</small></td>
+            <td className="is-center league-standing-record"><b>{row.wins}</b><span>-</span><em>{row.losses}</em>{row.ties > 0 && <><span>-</span><i>{row.ties}</i></>}</td>
+            <td className="is-center is-desktop-only"><span className="league-standing-form" aria-label={`Recent form: ${row.recentForm.join(', ') || 'none'}`}>{row.recentForm.map((result, index) => <i key={`${result}-${index}`} className={`is-${result.toLowerCase()}`} title={result === 'W' ? 'Win' : result === 'L' ? 'Loss' : 'Tie'} />)}</span></td>
+            <td>{formatScore(row.pointsFor)}</td>
+            <td className="is-desktop-only">{formatScore(row.pointsAgainst)}</td>
+          </tr>
+        );
+      })}</tbody>
+    </DataTable>
   );
 }
 
@@ -68,7 +60,7 @@ function FinalPlacementRows({ rows }) {
         <div className="league-final-placement" key={row.participantId}>
           <span className="league-final-placement__rank">{ordinal(row.placement)}</span>
           <span className="league-final-placement__team">
-            <strong>{row.teamName}</strong>
+            <strong title={row.teamName}>{row.teamName}</strong>
             <small>{row.managerName}</small>
           </span>
         </div>
@@ -146,7 +138,7 @@ function BracketMatch({ matchup, title, final = false, minor = false, winnerLabe
       <article className="league-bracket-matchup is-bye">
         <div className="league-bracket-matchup__bye-row">
           <span className="league-bracket-matchup__seed">{matchup.team1Seed ?? '—'}</span>
-          <span className="league-bracket-matchup__team"><strong>{matchup.team1?.teamName ?? 'TBD'}</strong><small>{matchup.team1?.managerName ?? 'Awaiting result'}</small></span>
+          <span className="league-bracket-matchup__team"><strong title={matchup.team1?.teamName ?? undefined}>{matchup.team1?.teamName ?? 'TBD'}</strong><small>{matchup.team1?.managerName ?? 'Awaiting result'}</small></span>
           <span className="league-bracket-matchup__bye">BYE</span>
         </div>
       </article>
@@ -161,7 +153,7 @@ function BracketMatch({ matchup, title, final = false, minor = false, winnerLabe
           {toiletBowl
             ? <span className="league-toilet-bowl-glyph" aria-hidden="true">🚽</span>
             : <LeagueHistoryIcon name="trophy" tone="signature" variant="medallion" />}
-          <span><small>{winnerLabel}</small><strong>{outcome.teamName}</strong></span>
+          <span><small>{winnerLabel}</small><strong title={outcome.teamName}>{outcome.teamName}</strong></span>
         </div>
       )}
       {title && <span className="league-bracket-matchup__cap">{title}</span>}
@@ -170,7 +162,7 @@ function BracketMatch({ matchup, title, final = false, minor = false, winnerLabe
         return (
           <div key={side.team?.id ?? index} className={winner ? 'is-winner' : ''}>
             <span className="league-bracket-matchup__seed">{side.seed ?? '—'}</span>
-            <span className="league-bracket-matchup__team"><strong>{side.team?.teamName ?? 'TBD'}</strong><small>{side.team?.managerName ?? 'Awaiting result'}</small></span>
+            <span className="league-bracket-matchup__team"><strong title={side.team?.teamName ?? undefined}>{side.team?.teamName ?? 'TBD'}</strong><small>{side.team?.managerName ?? 'Awaiting result'}</small></span>
             <span className="league-bracket-matchup__score">{formatScore(side.score)}</span>
           </div>
         );
@@ -331,7 +323,7 @@ function Bracket({ title, rows, champion = false, toiletBowl = false, meta = 'Ve
   const scrollCue = useHorizontalScrollCue(viewportRef, [minimumWidth, placementRows.length]);
 
   return (
-    <section className="league-history-section league-bracket-section">
+    <section className="gs-section league-bracket-section">
       <SectionHeading title={title} meta={meta} icon="trophy" />
       <div className="league-bracket-viewport-shell">
         <div ref={viewportRef} className="league-bracket-viewport">
@@ -419,7 +411,7 @@ function GridShiftStandingsState({ model }) {
 function PostseasonNote({ provider, postseason }) {
   if (!postseason) return null;
   return (
-    <div className="league-standings-live-note">
+    <div className="gs-note gs-text-secondary league-standings-live-note">
       <LeagueHistoryIcon name="target" tone="blue" size="sm" />
       {postseason.kind === 'championship'
         ? <span>Championship <strong>Week {postseason.week}</strong> — the top two teams meet.</span>
@@ -437,24 +429,24 @@ function StandingsView({ model, stateView }) {
   const losersBracket = losersBracketPresentation(brackets?.losersBracketType);
   return (
     <div className="league-history-page league-standings-page" data-tour="league-standings-content">
-      <header className="league-history-heading">
-        <div><span className="league-history-eyebrow">{historical ? 'Final table' : 'Frozen live table'}</span><h1>{model.season} Standings</h1><p>Results through completed <strong>Week {standings.throughWeek}</strong>. In-progress scoring never changes this order.</p></div>
-      </header>
+      <PageHeader
+        eyebrow={historical ? 'Final table' : 'Frozen live table'}
+        title={`${model.season} Standings`}
+        description={<>Results through completed <strong>Week {standings.throughWeek}</strong>. In-progress scoring never changes this order.</>}
+      />
       <div className="league-division-grid">
         {standings.divisions.map((division) => (
-          <section key={division.id} className="league-history-section">
-            <SectionHeading title={division.label} meta={historical ? null : 'League seed at left'} />
+          <Section key={division.id} title={division.label} meta={historical ? null : 'League seed at left'}>
             <StandingRows rows={division.rows} historical={historical} playoffTeamCount={playoffTeamCount} />
-          </section>
+          </Section>
         ))}
       </div>
       {historical && brackets?.hasChampionship && <Bracket title="Championship playoff" rows={brackets.championship} champion />}
       {historical && brackets?.hasConsolation && <Bracket title={losersBracket.title} meta={losersBracket.meta} rows={brackets.consolation} toiletBowl={brackets.losersBracketType === 'toilet-bowl'} />}
       {historical && finalPlacements?.complete && (
-        <section className="league-history-section league-final-placements-section" aria-labelledby="league-final-placements-title">
-          <SectionHeading id="league-final-placements-title" title="Final placement" meta={`${finalPlacements.totalTeams}-team postseason finish`} icon="trophy" />
+        <Section className="league-final-placements-section" headingId="league-final-placements-title" title="Final placement" meta={`${finalPlacements.totalTeams}-team postseason finish`} icon={<LeagueHistoryIcon name="trophy" size="sm" />}>
           <FinalPlacementRows rows={finalPlacements.rows} />
-        </section>
+        </Section>
       )}
       {!historical && <PostseasonNote provider={model.provider} postseason={model.postseason} />}
     </div>
