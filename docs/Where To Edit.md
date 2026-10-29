@@ -273,11 +273,16 @@ Read first: [[League Provider Contract]] (contract shapes, capabilities, the per
 | `src/utils/leagueProviderContract.js` | Provider ids, capabilities, contract shapes |
 | `src/utils/sleeperLeagueAdapter.js`, `src/utils/gridshiftLeagueAdapter.js` | Per-provider pure mappers into the contract |
 | `src/api/gridshiftPlatformApi.js` | Optional GridShift platform API client (same-origin, off unless `VITE_GRIDSHIFT_PLATFORM_URL` is set) |
-| `src/context/LeagueSourceContext.jsx`, `src/context/LeagueSourceContext.js` | Selected league provider for the League tab |
+| `src/context/LeagueSourceContext.jsx`, `src/context/LeagueSourceContext.js` | The one active league (Sleeper or a GridShift league) for every tab |
 | `src/hooks/useGridShiftStandings.js` | GridShift Standings loading |
+| `src/hooks/useGridShiftLeague.js` | GridShift Rosters, lineup editing (optimistic save with rollback), Matchups, and Activity loading |
+| `src/utils/gridshiftLineup.js` | GridShift lineup arrangement: slot order, offered moves, optimistic move, refusal text |
+| `src/utils/gridshiftActivity.js` | GridShift activity feed to League Activity entries (free agents, waivers, trades, draft, settings including roster lock and freeze, adjustments, commissioner roster changes with before/after; no lineup or IR-slot moves) |
+| `src/App.jsx` | One-active-league gates: GridShift league shows Standings, Activity, Matchups, Rosters; every other view a plain unavailable state |
 | `src/components/companion/GridShiftLeagueAccess.jsx` | GridShift sign-in and league list inside `CompanionConnect` |
 | `vite.config.js`, `scripts/dev-platform.mjs` | Dev proxy and the core-plus-local-platform launcher (`npm run dev:platform`) |
-| `tests/unit/leagueProviderStandings.test.mjs` | Sleeper parity and GridShift mapping |
+| `tests/unit/leagueProviderStandings.test.mjs` | Standings: Sleeper parity and GridShift mapping |
+| `tests/unit/leagueProviderScreens.test.mjs`, `tests/fixtures/gridshiftPlatformStage52.json` | Matchups, Rosters, Activity: Sleeper text parity with main, GridShift mapping from captured platform responses, both modes rendered |
 
 ## Fantasy Connection And League Data
 
@@ -301,7 +306,7 @@ Fantasy Matchups: `CompanionMatchup.jsx` owns the player Tale of the Tape and th
 | `src/hooks/useLeagueHistoryData.js` | Selected-season-plus-prior-lineage loading, focused error/retry state |
 | `src/components/companion/CompanionStandings.jsx` | Current + historical tables, divisions, evidence-backed brackets (Toilet Bowl vs consolation); renders the provider-neutral `StandingsModel` ([[League Provider Contract]]) |
 | `src/components/companion/CompanionHistory.jsx` | Lifetime leaderboard, champions, rivalries, records |
-| `src/components/companion/CompanionActivity.jsx` | Transaction ledger, filters, drillable visuals, commissioner events hidden by default |
+| `src/components/companion/CompanionActivity.jsx` | Transaction ledger, filters, drillable visuals; renders the provider-neutral `ActivityModel` ([[League Provider Contract]]): Sleeper commissioner events hidden by default, GridShift events with before/after rows |
 | `src/components/companion/LeagueHistoryIcon.jsx` | Shared archive glyph |
 | `src/components/companion/LeagueHistoryState.jsx` | Shared centered loading/unavailable/error/empty treatment |
 | `src/components/LeagueSubNav.jsx`, `src/utils/appRoutes.js`, `src/App.jsx` | League tab registration, `/league/*` routing, legacy `/companion/*` aliases, lazy mounting |

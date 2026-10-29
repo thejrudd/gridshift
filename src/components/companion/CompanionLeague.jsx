@@ -1,5 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLeagueSource } from '../../context/LeagueSourceContext.js';
 import { useSleeperLeague, useSleeperBase, useSleeperStatsProgress } from '../../context/SleeperContext';
+import {
+  useGridShiftLeagueBase,
+  useGridShiftLineupEditor,
+  useGridShiftWeekPoints,
+} from '../../hooks/useGridShiftLeague.js';
+import {
+  buildGridShiftLineupSections,
+  buildGridShiftWeekOptions,
+  listGridShiftTeamOptions,
+  mapGridShiftWeekPoints,
+} from '../../utils/gridshiftLeagueAdapter.js';
+import { checkLineupMove, getLineupSlotLabel, UNPLACED_SLOT } from '../../utils/gridshiftLineup.js';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints, calcPointsFromTotals } from '../../utils/scoringEngine';
 import { computePositionalRanks, getAvgPPG } from '../../utils/projectionEngine';
@@ -21,6 +34,7 @@ import { getDraftSlotForRoster } from '../../utils/draftPickDisplay.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
   CompanionPlayerMetric,
+  CompanionPlayerStatus,
 } from './CompanionPlayerRow.jsx';
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import UiEmptyState from '../ui/EmptyState';
@@ -103,6 +117,8 @@ function getLeagueMetaSegments(player) {
     player.team,
     player.isKeeper ? 'Keeper' : null,
     showReserveMeta ? 'IR' : null,
+    // GridShift-league rows only: lock and IR eligibility from the platform.
+    ...(player.extraMeta ?? []),
   ].filter(Boolean);
 }
 
@@ -324,6 +340,9 @@ function teamRowTheme(team, darkMode) {
 
 export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', routeState = null, onRouteStateChange = null }) {
   const subView = routeState?.subView ?? 'roster';
+  // One Rosters screen for both providers (Stage 5.2): a GridShift league shows
+  // its weekly lineup with the platform's locks, IR reasons, and lineup editing.
+  const { gridshiftLeague } = useLeagueSource();
 
   return (
     <div className="page-frame-data pb-6">
@@ -340,7 +359,10 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
         />
       </div>
 
-      {subView === 'roster' && (
+      {subView === 'roster' && gridshiftLeague && (
+        <GridShiftRosterView key={gridshiftLeague.leagueId} league={gridshiftLeague} onViewPlayer={onViewPlayer} />
+      )}
+      {subView === 'roster' && !gridshiftLeague && (
         <LeagueRosterView
           onTradePlayer={onTradePlayer}
           onViewPlayer={onViewPlayer}
@@ -350,7 +372,9 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
           onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
         />
       )}
-      {subView === 'picks' && <LeaguePicksView />}
+      {subView === 'picks' && (gridshiftLeague
+        ? <EmptyState message="Draft picks are not available for this league yet." />
+        : <LeaguePicksView />)}
     </div>
   );
 }
@@ -464,14 +488,6 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
     () => getLeagueLayout(isCompactPhone, bodyColPx),
     [isCompactPhone, bodyColPx],
   );
-  const headerTracking = isCompactPhone ? 0.1 : 0.18;
-  const metricHeaderClass = 'min-w-0 text-center gs-text-meta whitespace-nowrap';
-  const metricHeaderStyle = {
-    letterSpacing: `${headerTracking}em`,
-    // Cancel the trailing letter-space so the label optically centers on its column.
-    marginRight: `-${headerTracking}em`,
-  };
-
   const grouped = useMemo(() => {
     const groups = {};
     for (const p of rosterPlayers) {
@@ -586,34 +602,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
       {statsLoading && <LeagueStatsLoadingBanner />}
 
       {/* Column headers */}
-      <div className="companion-roster-column-header px-2 sm:px-4 pb-2">
-        <div className="flex items-center w-full">
-          <div
-            className="grid items-center flex-1 min-w-0"
-            style={{
-              gridTemplateColumns: layout.rowTemplate,
-              columnGap: layout.gap,
-              paddingLeft: layout.sidePadding + LEAGUE_ROW_LEFT_BORDER,
-              paddingRight: layout.sidePadding,
-            }}
-          >
-            <div />
-            <span className="min-w-0 gs-text-meta">Player</span>
-            {/* Mirrors the row's metric block so each label centers over its own column. */}
-            <div
-              className="grid items-center min-w-0"
-              style={{ gridTemplateColumns: layout.metricTemplate, columnGap: layout.metricGap }}
-            >
-              <div />
-              {!isCompactPhone && <div />}
-              <span className={metricHeaderClass} style={metricHeaderStyle}>Rank</span>
-              <span className={metricHeaderClass} style={metricHeaderStyle}>Season</span>
-            </div>
-            <div />
-          </div>
-          <div className="shrink-0 ml-2 sm:ml-3" style={{ width: layout.tradeWidth }} />
-        </div>
-      </div>
+      <RosterColumnHeader layout={layout} isCompactPhone={isCompactPhone} actionWidth={layout.tradeWidth} />
 
       {/* Loading motion: shared skeleton -> reveal handoff. Position headings
           and player rows are individual reveal items, so the roster fills in
@@ -674,12 +663,53 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   );
 }
 
+// Column labels shared by both providers' Rosters. Mirrors the row's metric
+// block so each label centers over its own column.
+function RosterColumnHeader({ layout, isCompactPhone, actionWidth }) {
+  const headerTracking = isCompactPhone ? 0.1 : 0.18;
+  const metricHeaderClass = 'min-w-0 text-center gs-text-meta whitespace-nowrap';
+  const metricHeaderStyle = {
+    letterSpacing: `${headerTracking}em`,
+    // Cancel the trailing letter-space so the label optically centers on its column.
+    marginRight: `-${headerTracking}em`,
+  };
+  return (
+    <div className="companion-roster-column-header px-2 sm:px-4 pb-2">
+      <div className="flex items-center w-full">
+        <div
+          className="grid items-center flex-1 min-w-0"
+          style={{
+            gridTemplateColumns: layout.rowTemplate,
+            columnGap: layout.gap,
+            paddingLeft: layout.sidePadding + LEAGUE_ROW_LEFT_BORDER,
+            paddingRight: layout.sidePadding,
+          }}
+        >
+          <div />
+          <span className="min-w-0 gs-text-meta">Player</span>
+          <div
+            className="grid items-center min-w-0"
+            style={{ gridTemplateColumns: layout.metricTemplate, columnGap: layout.metricGap }}
+          >
+            <div />
+            {!isCompactPhone && <div />}
+            <span className={metricHeaderClass} style={metricHeaderStyle}>Rank</span>
+            <span className={metricHeaderClass} style={metricHeaderStyle}>Season</span>
+          </div>
+          <div />
+        </div>
+        <div className="shrink-0 ml-2 sm:ml-3" style={{ width: actionWidth }} />
+      </div>
+    </div>
+  );
+}
+
 function LeagueStatsLoadingBanner() {
   const statsProgress = useSleeperStatsProgress();
   return <StatsProgressBanner progress={statsProgress} className="mx-4 mb-4" />;
 }
 
-function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', layout, isCompactPhone, statsPending = false }) {
+function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', layout, isCompactPhone, statsPending = false, action = null, className = '' }) {
   const { darkMode } = useTheme();
   const metaSegments = getLeagueMetaSegments(player);
   const rankLabel = formatLeagueRankLabel(player.rank);
@@ -692,7 +722,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           player={player}
           darkMode={darkMode}
           onClick={onSelect}
-          className={`companion-roster-player-row gs-focusable flex-1${player.isKeeper ? ' is-keeper' : ''}`}
+          className={`companion-roster-player-row gs-focusable flex-1${player.isKeeper ? ' is-keeper' : ''}${className ? ` ${className}` : ''}`}
           showAccentRail={false}
           showPosition={false}
           showTeamLogo={false}
@@ -703,11 +733,25 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           status={null}
           columns={[
             isCompactPhone && (
-              <div key="status" className="flex items-center justify-center">
+              <div key="status" className="flex flex-col items-center justify-center gap-1">
                 <PlayerStatusBadge status={player.availabilityStatus} compact />
+                {/* GridShift rows only: a roster note such as "Left roster" as a compact badge. */}
+                {player.rosterBadge && (
+                  <CompanionPlayerStatus label={player.rosterBadge.short} title={player.rosterBadge.label} className="companion-roster-note-badge is-compact" />
+                )}
               </div>
             ),
-            !isCompactPhone && (
+            !isCompactPhone && (player.rosterBadge ? (
+              <div key="status" className="flex items-center gap-1.5 justify-start self-center min-w-0">
+                <PlayerStatusLogoCluster
+                  logoKey={player.teamTheme.logoKey}
+                  status={player.availabilityStatus}
+                  detail={player.availabilityDetail}
+                  className="justify-start self-center"
+                />
+                <CompanionPlayerStatus label={player.rosterBadge.label} title={player.rosterBadge.label} className="companion-roster-note-badge" />
+              </div>
+            ) : (
               <PlayerStatusLogoCluster
                 key="status"
                 logoKey={player.teamTheme.logoKey}
@@ -715,7 +759,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
                 detail={player.availabilityDetail}
                 className="justify-start self-center"
               />
-            ),
+            )),
             !isCompactPhone && <div key="spacer" />,
             <CompanionPlayerMetric
               key="rank"
@@ -728,7 +772,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
             <CompanionPlayerMetric
               key="season"
               value={player.pts !== null ? player.pts.toFixed(1) : '-'}
-              label={formatLeaguePpgLabel(player.avgPPG)}
+              label={player.metricLabel !== undefined ? player.metricLabel : formatLeaguePpgLabel(player.avgPPG)}
               pending={statsPending && player.pts === null}
               align="center"
               compact={isCompactPhone}
@@ -748,7 +792,19 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           }}
         />
 
-        {(onTrade || tradeDisabled) && (
+        {action && (
+          <div
+            className="shrink-0"
+            style={{
+              width: layout.tradeWidth,
+              height: isCompactPhone ? layout.tradeWidth : undefined,
+              marginLeft: isCompactPhone ? 8 : 12,
+            }}
+          >
+            {action}
+          </div>
+        )}
+        {!action && (onTrade || tradeDisabled) && (
           <div
             className="shrink-0"
             style={{
@@ -776,6 +832,334 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
         )}
       </div>
     </div>
+  );
+}
+
+// ── GridShift-league roster and lineup (Stage 5.2) ──────────────────────────
+//
+// The same Rosters screen and rows as a Sleeper league, grouped by the week's
+// lineup slots instead of positions. Lineup changes apply as soon as they are
+// made (no Save button; user decision 2026-10-29): tap Move on a player, then
+// tap where they go. The move shows at once and is saved through the
+// platform's lineup rules; if the platform refuses it, the lineup returns to
+// what the platform last confirmed and its reason is shown.
+
+function MoveIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 4v16" /><path d="m3 8 4-4 4 4" /><path d="M17 20V4" /><path d="m21 16-4 4-4-4" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+function GridShiftTeamSelector({ options, selectedId, onSelect, mobile }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const selected = options.find((option) => option.id === selectedId) ?? null;
+  if (mobile) {
+    return (
+      <div className="px-4 pb-3">
+        <CompanionFantasyTeamMenu
+          open={menuOpen}
+          options={options}
+          selectedIds={selectedId ? [selectedId] : []}
+          selectedOptions={selected ? [selected] : []}
+          onOpenChange={setMenuOpen}
+          onChange={(ids) => { if (ids[0]) onSelect(ids[0]); }}
+          mode="single"
+          includeAll={false}
+          menuLabel="League roster selector"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="companion-owner-selector-shell relative">
+      <div className="px-3 sm:px-4 pb-3 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex gap-2" style={{ width: 'max-content' }}>
+          {options.map((option) => (
+            <CompanionSelectorButton key={option.id} onClick={() => onSelect(option.id)} active={option.id === selectedId} className="gap-1.5">
+              <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{ background: 'var(--color-fill-secondary)', fontSize: 'var(--type-micro)', fontWeight: 700, color: 'var(--color-label-secondary)' }}>
+                {option.name[0]?.toUpperCase()}
+              </div>
+              <span className="text-xs whitespace-nowrap" title={option.name}>{option.name}{option.isMe ? ' (Me)' : ''}</span>
+            </CompanionSelectorButton>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GridShiftRosterView({ league, onViewPlayer = null }) {
+  // Core's NFL player catalog (portraits and player pages only); no Sleeper league data.
+  const { players: catalog, loadPlayers } = useSleeperBase();
+  useEffect(() => { if (!catalog) void loadPlayers?.(); }, [catalog, loadPlayers]);
+  const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
+  const useMobileTeamMenu = useMediaQuery(MOBILE_SHEET_QUERY);
+  const base = useGridShiftLeagueBase(league.leagueId, catalog);
+  const viewer = base.viewer;
+  const teamOptions = useMemo(() => (base.data ? listGridShiftTeamOptions(base.data.teams, viewer) : []), [base.data, viewer]);
+  const [chosenTeamId, setChosenTeamId] = useState(null);
+  const teamId = chosenTeamId ?? viewer?.teamId ?? teamOptions[0]?.id ?? null;
+  const week = useMemo(() => (base.data ? buildGridShiftWeekOptions(base.data.weeks).currentWeek : null), [base.data]);
+
+  if (base.status === 'loading' || base.status === 'idle') return <EmptyState message="Loading rosters..." />;
+  if (base.status === 'signed-out') return <EmptyState message="Sign in to view this league." />;
+  if (base.status === 'error') {
+    return (
+      <UiEmptyState
+        title="Rosters are unavailable right now."
+        hint={base.error}
+        action={<button type="button" className="league-history-state-action" onClick={base.retry}>Try again</button>}
+      />
+    );
+  }
+  return (
+    <>
+      <GridShiftTeamSelector options={teamOptions} selectedId={teamId} onSelect={setChosenTeamId} mobile={useMobileTeamMenu} />
+      {teamId && week ? (
+        <GridShiftLineup
+          key={`${teamId}:${week}`}
+          leagueId={league.leagueId}
+          teamId={teamId}
+          week={week}
+          players={base.players}
+          canEdit={Boolean(viewer?.canEditTeam(teamId))}
+          isCompactPhone={isCompactPhone}
+          onViewPlayer={onViewPlayer}
+        />
+      ) : (
+        <EmptyState message="No lineup week is scheduled for this league yet." />
+      )}
+    </>
+  );
+}
+
+function GridShiftLineup({ leagueId, teamId, week, players, canEdit, isCompactPhone, onViewPlayer }) {
+  const editor = useGridShiftLineupEditor({ leagueId, teamId, week });
+  const points = useGridShiftWeekPoints(leagueId, week);
+  const weekPoints = useMemo(() => mapGridShiftWeekPoints(points.data), [points.data]);
+  const [moveFrom, setMoveFrom] = useState(null);
+  const lineup = editor.lineup;
+  const sections = useMemo(
+    () => (lineup ? buildGridShiftLineupSections(lineup, players, weekPoints, { teamId }) : []),
+    [lineup, players, teamId, weekPoints],
+  );
+  const positionOf = useCallback((playerId) => players.get(String(playerId))?.position ?? weekPoints.get(String(playerId))?.position ?? null, [players, weekPoints]);
+  const destination = useCallback((slot) => (moveFrom && lineup ? checkLineupMove({
+    assignment: lineup.assignment,
+    from: moveFrom,
+    to: slot,
+    positionOf,
+    lockedIds: lineup.lockedPlayerIds,
+    irEligibleIds: lineup.irEligiblePlayerIds,
+  }) : null), [lineup, moveFrom, positionOf]);
+
+  useEffect(() => {
+    if (!moveFrom) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') setMoveFrom(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moveFrom]);
+
+  const rows = useMemo(() => sections.flatMap((section, sectionIndex) => section.rows.map((row, rowIndex) => {
+    const heading = rowIndex === 0 ? { index: sectionIndex } : null;
+    if (!row.player) return { ...row, section, heading, display: null };
+    const player = row.player;
+    return {
+      ...row,
+      section,
+      heading,
+      display: {
+        id: player.playerId,
+        sleeperId: player.sleeperId,
+        name: player.name,
+        position: player.position,
+        team: player.nflTeam || 'FA',
+        pts: player.seasonPoints ?? null,
+        avgPPG: null,
+        metricLabel: row.weekPoints == null ? null : `Wk ${week} ${row.weekPoints.toFixed(1)}`,
+        rank: player.positionRank ? { posLabel: player.position, rank: player.positionRank } : null,
+        isReserve: false,
+        isKeeper: false,
+        // Traded or dropped after this week's lineup was saved: a badge in the
+        // status column, so the position and team keep their meta line.
+        rosterBadge: row.leftRoster ? { label: 'Left roster', short: 'Left' } : null,
+        extraMeta: [
+          // Editable rows show the lock on their action; read-only rows say it here.
+          row.locked && !canEdit && !isCompactPhone ? 'Locked' : null,
+          row.slot.type === 'IR' ? (row.irEligible ? 'IR eligible' : 'Not IR eligible') : null,
+        ],
+        availabilityStatus: player.injuryStatus,
+        // The platform's IR reason, shown when a player in IR is no longer eligible.
+        availabilityDetail: row.slot.type === 'IR' && !row.irEligible ? row.irMessage : null,
+        teamTheme: teamRowTheme(player.nflTeam || '', false),
+      },
+    };
+  })), [canEdit, isCompactPhone, sections, week]);
+  const bodyColPx = useMemo(() => measureMaxRosterBodyWidth(rows.map((row) => row.display).filter(Boolean)), [rows]);
+  const layout = useMemo(() => getLeagueLayout(isCompactPhone, bodyColPx), [isCompactPhone, bodyColPx]);
+
+  if (editor.status === 'loading' || editor.status === 'idle' || (!lineup && editor.status === 'ready')) {
+    return <SkeletonRows count={8} height="4rem" className="mx-2 sm:mx-4" />;
+  }
+  if (editor.status !== 'ready') {
+    return (
+      <UiEmptyState
+        title={editor.status === 'signed-out' ? 'Sign in to view this league.' : 'This lineup is unavailable right now.'}
+        hint={editor.status === 'signed-out' ? null : editor.error}
+        action={editor.status === 'signed-out' ? null : <button type="button" className="league-history-state-action" onClick={editor.retry}>Try again</button>}
+      />
+    );
+  }
+
+  const rosterLock = lineup.rosterLock;
+  const moving = !moveFrom ? null : moveFrom.type === UNPLACED_SLOT ? moveFrom.playerId : lineup.assignment?.[moveFrom.type]?.[moveFrom.index] ?? null;
+  const sameSlot = (left, right) => Boolean(left && right && left.type === right.type && left.index === right.index && left.playerId === right.playerId);
+  const movingName = moving ? players.get(String(moving))?.name ?? weekPoints.get(String(moving))?.name ?? 'Player' : null;
+  const applyMove = (to) => {
+    const from = moveFrom;
+    setMoveFrom(null);
+    editor.move(from, to);
+  };
+
+  const actionFor = (row) => {
+    if (!canEdit) return null;
+    const isSource = sameSlot(moveFrom, row.slot);
+    if (isSource) {
+      return (
+        <CompanionPlayerAction label={`Cancel moving ${row.player.name}`} onClick={() => setMoveFrom(null)} selected className="companion-roster-trade-action companion-lineup-action is-cancel gs-focusable w-full rounded-lg font-semibold transition-colors inline-flex items-center justify-center gap-1.5">
+          <span aria-hidden="true">×</span>{!isCompactPhone && <span>Cancel</span>}
+        </CompanionPlayerAction>
+      );
+    }
+    if (moveFrom) {
+      const check = destination(row.slot);
+      // Only real destinations get a control while a move is in progress.
+      if (!check?.ok) return <span aria-hidden="true" />;
+      return (
+        <CompanionPlayerAction
+          label={check?.ok ? `Move ${movingName} to ${getLineupSlotLabel(row.slot.type)}, swapping with ${row.player.name}` : `${row.player.name}: not a destination`}
+          onClick={() => applyMove(row.slot)}
+          disabled={!check?.ok}
+          title={check?.ok ? undefined : check?.reason || undefined}
+          className="companion-roster-trade-action companion-lineup-action is-target gs-focusable w-full rounded-lg font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+        >
+          <MoveIcon />{!isCompactPhone && <span>Swap</span>}
+        </CompanionPlayerAction>
+      );
+    }
+    if (row.locked && row.slot.type !== UNPLACED_SLOT) {
+      return (
+        <CompanionPlayerAction label={`${row.player.name} is locked: game started`} disabled title="Locked: this player's game has started." className="companion-roster-trade-action companion-lineup-action is-locked w-full rounded-lg font-semibold inline-flex items-center justify-center gap-1.5">
+          <LockIcon />{!isCompactPhone && <span>Locked</span>}
+        </CompanionPlayerAction>
+      );
+    }
+    return (
+      <CompanionPlayerAction label={`Move ${row.player.name}`} onClick={() => setMoveFrom(row.slot)} className="companion-roster-trade-action companion-lineup-action gs-focusable w-full rounded-lg font-semibold transition-colors inline-flex items-center justify-center gap-1.5">
+        <MoveIcon />{!isCompactPhone && <span>Move</span>}
+      </CompanionPlayerAction>
+    );
+  };
+
+  return (
+    <>
+      <div className="px-4 pb-2 companion-lineup-status" aria-live="polite">
+        <span className="gs-text-meta">Week {week} lineup</span>
+        {editor.saving && <span className="gs-text-meta companion-lineup-status__saving">Saving…</span>}
+        {moveFrom && movingName && <span className="gs-text-secondary companion-lineup-status__moving" title={movingName}>Moving {movingName}</span>}
+      </div>
+      {editor.rejection && (
+        <div className="companion-lineup-notice is-error mx-2 sm:mx-4 mb-3" role="alert">
+          <div className="min-w-0">
+            <strong>{editor.rejection.title}</strong>
+            <p>{editor.rejection.message}</p>
+            {editor.rejection.details.length > 0 && <ul>{editor.rejection.details.map((detail) => <li key={detail}>{detail}</li>)}</ul>}
+          </div>
+          <button type="button" className="gs-button" onClick={editor.clearRejection}>Dismiss</button>
+        </div>
+      )}
+      {editor.warnings.length > 0 && (
+        <div className="companion-lineup-notice mx-2 sm:mx-4 mb-3" role="status">
+          <ul>{[...new Set(editor.warnings.map((warning) => warning.message))].map((message) => <li key={message}>{message}</li>)}</ul>
+        </div>
+      )}
+      {rosterLock?.locked && (
+        <div className="companion-lineup-notice mx-2 sm:mx-4 mb-3" role="status">
+          <strong>Roster locked</strong>
+          {(rosterLock.reasons ?? []).length > 0 && <ul>{rosterLock.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+        </div>
+      )}
+      <RosterColumnHeader layout={layout} isCompactPhone={isCompactPhone} actionWidth={canEdit ? layout.tradeWidth : 0} />
+      {rows.flatMap((row) => {
+        const out = [];
+        if (row.heading) {
+          out.push(
+            <div
+              key={`${row.section.type}-heading`}
+              className={`companion-roster-position-bar mx-2 sm:mx-4${row.heading.index > 0 ? ' is-following' : ''}`}
+              style={{ background: POSITION_COLORS[row.section.type] ?? 'var(--color-label-tertiary)' }}
+            >
+              <h2 className="gs-text-meta">{row.section.label}</h2>
+            </div>,
+          );
+        }
+        const key = `${row.slot.type}:${row.slot.index}:${row.slot.playerId ?? ''}`;
+        const check = moveFrom ? destination(row.slot) : null;
+        const isSource = sameSlot(moveFrom, row.slot);
+        if (!row.display) {
+          out.push(
+            <div key={key} className="px-2 sm:px-4">
+              <div className="flex items-center w-full">
+                <div className={`companion-lineup-empty-slot flex-1${check?.ok ? ' is-target' : ''}`} style={{ minHeight: isCompactPhone ? 56 : 64, paddingLeft: layout.sidePadding + LEAGUE_ROW_LEFT_BORDER }}>
+                  <span className="gs-text-secondary">Empty {getLineupSlotLabel(row.slot.type)}</span>
+                  {row.slot.type === 'IR' && moveFrom && !check?.ok && check?.reason && <span className="gs-text-meta" title={check.reason}>{check.reason}</span>}
+                </div>
+                {canEdit && (
+                  <div className="shrink-0" style={{ width: layout.tradeWidth, height: isCompactPhone ? layout.tradeWidth : undefined, marginLeft: isCompactPhone ? 8 : 12 }}>
+                    {moveFrom && check?.ok ? (
+                      <CompanionPlayerAction
+                        label={check?.ok ? `Move ${movingName} to the empty ${getLineupSlotLabel(row.slot.type)} slot` : `Empty ${getLineupSlotLabel(row.slot.type)}: not a destination`}
+                        onClick={() => applyMove(row.slot)}
+                        disabled={!check?.ok}
+                        title={check?.ok ? undefined : check?.reason || undefined}
+                        className="companion-roster-trade-action companion-lineup-action is-target gs-focusable w-full rounded-lg font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+                      >
+                        <MoveIcon />{!isCompactPhone && <span>Here</span>}
+                      </CompanionPlayerAction>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>,
+          );
+          return out;
+        }
+        out.push(
+          <LeagueResponsivePlayerRow
+            key={key}
+            player={row.display}
+            layout={layout}
+            isCompactPhone={isCompactPhone}
+            statsPending={false}
+            className={[isSource ? 'is-move-source' : '', moveFrom && !isSource ? (check?.ok ? 'is-move-target' : 'is-move-dimmed') : ''].filter(Boolean).join(' ')}
+            onSelect={row.display.sleeperId && onViewPlayer ? () => onViewPlayer(row.display.sleeperId, { sleeperId: row.display.sleeperId, name: row.display.name, position: row.display.position, team: row.display.team }) : null}
+            onTrade={null}
+            action={actionFor(row)}
+          />,
+        );
+        return out;
+      })}
+    </>
   );
 }
 

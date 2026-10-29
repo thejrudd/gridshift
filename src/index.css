@@ -19989,7 +19989,10 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   display: block;
   max-width: 100%;
   margin-top: 8px;
-  overflow-wrap: anywhere;
+  /* One line with an ellipsis; the full name is in the title (user decision, 2026-10-29). */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   font-size: clamp(18px, 3vw, 30px);
   font-weight: 800;
@@ -20817,6 +20820,11 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .companion-matchup-player-row .companion-player-row__identity-label {
   flex: 0 1 auto;
+  /* One line with an ellipsis; the row's title carries the full name (user decision, 2026-10-29). */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .companion-matchup-player-row .companion-player-row__identity-accessory {
@@ -21029,13 +21037,26 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   text-overflow: clip;
 }
 
+/* Phone: one line per name, ellipsis, position chip beside it (user decision,
+   2026-10-29: names never wrap; the row's title carries the full name). */
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
 .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity-label,
 .companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__identity-label {
-  display: inline;
-  overflow: visible;
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   overflow-wrap: normal;
-  white-space: normal;
-  text-overflow: clip;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__position--inline,
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity-accessory {
+  flex: none;
 }
 
 .companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__body {
@@ -26910,6 +26931,21 @@ button.trade-history-asset-card:focus-visible {
 .league-activity-entry__expand:focus-visible { outline: 2px solid var(--color-signature); outline-offset: 2px; }
 .league-activity-entry__expand > span:last-child { font-size: var(--type-body); transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
 .league-activity-entry__expand[aria-expanded='true'] > span:last-child { transform: rotate(180deg); }
+/* Names stay on one line with an ellipsis; the full name is in the title (user decision, 2026-10-29). */
+.league-activity-player__identity strong,
+.league-activity-move__team strong,
+.league-activity-move__destination > small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-wrap: nowrap; }
+/* Before/after rows for GridShift-league events (Stage 5.2). */
+.league-activity-changes { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; }
+.league-activity-changes li { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: center; gap: 4px 12px; min-height: 36px; padding: 6px 10px; border-radius: 8px; background: var(--color-fill-secondary); font-size: var(--type-label); }
+.league-activity-changes__label { min-width: 0; overflow: hidden; color: var(--color-text-secondary); white-space: nowrap; text-overflow: ellipsis; }
+.league-activity-changes__values { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.league-activity-changes__before { min-width: 0; overflow: hidden; color: var(--color-text-meta); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--color-text-meta) 60%, transparent); white-space: nowrap; text-overflow: ellipsis; }
+.league-activity-changes__arrow { flex: 0 0 auto; color: var(--color-text-meta); }
+.league-activity-changes__after { min-width: 0; overflow: hidden; color: var(--color-text-primary); font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+@media (max-width: 480px) {
+  .league-activity-changes li { grid-template-columns: minmax(0, 1fr); }
+}
 
 @media (max-width: 760px) {
   .league-history-heading { margin-bottom: 22px; }
@@ -30459,6 +30495,26 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 .companion-roster-player-row:active { transform: scale(0.995); }
 .companion-roster-player-row:focus-visible { outline-offset: var(--focus-ring-offset); }
 .companion-roster-trade-action:active:not(:disabled) { background: var(--color-state-active); }
+/* GridShift-league lineup editing on Rosters (Stage 5.2): Move, then a
+   destination; changes save as they are made. */
+.companion-lineup-status { display: flex; align-items: center; gap: 12px; min-height: 24px; }
+.companion-lineup-status__saving { color: var(--color-text-secondary); }
+.companion-lineup-status__moving { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.companion-lineup-notice { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border-left: 3px solid var(--color-divider-strong); background: var(--color-surface-object); color: var(--color-text-secondary); font-size: var(--text-secondary-size); }
+.companion-lineup-notice.is-error { border-left-color: var(--color-accent-red); }
+.companion-lineup-notice strong { display: block; color: var(--color-text-primary); }
+.companion-lineup-notice p { margin: 2px 0 0; }
+.companion-lineup-notice ul { margin: 4px 0 0; padding-left: 18px; list-style: disc; }
+.companion-lineup-action.is-target:not(:disabled) { border-color: var(--color-signature); background: var(--color-signature); color: var(--color-signature-fg); }
+.companion-lineup-action.is-cancel { border-color: var(--color-text-primary); }
+.companion-lineup-action.is-locked { opacity: 0.6; }
+.companion-roster-player-row.is-move-source { outline: 2px solid var(--color-signature); outline-offset: -2px; }
+.companion-roster-player-row.is-move-dimmed { opacity: 0.55; }
+.companion-roster-note-badge { white-space: nowrap; }
+.companion-roster-note-badge.is-compact { min-width: 0; padding: 1px 2px; font-size: 8px; letter-spacing: 0; line-height: 1.1; }
+.companion-lineup-empty-slot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 14px; border: 1px dashed var(--color-divider-strong); background: transparent; }
+.companion-lineup-empty-slot.is-target { border-style: solid; border-color: var(--color-signature); }
+.companion-lineup-empty-slot .gs-text-meta { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 @media (prefers-reduced-motion: reduce) {
   .companion-roster-player-row { transition: none; }
   .companion-roster-player-row:active { transform: none; }

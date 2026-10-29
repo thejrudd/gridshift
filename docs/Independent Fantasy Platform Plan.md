@@ -2,7 +2,7 @@
 
 Back: [[Home]] · Routing: [[Where To Edit]]
 
-Last updated: 2026-10-29 (Stage 5.1 design foundation approved with fixes).
+Last updated: 2026-10-29 (Stage 5.2 shared league screens implemented).
 
 ## Purpose and maintenance
 
@@ -31,7 +31,7 @@ Keep agreed requirements, proposed defaults, open decisions, and implemented beh
 | Trading | Propose, counter, decline, cancel, accept, and execute player trades with ownership/eligibility/capacity revalidation and atomic transfers |
 | Competition | Weekly lineup snapshots; schedule/matchups; scoring; provisional/final results; correction handling; standings and a defined test-season endpoint |
 | Communication | Persistent league chat and member-to-member DMs; unread indicators; optional notifications and preferences; participant-only DM access |
-| Activity | Extend the existing League Activity feed with committed GridShift events, commissioner changes, score adjustments, and IR movements |
+| Activity | Extend the existing League Activity feed with committed GridShift events, commissioner changes, score adjustments, and IR movements (refined 2026-10-29: Activity covers roster adds, drops, and changes; lineup and IR-slot moves are not shown) |
 | Test operations | Inspect actions; reset/clone isolated test state; backups and tested restoration; deterministic deadline/claim/correction scenarios |
 
 League waiver priority and a manager's ordered claims are separate concepts. Roster composition defines slots; position limits constrain ownership. Lineup locks and transaction locks must be separately understandable. Exact scoring/slot counts, processing times, and competition rules remain open below.
@@ -157,6 +157,14 @@ Phase 5.1 (design foundation) in core, on branch `stage5-1-design-foundation`:
 - Semantic tokens for the six-level text hierarchy, colour roles, interaction states, and flat-layout spacing, plus the short component set (Section and PageHeader, DataTable, ListRow, Tabs, FormField, Dialog, and the `.gs-button` class) in `src/components/ui/`. Rules and tokens: [[Design System Quick Ref]] and [[Design Tokens]] › Design Foundation.
 - Applied to exactly two reference screens: League › Standings with the GridShift league header in the desktop sub-navigation (the shared Standings view, so a Sleeper league's Standings changes the same way), and Fantasy › Rosters for a Sleeper league. Presentation only; no data path changed. Other screens, including the League and Fantasy sub-navigation, are unchanged in this phase.
 
+Phase 5.2 (shared league screens) in core, on branch `stage5-2-shared-league-screens`:
+
+- Matchups, Rosters (lineup by slot with the platform's locks and IR reasons, and lineup editing), and League Activity show a GridShift league through the [[League Provider Contract]]; each is the same screen component for Sleeper and GridShift leagues, and the Sleeper rendering is unchanged (text pinned to main). Standings was done in 5.0/5.1.
+- Lineup edits apply in real time with no Save button (user decision, 2026-10-29): Move, then a destination; the change shows at once, is saved through the platform's server rules, and rolls back with the platform's reason shown if refused.
+- League Activity adds GridShift rows for free agents, waivers, trades, draft, settings (roster lock and freeze included), score adjustments, and commissioner roster changes, with before/after where the platform records it. Lineup and IR-slot moves are not activity (user decision, 2026-10-29).
+- One active league: with a GridShift league selected, every tab follows it and views not yet on the contract show a plain centered unavailable state.
+- Platform gaps found (a started week's saved lineup is not reconciled after mid-week roster changes; the platform will auto-fit it on save, per the user's 2026-10-29 decision; no projections or live layer) are listed in the contract doc.
+
 Decisions on the 5.1 reference screens (user, 2026-10-29):
 
 - Approved, on condition that team names never wrap: team names stay on one line with an ellipsis at desktop and phone widths, with the full name still available (title attribute or accessible name). Player names in Rosters likewise stay on one line with an ellipsis and never break mid-word. Both are done; with them the look is approved.
@@ -207,6 +215,7 @@ Resolve decisions when their implementation stage approaches; do not require eve
 | Existing League Activity reuse | Investigated | Existing feed/normalizer confirmed; independent loading and new event types pending |
 | Public four-manager environment | Planned | Not deployed; no multi-manager acceptance performed |
 | Stage 5.0 league provider contract and GridShift Standings | Implemented | Branch `stage5-0-integration-spike`. Unit: `tests/unit/leagueProviderStandings.test.mjs` (Sleeper Standings markup hash-identical to main 9c8b5bd in six states; adapter parity; GridShift mapping from platform responses captured locally; unconfigured client makes no request). Browser: agent-run Playwright checks against a local platform API seeded through its HTTP API (see the contract doc). Not reviewed by the user; not deployed; other views not migrated |
+| Stage 5.2 shared league screens (Matchups, Rosters with lineup editing, League Activity; one active league) | Implemented | Branch `stage5-2-shared-league-screens`. Unit: `tests/unit/leagueProviderScreens.test.mjs` (Sleeper text of Rosters, Activity, and Matchups pinned to main 0b818b0; lineup rules; GridShift mapping from responses captured from the platform at a236658; both modes rendered). Agent-run browser checks against a local platform API seeded through its HTTP API: Sleeper text identical to main on Rosters, Matchups, Activity, Standings (desktop and phone; phone Matchups differs only in line breaks from the one-line names), a real platform refusal rolled back and shown, a saved lineup move confirmed through the API, light/dark desktop/phone screenshots. Not validated or reviewed by the user; not merged; not deployed |
 | Stage 5.1 design foundation (tokens, primitives, two reference screens) | Implemented; look approved by the user (2026-10-29) | Branch `stage5-1-design-foundation`. Unit: `tests/unit/designFoundation.test.mjs`; Standings parity test re-pinned for the redesigned current/completed markup with text content still pinned to main. Agent-run Playwright: Rosters and Standings e2e specs, before/after screenshots (light, dark, desktop, phone) including the longest team and player names, and a keyboard-focus check, against mocked Sleeper fixtures and a local platform API. Not merged; rollout to the other screens (tab bars first) not started |
 
 ## Decision record
@@ -220,4 +229,7 @@ Resolve decisions when their implementation stage approaches; do not require eve
 - 2026-10-28: Stage 5.0 spike implemented in core: league provider contract, Sleeper adapter (no behavior change), GridShift-league Standings from the platform API, and the core-plus-local-platform dev environment. Five open decisions recorded above.
 - 2026-10-28: User decided the Stage 5.0 open questions: same-origin proxy in production; one active league across tabs; account features stay in `web/`; player identity through core's cross-provider identity layer (`providerPlayerIdentity.js`), with platform reuse of core code permitted.
 - 2026-10-29: Stage 5.1 design foundation implemented on two reference screens (Standings with the GridShift league header; Rosters); in progress until the user approves the look.
+- 2026-10-29: User decided GridShift lineup changes apply in real time without a Save button, with the fewest taps; core mirrors it with optimistic updates and rollback on a platform refusal.
+- 2026-10-29: Stage 5.2 shared league screens implemented in core (Matchups, Rosters with lineup editing, League Activity; one active league across tabs).
+- 2026-10-29: User decided on the Stage 5.2 report: (1) phone Matchups names stay one line with an ellipsis and the full name in the title; (2) League Activity is for roster adds, drops, and changes, not for moving players in and out of slots, so lineup changes, including commissioner-set lineups and IR-slot moves, are not shown, and their missing activity records are not a platform gap; (3) the platform will auto-fit a started week's lineup on save (departed players removed, newly added players benched), and core keeps its mid-week handling meanwhile; (4) Sleeper Matchups and Rosters keep their own data path until 5.2b.
 - 2026-10-29: User reviewed the 5.1 reference screens: approved once team and player names stay on one line with an ellipsis (done); GridShift league header desktop-only; Rosters position colour bars restored; flat Sleeper Standings and the 32 to 44px page title confirmed; moving the League and Fantasy tab bars to `.gs-tab` approved for the rollout.

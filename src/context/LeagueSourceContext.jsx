@@ -6,8 +6,8 @@ import LeagueSourceContext from './LeagueSourceContext.js';
 // Which provider League views read from. The default is the Sleeper path in
 // SleeperContext, untouched. A GridShift league can be chosen only when the
 // platform is configured (VITE_GRIDSHIFT_PLATFORM_URL) and the signed-in
-// account lists it; the choice is remembered per browser. Phase 5.0 applies it
-// to the League tab only (see docs/League Provider Contract.md).
+// account lists it; the choice is remembered per browser. Since Stage 5.2 it is
+// the one active league for every tab (see docs/League Provider Contract.md).
 
 const STORAGE_KEY = 'gridshift.leagueSource.v1';
 

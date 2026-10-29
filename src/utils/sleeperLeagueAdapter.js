@@ -3,10 +3,11 @@
 // A pure mapping over data the Sleeper path already loads (SleeperContext and
 // useLeagueHistoryData). It adds no requests and changes no values: Standings
 // renders exactly what it rendered before the contract existed (pinned by
-// tests/unit/leagueProviderStandings.test.mjs).
+// tests/unit/leagueProviderStandings.test.mjs), and so does League Activity
+// (tests/unit/leagueProviderScreens.test.mjs).
 
 import { LEAGUE_PROVIDER_IDS } from './leagueProviderContract.js';
-import { buildFinalPlacements, buildSeasonStandings, normalizeSeasonBrackets } from './leagueHistory.js';
+import { buildActivitySeasonGroups, buildFinalPlacements, buildSeasonStandings, normalizeSeasonBrackets } from './leagueHistory.js';
 
 /**
  * League summary from the Sleeper context value (`useFantasyLeague()`).
@@ -54,5 +55,41 @@ export function buildSleeperStandingsModel(history) {
     brackets,
     finalPlacements,
     postseason: { kind: 'bracket', week: snapshot?.league?.settings?.playoff_week_start ?? null },
+  };
+}
+
+/** League Activity filters for a Sleeper league (unchanged from before the contract). */
+export const SLEEPER_ACTIVITY_FILTERS = Object.freeze([
+  { id: 'all', label: 'All' },
+  { id: 'trade', label: 'Trades' },
+  { id: 'pick', label: 'Picks' },
+  { id: 'waiver', label: 'Waivers' },
+  { id: 'free_agent', label: 'Free agents' },
+]);
+
+/**
+ * League Activity model from `useLeagueHistoryData()` output and the player
+ * catalog, through the same `buildActivitySeasonGroups` call CompanionActivity
+ * made before the contract.
+ * @returns {import('./leagueProviderContract.js').ActivityModel}
+ */
+export function buildSleeperActivityModel(history, players) {
+  const season = String(history?.season ?? '');
+  const groups = buildActivitySeasonGroups(history?.snapshots ?? [], players ?? {});
+  const entries = groups.find((group) => group.season === history?.season)?.entries ?? [];
+  let status = 'ready';
+  if (history?.platform !== 'sleeper') status = 'unsupported';
+  else if (history.loading) status = 'loading';
+  else if (history.error) status = 'error';
+  else if (entries.length === 0) status = 'empty';
+  return {
+    provider: LEAGUE_PROVIDER_IDS.SLEEPER,
+    status,
+    season,
+    error: history?.error ?? '',
+    retry: history?.retry ?? (() => {}),
+    entries,
+    filters: SLEEPER_ACTIVITY_FILTERS,
+    hideCommissionerByDefault: true,
   };
 }
