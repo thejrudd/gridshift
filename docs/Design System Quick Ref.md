@@ -19,6 +19,28 @@ Full token table and dark-mode values: **`docs/Design Tokens.md`**
 - Horizontal scroll cues must cover the same rendered width as the scroll rail they describe. For full-bleed mobile tab rails, wrap the cue around the full-bleed shell, not an inset parent, so tab text cannot peek through beside the arrow. Add or preserve Playwright geometry checks that compare the cue edge to the rail's actual rendered edge.
 - Sticky tabs, filters, and headers inside a scrolling content area must have an opaque surface that also shields any top padding/offset above them. Content must never paint through above or behind the sticky control.
 
+## Design Foundation (Stage 5.1)
+
+Tokens: **`docs/Design Tokens.md`** › Design Foundation. Primitives live in `src/components/ui/` and `.gs-*` rules at the end of `src/index.css`. Status: applied to two reference screens only (League › Standings with the GridShift league header, and Fantasy › Rosters), awaiting the user's visual approval before rollout.
+
+- **Flat layout.** Sections sit on the page surface, separated by space (`--space-section`), a heading, and a divider. No card inside a card. A raised surface (`--color-surface-object`) is only for a thing that is itself an object: a dialog, a sheet, a draggable item, a team-gradient player row.
+- **Text hierarchy.** Six roles, each a class and a token set: page title (`.gs-text-page-title`), section heading (`.gs-text-section`), row title (`.gs-text-row-title`), body (`.gs-text-body`), secondary (`.gs-text-secondary`), meta (`.gs-text-meta`). One page title per page. Meta is readable (`--color-text-meta` = secondary), never tertiary.
+- **Interaction states.** Every interactive element shows hover (`--color-state-hover`), active (`--color-state-active`), keyboard focus (a `--focus-ring-width` outline in `--color-focus-ring`, offset `--focus-ring-offset`), and disabled (`--color-text-disabled`, `cursor: not-allowed`, no opacity on text parents). A clickable row shows a pointer cursor, a hover background, and a chevron. Add `.gs-focusable` to a shared control that has no focus ring of its own.
+- **Tabs.** The selected tab keeps the gold underline (`--color-state-selected`); inactive tabs use secondary text and darken on hover.
+- **Component set.**
+
+| Component | File | Use |
+| --- | --- | --- |
+| Section, SectionHeader, PageHeader | `ui/Section.jsx` | Page title block; a titled section with optional meta, icon, colour marker, actions |
+| DataTable | `ui/DataTable.jsx` | Flat table: hairline rows, meta headers, `is-start`/`is-center` alignment, `is-interactive` rows |
+| ListRow | `ui/ListRow.jsx` | Generic row (not player rows); a button with chevron when clickable |
+| Tabs | `ui/Tabs.jsx` | Roving-tabindex tab rail on `.season-tab`; `variant="secondary"` inside a page |
+| FormField | `ui/FormField.jsx` | Label, 16px control, hint or error wired by id |
+| Dialog | `ui/Dialog.jsx` | Shared `Modal` with fixed header and footer and a scrolling body |
+| Button (class) | `.gs-button`, `.gs-button--quiet` | Secondary and quiet actions with all four states |
+
+- Player and asset rows stay on the Companion shared row system (`CompanionPlayerRow`); the foundation only changes what surrounds them.
+
 ## Desktop Legibility and Viewing Distance
 
 Full guidance and the Fantasy Live reference profile: **[[Desktop Legibility]]**

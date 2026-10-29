@@ -85,7 +85,7 @@ Other `SleeperContext` consumers outside the fantasy tab (player profile and sta
 
 ## Stage 5.0: what changed
 
-- `CompanionStandings` renders a `StandingsModel`. With no GridShift league selected it calls the Sleeper adapter over the same `useLeagueHistoryData()` output; markup is identical to main for current, completed (brackets and final placement), loading, error, empty, and ESPN states (hash-pinned in the unit test).
+- `CompanionStandings` renders a `StandingsModel`. With no GridShift league selected it calls the Sleeper adapter over the same `useLeagueHistoryData()` output; markup is identical to main for current, completed (brackets and final placement), loading, error, empty, and ESPN states (hash-pinned in the unit test). Stage 5.1 then made Standings a design reference screen: current and completed markup now use the flat primitives (re-pinned), their text content is still pinned to main, and loading, error, empty, and ESPN markup are unchanged.
 - `App.jsx`: when a GridShift league is selected, the League tab shows that league's header (name, season, Switch) and Standings; History and Activity show "not available for this league yet"; the mobile season chip is hidden on the League tab. Fantasy, Trade, and Draft tabs are unchanged and keep the Sleeper league.
 - `CompanionConnect`: the GridShift section appears below the Sleeper connect form and in the league switcher, only when configured. Choosing a Sleeper league clears the GridShift selection.
 - Nothing in `SleeperContext.jsx`, `scoringEngine.js`, or `appRoutes.js` changed.

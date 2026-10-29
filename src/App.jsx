@@ -328,6 +328,27 @@ function LeagueContextHeader({
   );
 }
 
+// GridShift league header (Stage 5.1 reference screen): league name, season,
+// and Switch on the flat primitives. Desktop sits in the League sub-nav;
+// phones show it at the top of the League page.
+function GridShiftLeagueHeader({ name, season, onSwitchLeague, className = '' }) {
+  return (
+    <div className={`gs-league-header ${className}`.trim()} data-testid="gridshift-league-header">
+      <span className="gs-league-header__name">{name ?? 'League'}</span>
+      {season && <span className="gs-text-meta gs-league-header__season">{season}</span>}
+      <button type="button" className="gs-button" onClick={onSwitchLeague} aria-label="Switch league">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M7 7h11l-3-3" />
+          <path d="M17 17H6l3 3" />
+          <path d="M18 7l-3 3" />
+          <path d="M6 17l3-3" />
+        </svg>
+        Switch
+      </button>
+    </div>
+  );
+}
+
 function getScheduleTeamId(value) {
   if (typeof value === 'string') return value.toUpperCase();
   return value?.id ? String(value.id).toUpperCase() : null;
@@ -2224,13 +2245,11 @@ function AppInner() {
         {activeTab === 'league' && gridshiftLeague && (
           <div className="season-subnav league-subnav">
             <LeagueSubNav activeView={leagueView} onViewChange={navigateLeagueView} />
-            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
-              <LeagueContextHeader
-                league={{ name: gridshiftLeague.name }}
+            <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[7px]">
+              <GridShiftLeagueHeader
+                name={gridshiftLeague.name}
                 season={gridshiftLeague.season}
-                seasonOptions={[gridshiftLeague.season]}
                 onSwitchLeague={() => setLeagueSwitcherOpen(true)}
-                className="flex items-center gap-2"
               />
             </div>
           </div>
@@ -2789,6 +2808,14 @@ function AppInner() {
             </>
           )}
 
+          {activeTab === 'league' && gridshiftLeague && (
+            <GridShiftLeagueHeader
+              name={gridshiftLeague.name}
+              season={gridshiftLeague.season}
+              onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+              className="gs-league-header--page"
+            />
+          )}
           {activeTab === 'league' && gridshiftLeague && (
             leagueView === 'standings' ? (
               <Suspense fallback={<SectionLoading label="Loading Standings" />}>

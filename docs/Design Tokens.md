@@ -126,6 +126,38 @@ When Barlow Condensed carries meaningful uppercase labels, prefer stronger
 weights and restrained tracking. Use Figtree for prose and descriptions. See
 [[Desktop Legibility]] for the complete audit and validation contract.
 
+## Design Foundation Tokens (Stage 5.1)
+
+Declared in `:root` in `src/index.css`. Each role aliases a base token, so `.dark` needs no second definition. Rules and components: [[Design System Quick Ref]] › Design Foundation.
+
+### Text roles
+
+| Role | Class | Font | Size token | Weight | Colour |
+| --- | --- | --- | --- | --- | --- |
+| Page title | `.gs-text-page-title` | Barlow Condensed, uppercase | `--text-page-title-size` (`--type-heading-lg` to `--type-display`) | 800 | `--color-text-primary` |
+| Section heading | `.gs-text-section` | Barlow Condensed, uppercase | `--text-section-size` (`--type-heading-sm`) | 750 | `--color-text-primary` |
+| Row title | `.gs-text-row-title` | Figtree | `--text-row-title-size` (`--type-emphasis`) | 650 | `--color-text-primary` |
+| Body | `.gs-text-body` | Figtree | `--text-body-size` (`--type-body`) | 400 | `--color-text-primary` |
+| Secondary | `.gs-text-secondary` | Figtree | `--text-secondary-size` (`--type-meta`) | 500 | `--color-text-secondary` |
+| Meta | `.gs-text-meta` | Barlow Condensed, uppercase, `0.1em` | `--text-meta-size` (`--type-label`) | 700 | `--color-text-meta` |
+
+### Colour, state, and spacing roles
+
+| Token | Resolves to | Use |
+| --- | --- | --- |
+| `--color-text-primary` | `--color-label` | Identity, values, headings, selected state |
+| `--color-text-secondary` | `--color-label-secondary` | Supporting text that must be read |
+| `--color-text-meta` | `--color-label-secondary` | Column headers, eyebrows, section meta |
+| `--color-text-disabled` | `--color-label-tertiary` | Disabled controls only |
+| `--color-surface-page` | `--color-bg` | Sections, tables, rows |
+| `--color-surface-object` | `--color-bg-secondary` | Dialogs, sheets, draggable items only |
+| `--color-divider` / `--color-divider-strong` | `--color-separator` / `--color-separator-opaque` | Row lines / section heading rule |
+| `--color-state-hover` / `--color-state-active` | `--color-fill-secondary` / `--color-fill` | Hover and pressed backgrounds |
+| `--color-state-selected` | `--color-signature` | Selected-tab underline, selected-row rail (decorative) |
+| `--color-focus-ring`, `--focus-ring-width`, `--focus-ring-offset` | `--color-accent`, `2px`, `2px` | Keyboard focus outline |
+| `--state-transition` | `160ms` standard easing | State colour changes |
+| `--space-section`, `--space-section-header`, `--space-row-y`, `--space-row-x` | `clamp(28px, 3.4vw, 44px)`, `10px`, `12px`, `12px` | Flat layout spacing |
+
 ## Page Frame Tokens
 
 | Frame | Maximum | Intended surfaces |
