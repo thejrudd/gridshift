@@ -26,6 +26,7 @@ Layer-by-layer ownership map: who owns which state, where domain logic lives, an
 | `src/context/PredictionContext.jsx` | Season-scoped prediction state in localStorage; syncs opposing game results across teams; reset/import/random generation; playoff selections and a restorable backup when a recipient applies a shared snapshot. Contracts: [[Prediction Share Cards]] |
 | `src/context/ThemeContext.jsx` | `.dark` on `<html>`; persisted dark mode and favorite team; signature theme CSS variables on the root; the `compact`/`comfortable`/`large` display preference and `data-display-size` on `<html>` |
 | `src/context/SleeperContext.jsx` | The Sleeper fantasy platform layer — see below |
+| `src/context/LeagueSourceContext.jsx` | Which league provider the League tab reads (Sleeper by default, or a selected GridShift league when the optional platform is configured). Contract and rules: [[League Provider Contract]] |
 
 ### Responsive Display Layer
 
@@ -84,7 +85,7 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 
 ### `src/components/companion`
 
-- `CompanionStandings.jsx`, `CompanionHistory.jsx`, and `CompanionActivity.jsx` power the top-level League routes. Their page-level loading, unavailable, error, and empty reasons stay centered and unframed.
+- `CompanionStandings.jsx`, `CompanionHistory.jsx`, and `CompanionActivity.jsx` power the top-level League routes. Standings reads the provider-neutral `StandingsModel` ([[League Provider Contract]]), so it serves a Sleeper league or a GridShift league. Their page-level loading, unavailable, error, and empty reasons stay centered and unframed.
 - Trade keeps `CompanionTrade.jsx` as the public route component, with extracted Agent/Intelligence/Upgrade leaf modules in `src/components/companion/trade/`.
 - Fantasy Live (the live layer in Fantasy Matchups; the separate tab is retired): `src/hooks/useMatchupLiveFeed.js` owns the data plumbing (session, snapshots, projections, win probability, play feed, chart series); `CompanionMatchup.jsx` owns replay state and composes the replay bar, chart, scoring plays and hover cards from `src/components/companion/matchup/`. Full file ownership and implementation rules: [[Fantasy Live]].
 - Shared player/asset selector rendering lives here: `CompanionPlayerRow.jsx`, `CompanionAssetRow.jsx`, and `CompanionSelectorControls.jsx` are the canonical row/control primitives for Companion and Trade-adjacent picker surfaces. Read [[Companion Shared Rows]] before changing player-row styling, team logos, status badges, or selector controls.
@@ -120,6 +121,7 @@ Rules:
 | --- | --- |
 | `sleeperApi.js` | Calls Sleeper directly from the browser |
 | `liveApi.js`, `statisticsScoresApi.js`, `fantasyProjectionsApi.js` | Call the GridShift sidecar; they **never** send a BALLDONTLIE credential from the browser |
+| `gridshiftPlatformApi.js` | Optional GridShift fantasy platform API (separate repository and service). Same-origin paths proxied to `VITE_GRIDSHIFT_PLATFORM_URL`; off when unset; the browser holds only the platform's HttpOnly session cookie. See [[League Provider Contract]] |
 
 ### `server` (sidecar)
 
@@ -149,7 +151,7 @@ Rule: gateway state is process-local. Running multiple sidecar replicas would mu
 | File | Owns |
 | --- | --- |
 | `package.json` | npm scripts; version drives PWA cache busting |
-| `vite.config.js` | React plugin, route-aware social/share HTML metadata in development and production entry files, PWA behavior, `__APP_VERSION__`, KTC proxy, and local sidecar proxies including Trade proposals/share metadata |
+| `vite.config.js` | React plugin, route-aware social/share HTML metadata in development and production entry files, PWA behavior, `__APP_VERSION__`, KTC proxy, local sidecar proxies including Trade proposals/share metadata, and the optional GridShift platform proxy (only when `VITE_GRIDSHIFT_PLATFORM_URL` is set) |
 | `nginx.conf` | Production proxying of `/api/live/`, `/api/statistics/scores/`, `/api/fantasy/`, `/api/players/`, `/api/draft-sync/`, `/api/predictions-sync/`, `/api/trade-proposals/`, and `/trade/share/` to the sidecar. Bearer credentials are forwarded and server-backed routes are `no-store`, except `/api/players/`, whose `Cache-Control` is set by the sidecar |
 | `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, `Dockerfile.server` | Deployment |
 

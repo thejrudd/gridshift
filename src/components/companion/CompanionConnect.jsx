@@ -1,5 +1,7 @@
 import { useId, useState } from 'react';
 import { useFantasy } from '../../context/SleeperContext';
+import { useLeagueSource } from '../../context/LeagueSourceContext.js';
+import GridShiftLeagueAccess from './GridShiftLeagueAccess.jsx';
 import { copyText } from '../../utils/pageShare.js';
 import { CompanionSegmentedControl } from './CompanionSelectorControls.jsx';
 
@@ -28,7 +30,7 @@ function SleeperAccountAvatar({ user }) {
   );
 }
 
-export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null }) {
+export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null, onGridShiftLeagueSelected = null }) {
   const {
     connect,
     selectLeague,
@@ -46,6 +48,7 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
     isConnected,
     hasLeague,
   } = useFantasy();
+  const { clearGridShiftLeague } = useLeagueSource();
   const [username, setUsername] = useState('');
 
   const handleConnect = async (event) => {
@@ -59,6 +62,7 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
   const handleSelectLeague = async (leagueId) => {
     try {
       await selectLeague(leagueId);
+      clearGridShiftLeague();
       onLeagueSelected?.();
     } catch { /* surfaced through connectError */ }
   };
@@ -86,6 +90,7 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
             {connectLoading ? 'Looking Up Leagues...' : 'Find My Leagues'}
           </button>
         </form>
+        <GridShiftLeagueAccess className="mt-10 w-full max-w-sm" onLeagueSelected={onGridShiftLeagueSelected ?? onLeagueSelected} />
       </div>
     );
   }
@@ -113,6 +118,7 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
           connectError={connectError}
           onSelectLeague={handleSelectLeague}
         />
+        <GridShiftLeagueAccess onLeagueSelected={onGridShiftLeagueSelected ?? onLeagueSelected} />
       </div>
     );
   }

@@ -2,7 +2,7 @@
 
 Back: [[Home]] · Routing: [[Where To Edit]]
 
-Last updated: 2026-10-07 (Asia/Tokyo).
+Last updated: 2026-10-28 (Stage 5.0 integration spike).
 
 ## Purpose and maintenance
 
@@ -81,7 +81,7 @@ Existing sidecar SQLite/WAL patterns are candidates for the small pilot. The ind
 
 ### Existing feature integration
 
-- `src/context/SleeperContext.jsx` exposes the shared fantasy hooks but still contains provider-specific state/loading. Add an independent provider boundary without allowing unrelated Sleeper snapshots, caches, seasons, or roster IDs to cross into GridShift leagues.
+- `src/context/SleeperContext.jsx` exposes the shared fantasy hooks but still contains provider-specific state/loading. Add an independent provider boundary without allowing unrelated Sleeper snapshots, caches, seasons, or roster IDs to cross into GridShift leagues. Stage 5.0 started this boundary as the [[League Provider Contract]] (Standings only); `SleeperContext.jsx` itself is unchanged.
 - Existing Draft observes Sleeper drafts. A live GridShift draft engine is deferred; commissioner-assigned rosters are the proposed initial bootstrap.
 - Existing score calculations are reusable, but supported provider stat coverage, offensive/IDP attribution, corrections, and finalization need verification before GridShift becomes authoritative.
 - Existing trade proposals are useful presentation/workflow foundations. Acceptance in an independent league must actually execute validated asset transfers; never confuse proposal acceptance with external Sleeper execution.
@@ -140,6 +140,34 @@ Basic audit, isolation, persistence, and recovery requirements expand with each 
 - Live NFL weeks plus isolated historical replay are proposed for testing; clock/replay configuration remains open. Never let a replay mutate a live league.
 - Use Implemented, Validated, and Complete as described in [[Agent Workflow]]. Deployment and user acceptance require their own evidence.
 
+## Stage 5 in core: GridShift leagues through the provider contract
+
+The platform lives in its own repository (`thejrudd/GridShift-Fantasy-Platform`); its `docs/Plan.md` is the source of truth for platform scope, rules, and the Stage 5 phases (5.0 to 5.9, with 5.2b). Its later decisions supersede this document's earlier stage details where they differ (for example the 2026-10-07 username/password sign-in choice: the platform uses passwordless email-link sign-in; see that plan's Conflict resolutions). This section records the core side.
+
+Decided by the user on 2026-10-27 (recorded in the platform plan): league screens live in GridShift core, fed by the platform; a person signed in with a GridShift league gets all of core's fantasy functionality on that league; the four-tester pilot stays on the platform's minimal `web/` client until Stage 5 finishes; core never depends on the platform repository, and the GridShift-league provider is enabled only when a platform API URL is configured and only for an account that belongs to a league or holds an invite.
+
+Phase 5.0 (integration spike) in core, implemented on branch `stage5-0-integration-spike`:
+
+- The provider-neutral contract, capabilities, and the audit of every fantasy view with the components needing change: [[League Provider Contract]].
+- Standings renders through the contract: the Sleeper path is an adapter over the same data and produces identical markup; a GridShift league's Standings reads `GET /api/leagues`, `/api/leagues/:id`, `/teams`, `/standings`, `/weeks`, and `/matchups`.
+- Sign-in uses the platform's email-link flow through a same-origin dev proxy; `npm run dev:platform` runs core with a local platform API (PGlite).
+
+Decisions on the spike's open questions (user, 2026-10-28), replacing the proposals below:
+
+- Production wiring: same-origin reverse proxy of the platform routes from core's host.
+- One active league: when a GridShift league is selected, every tab follows it; views not yet on the contract show an unavailable state, never Sleeper data (from 5.2).
+- Account features (invite acceptance, usernames, account settings, admin league creation) stay in the platform's `web/` for now; sign-in is in core.
+- Player identity: use core's existing cross-provider identity layer (`src/utils/providerPlayerIdentity.js`, as `src/utils/fantasyProjections.js` uses it for BALLDONTLIE rows) to line GridShift-league players up with core's Sleeper-keyed data. Core and the platform are meant to unify, so the platform may borrow core code for this.
+- Ports: the platform runs on 3101 in the core dev arrangement.
+
+Original proposals (kept for history):
+
+1. Production wiring: same-origin reverse proxy of the platform routes from core's host (implemented for dev, recommended) versus cross-origin calls with CORS and `SameSite=None` cookies.
+2. Scope of the GridShift selection: League tab only (spike) versus one active league for every tab, with views not yet on the contract showing an unavailable state (recommended for 5.2).
+3. Where sign-in, account, invites, and admin live once `web/` retires (the platform plan defers this to 5.0's choice): the spike signs in inside core's connect flow but keeps account, invite acceptance, and admin in `web/`.
+4. Ports: the platform's dev default (3001) collides with core's sidecar; the launcher runs the platform on 3101.
+5. Player identity across providers (Sleeper ids versus platform `nfl_player` uuids) before Matchups, Roster, Rankings, Heatmap, and Trade can run on a GridShift league.
+
 ## Deferred features
 
 Defer FAAB, a live snake draft, existing-league migration, co-managers, multi-team trades, polls, attachments/reactions, external email/browser/native push delivery, grace-period IR enforcement, and broad public hosting/onboarding. IR/injury slots are explicitly included. Optional notifications remain in scope through in-app events/preferences; external delivery channels can follow later.
@@ -165,6 +193,7 @@ Resolve decisions when their implementation stage approaches; do not require eve
 | Stage 0 IR rules | Validated (isolated rules) | 10/10 focused tests passed; changed module ESLint passed; no provider/API/UI integration or usage acceptance yet |
 | Existing League Activity reuse | Investigated | Existing feed/normalizer confirmed; independent loading and new event types pending |
 | Public four-manager environment | Planned | Not deployed; no multi-manager acceptance performed |
+| Stage 5.0 league provider contract and GridShift Standings | Implemented | Branch `stage5-0-integration-spike`. Unit: `tests/unit/leagueProviderStandings.test.mjs` (Sleeper Standings markup hash-identical to main 9c8b5bd in six states; adapter parity; GridShift mapping from platform responses captured locally; unconfigured client makes no request). Browser: agent-run Playwright checks against a local platform API seeded through its HTTP API (see the contract doc). Not reviewed by the user; not deployed; other views not migrated |
 
 ## Decision record
 
@@ -174,3 +203,5 @@ Resolve decisions when their implementation stage approaches; do not require eve
 - 2026-10-07: User requested this maintained plan, mirrored project instructions, and implementation following documentation.
 - 2026-10-07: User selected invite-only username/password sign-in; no email service required.
 - 2026-10-07: Implemented isolated IR eligibility/settings/action policy rules and 10 focused tests. The next slice is identity/invitations/league creation; existing leagues remain unchanged by this unconnected module.
+- 2026-10-28: Stage 5.0 spike implemented in core: league provider contract, Sleeper adapter (no behavior change), GridShift-league Standings from the platform API, and the core-plus-local-platform dev environment. Five open decisions recorded above.
+- 2026-10-28: User decided the Stage 5.0 open questions: same-origin proxy in production; one active league across tabs; account features stay in `web/`; player identity through core's cross-provider identity layer (`providerPlayerIdentity.js`), with platform reuse of core code permitted.

@@ -8,6 +8,7 @@ Use this note as the entry point.
 
 - [[Architecture Map]]
 - [[Independent Fantasy Platform Plan]]
+- [[League Provider Contract]]
 - [[Where To Edit]]
 - [[Design System Quick Ref]]
 - [[Design Tokens]]

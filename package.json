@@ -17,6 +17,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:upgrade:8.1.1-to-8.2": "node scripts/dev.mjs --upgrade-from 8.1.1 --upgrade-to 8.2.0",
     "dev:client": "vite",
+    "dev:platform": "node scripts/dev-platform.mjs",
     "server": "node --env-file-if-exists=.env server/index.js",
     "build": "vite build",
     "build:search-index": "node scripts/build-search-index.mjs",

@@ -1,8 +1,12 @@
 import { useMemo, useRef } from 'react';
+import { useLeagueSource } from '../../context/LeagueSourceContext.js';
+import useGridShiftStandings from '../../hooks/useGridShiftStandings.js';
 import useLeagueHistoryData from '../../hooks/useLeagueHistoryData.js';
 import useHorizontalScrollCue from '../../hooks/useHorizontalScrollCue.js';
-import { buildFinalPlacements, buildSeasonStandings, normalizeSeasonBrackets } from '../../utils/leagueHistory.js';
+import { getLeagueProvider } from '../../utils/leagueProviderContract.js';
+import { buildSleeperStandingsModel } from '../../utils/sleeperLeagueAdapter.js';
 import HorizontalScrollCue from '../HorizontalScrollCue.jsx';
+import EmptyState from '../ui/EmptyState.jsx';
 import LeagueHistoryIcon from './LeagueHistoryIcon.jsx';
 import LeagueHistoryState from './LeagueHistoryState.jsx';
 
@@ -367,27 +371,74 @@ function losersBracketPresentation(type) {
   return { title: 'Losers Bracket', meta: 'Verified Sleeper bracket' };
 }
 
+// Standings reads the provider-neutral StandingsModel (src/utils/leagueProviderContract.js).
+// The Sleeper path is the default and renders exactly as before the contract;
+// a GridShift league is used only when one is selected in LeagueSourceContext.
 export default function CompanionStandings() {
+  const { gridshiftLeague } = useLeagueSource();
+  return gridshiftLeague
+    ? <GridShiftStandings leagueId={gridshiftLeague.leagueId} season={gridshiftLeague.season} />
+    : <SleeperStandings />;
+}
+
+function SleeperStandings() {
   const history = useLeagueHistoryData();
-  const snapshot = history.snapshots?.find((entry) => String(entry.season) === history.season) ?? null;
-  const historical = Boolean(snapshot?.completed);
-  const standings = useMemo(() => snapshot ? buildSeasonStandings(snapshot, { historical }) : null, [snapshot, historical]);
-  const brackets = useMemo(() => snapshot ? normalizeSeasonBrackets(snapshot) : null, [snapshot]);
-  const finalPlacements = useMemo(
-    () => historical && snapshot ? buildFinalPlacements(snapshot, brackets) : null,
-    [brackets, historical, snapshot],
+  const { platform, season, snapshots, loading, error, retry, eligibleLeagueHistory } = history;
+  const model = useMemo(
+    () => buildSleeperStandingsModel({ platform, season, snapshots, loading, error, retry }),
+    [error, loading, platform, retry, season, snapshots],
   );
-  const hasStandings = Boolean(standings?.rows?.length && standings.throughWeek > 0);
-  const state = <LeagueHistoryState platform={history.platform} loading={history.loading} error={history.error} empty={!hasStandings} noun="Standings" season={history.season} priorSeasonCount={Math.max(0, history.eligibleLeagueHistory.length - 1)} onRetry={history.retry} />;
-  if (history.platform !== 'sleeper' || history.loading || history.error || !hasStandings) {
-    return <div className="league-history-page league-history-page--state" data-tour="league-standings-content">{state}</div>;
+  const hasStandings = Boolean(model.standings?.rows?.length && model.standings.throughWeek > 0);
+  const state = <LeagueHistoryState platform={platform} loading={loading} error={error} empty={!hasStandings} noun="Standings" season={season} priorSeasonCount={Math.max(0, eligibleLeagueHistory.length - 1)} onRetry={retry} />;
+  return <StandingsView model={model} stateView={state} />;
+}
+
+function GridShiftStandings({ leagueId, season }) {
+  const model = useGridShiftStandings(leagueId, season);
+  return <StandingsView model={model} stateView={<GridShiftStandingsState model={model} />} />;
+}
+
+function GridShiftStandingsState({ model }) {
+  if (model.status === 'loading') return <EmptyState title="Loading standings..." />;
+  if (model.status === 'signed-out') return <EmptyState title="Sign in to view this league." />;
+  if (model.status === 'error') {
+    return (
+      <EmptyState
+        title="Standings is unavailable right now."
+        hint={model.error}
+        action={(
+          <button type="button" className="league-history-state-action" onClick={model.retry}>Try again</button>
+        )}
+      />
+    );
   }
+  const year = model.season || 'this league year';
+  return <EmptyState title={`No standings available for ${year} yet.`} hint={`Standings will appear after the first matchup in ${year} is final.`} />;
+}
+
+function PostseasonNote({ provider, postseason }) {
+  if (!postseason) return null;
+  return (
+    <div className="league-standings-live-note">
+      <LeagueHistoryIcon name="target" tone="blue" size="sm" />
+      {postseason.kind === 'championship'
+        ? <span>Championship <strong>Week {postseason.week}</strong> — the top two teams meet.</span>
+        : <span>Playoffs begin <strong>Week {postseason.week ?? '—'}</strong> — the bracket appears here once {getLeagueProvider(provider).label} finalizes seeding.</span>}
+    </div>
+  );
+}
+
+function StandingsView({ model, stateView }) {
+  if (model.status !== 'ready') {
+    return <div className="league-history-page league-history-page--state" data-tour="league-standings-content">{stateView}</div>;
+  }
+  const { historical, standings, brackets, finalPlacements } = model;
   const playoffTeamCount = standings.playoffTeamCount || Math.min(4, standings.rows.length);
   const losersBracket = losersBracketPresentation(brackets?.losersBracketType);
   return (
     <div className="league-history-page league-standings-page" data-tour="league-standings-content">
       <header className="league-history-heading">
-        <div><span className="league-history-eyebrow">{historical ? 'Final table' : 'Frozen live table'}</span><h1>{history.season} Standings</h1><p>Results through completed <strong>Week {standings.throughWeek}</strong>. In-progress scoring never changes this order.</p></div>
+        <div><span className="league-history-eyebrow">{historical ? 'Final table' : 'Frozen live table'}</span><h1>{model.season} Standings</h1><p>Results through completed <strong>Week {standings.throughWeek}</strong>. In-progress scoring never changes this order.</p></div>
       </header>
       <div className="league-division-grid">
         {standings.divisions.map((division) => (
@@ -405,12 +456,7 @@ export default function CompanionStandings() {
           <FinalPlacementRows rows={finalPlacements.rows} />
         </section>
       )}
-      {!historical && (
-        <div className="league-standings-live-note">
-          <LeagueHistoryIcon name="target" tone="blue" size="sm" />
-          <span>Playoffs begin <strong>Week {snapshot?.league?.settings?.playoff_week_start ?? '—'}</strong> — the bracket appears here once Sleeper finalizes seeding.</span>
-        </div>
-      )}
+      {!historical && <PostseasonNote provider={model.provider} postseason={model.postseason} />}
     </div>
   );
 }
