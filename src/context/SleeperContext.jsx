@@ -1164,7 +1164,7 @@ export function FantasyProvider({ children }) {
         entry.promise = null;
         trimRefreshCache(providerKey);
       }
-    });
+    })();
 
     entry.promise = request;
     refreshCache.set(providerKey, entry);

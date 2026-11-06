@@ -77,7 +77,12 @@ export function estimatePlayPoints(
   // price the tackle at 0 and drop the play from the feed. Price it the way the
   // league does instead: one tackler named reads as solo, several as assisted.
   const tackleKey = getPricedTackleKey(play, delta, scoringSettings);
-  if (tackleKey) points += calcPoints({ [tackleKey]: 1 }, scoringSettings, position);
+  const tacklePosition = credit?.returnTackle ? null : position;
+  if (credit?.returnTackle && !tackleKey) {
+    const tackle = { idp_tkl: delta.idp_tkl };
+    points += calcPoints(tackle, scoringSettings, tacklePosition) - calcPoints(tackle, scoringSettings, position);
+  }
+  if (tackleKey) points += calcPoints({ [tackleKey]: 1 }, scoringSettings, tacklePosition);
   return Math.round(points * 100) / 100;
 }
 
@@ -188,7 +193,41 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
   const conversion = credit?.conversion ?? null;
   const conversionKey = conversion ? TWO_POINT_KEYS[conversion.role] : null;
   if (conversion?.only) return conversionKey ? { [conversionKey]: 1 } : {};
+  if (credit?.lateral?.onlyFumble) {
+    const delta = {};
+    if (!/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) addFumble(delta, credit.fumble);
+    return delta;
+  }
   const delta = buildInvolvementDelta(play, role, roleDetail, attributionRoles, credit?.fumble ?? null);
+  if (credit?.returnTackle && !/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) {
+    delta.idp_tkl = 1;
+  }
+  if (role === 'passer' && credit?.lateral?.passingYards != null) {
+    delta.pass_yd = credit.lateral.passingYards;
+    if (credit.lateral.turnover) delete delta.pass_fd;
+  }
+  if (role === 'receiver' && credit?.lateral) {
+    const { yards, reception, finalCarrier } = credit.lateral;
+    if (!reception) delete delta.rec;
+    delta.rec_yd = yards;
+    // A lateral recipient did not make a second catch; the last carrier earns
+    // the touchdown/first down, rather than every receiver on the same snap.
+    if (!finalCarrier) {
+      delete delta.rec_td;
+      delete delta.rec_fd;
+      delete delta.rec_td_40p;
+      delete delta.rec_td_50p;
+    }
+    if (credit.lateral.turnover) delete delta.rec_fd;
+    delete delta.rec_40p;
+    if (yards >= 40) delta.rec_40p = 1;
+    if (delta.rec_td) {
+      delete delta.rec_td_40p;
+      delete delta.rec_td_50p;
+      if (yards >= 40) delta.rec_td_40p = 1;
+      if (yards >= 50) delta.rec_td_50p = 1;
+    }
+  }
   if (conversionKey) delta[conversionKey] = (delta[conversionKey] ?? 0) + 1;
   return delta;
 }
@@ -306,6 +345,8 @@ function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble)
       delta.pass_2pt = 1;
     } else if (/intercept/i.test(description)) {
       delta.pass_int = 1;
+      delta.pass_att = 1;
+      delta.pass_inc = 1;
     } else if (/sack/i.test(description)) {
       delta.pass_sack = 1;
       addFumble(delta, fumble);

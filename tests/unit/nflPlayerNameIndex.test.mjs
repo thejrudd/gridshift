@@ -95,7 +95,8 @@ test('the Fantasy Live adapter keeps its existing index shape and behavior', () 
   // Ambiguous bare surnames are dropped; the initialed forms survive.
   assert.equal(index.index.get('smith'), undefined);
   assert.deepEqual(index.index.get('t smith'), ['b']);
-  assert.deepEqual(index.meta.get('a'), { team: 'PHI', position: 'RB', normalizedName: 'saquon barkley' });
+  // `name` lets a play credit say who made a return tackle.
+  assert.deepEqual(index.meta.get('a'), { name: 'Saquon Barkley', team: 'PHI', position: 'RB', normalizedName: 'saquon barkley' });
 });
 
 test('a rostered defender does not absorb a same-initial passer on another team', () => {

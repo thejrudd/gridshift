@@ -88,9 +88,31 @@ export function PlayTrajectoryStrip({ play, homeTeam, awayTeam, awayTheme, homeT
         </span>,
       );
     }
-  } else if (flag === 'int' && turnover) {
-    const xPick = vx(turnover.at);
+  } else if (geometry.lateral) {
+    const lateral = geometry.lateral;
+    const first = lateral.carriers[0].end;
+    const air = Math.min(46, Math.abs(first - start) * 1.6 + 10);
+    paths.push(<path key="throw" className="pv-path" data-type="pass" style={{ stroke: color }} fill="none" vectorEffect="non-scaling-stroke"
+      d={`M${x0} ${GROUND_Y} Q ${(x0 + vx(first)) / 2} ${GROUND_Y - air} ${vx(first)} ${GROUND_Y}`} />);
+    const points = lateral.carriers.map((carrier) => carrier.end);
+    if (lateral.recoveryAt != null) points.push(lateral.recoveryAt);
+    paths.push(<path key="carriers" className="pv-path" style={{ stroke: color }} fill="none" vectorEffect="non-scaling-stroke"
+      d={points.map((yard, index) => `${index ? 'L' : 'M'}${vx(yard)} ${GROUND_Y}`).join(' ')} />);
+    if (lateral.sequence.fumble && lateral.finish !== lateral.recoveryAt) {
+      paths.push(<path key="return" className={lateral.changesPossession ? 'pv-return' : 'pv-path'} style={lateral.changesPossession ? undefined : { stroke: color }} fill="none" vectorEffect="non-scaling-stroke"
+        d={`M${vx(lateral.recoveryAt)} ${GROUND_Y} L${vx(lateral.finish)} ${GROUND_Y}`} />);
+    }
+    marks.push(<span key="outcome" className="pv-endwrap is-route" style={{ left: `${x(lateral.recoveryAt ?? lateral.finish)}%` }}>
+      <OutcomeMark flag={flag} scoring={scoring} />
+    </span>);
+    if (lateral.changesPossession && turnover.hasReturn) {
+      marks.push(<span key="finish" className="pv-endwrap is-route" style={{ left: `${x(lateral.finish)}%` }}>
+        <i className="fv-mark is-ret" data-dir={drawDir > 0 ? 'l' : 'r'} title="Return" />
+      </span>);
+    }
+  } else if (turnover) {
     const xFinish = vx(turnover.finish);
+    const xPick = vx(turnover.at);
     const air = Math.min(46, Math.abs(turnover.at - start) * 1.6 + 10);
     paths.push(
       <path key="throw" className="pv-path" data-type="pass" style={{ stroke: color }} fill="none" vectorEffect="non-scaling-stroke"

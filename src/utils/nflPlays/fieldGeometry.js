@@ -10,8 +10,8 @@
 // always drives left to right and the home team right to left, which is how
 // broadcast field graphics are read.
 
-import { parseInterception } from './playNarrative.js';
-import { FIELD_SPOT_PATTERN, possessionTextToPercent } from './fieldSpots.js';
+import { parseInterception, parsePassLaterals } from './playNarrative.js';
+import { canonicalTeam, FIELD_SPOT_PATTERN, possessionTextToPercent } from './fieldSpots.js';
 
 export { canonicalTeam, possessionTextToPercent } from './fieldSpots.js';
 
@@ -125,7 +125,53 @@ export function isKickPossessionPlay(play) {
   return /field.?goal.?(?:missed|blocked)|blocked.?field.?goal/.test(slug);
 }
 
-function isPossessionChangingPlay(play) {
+// A lateral's endpoints describe each carrier's advance, not the release spot.
+// Require a consistent, nonzero first advance to establish the original offense
+// independently of the provider's post-play possession team.
+export function getPassLateralGeometry(play, { homeTeam, awayTeam } = {}) {
+  if (!homeTeam || !awayTeam) return null;
+  const sequence = parsePassLaterals(play?.rawText ?? play?.description);
+  if (!sequence) return null;
+  const validSpot = (spot) => {
+    const [team, yard] = String(spot).split(/\s+/);
+    return [canonicalTeam(homeTeam), canonicalTeam(awayTeam)].includes(canonicalTeam(team))
+      && Number(yard) >= -10 && Number(yard) <= 50;
+  };
+  const spots = sequence.carriers.map((carrier) => carrier.to);
+  if (sequence.fumble) spots.push(sequence.fumble.at, sequence.fumble.returnTo);
+  if (!spots.every(validSpot)) return null;
+  if (play.startPossessionText && !validSpot(play.startPossessionText)) return null;
+  const start = possessionTextToPercent(play.startPossessionText, { homeTeam })
+    ?? yardLineToPercent(play.startYardLine);
+  const carriers = sequence.carriers.map((carrier) => ({
+    ...carrier, end: possessionTextToPercent(carrier.to, { homeTeam }),
+  }));
+  const first = carriers[0];
+  if (start == null || !first.yards || Math.abs(first.end - start) !== Math.abs(first.yards)) return null;
+  const dir = Math.sign((first.end - start) * first.yards);
+  const offenseTeam = dir > 0 ? awayTeam : homeTeam;
+  if (carriers.some((carrier, index) => index > 0
+    && (carrier.end - carriers[index - 1].end) * dir !== carrier.yards)) return null;
+  const recovery = sequence.fumble;
+  if (recovery && ![canonicalTeam(homeTeam), canonicalTeam(awayTeam)].includes(recovery.recoveredByTeam)) return null;
+  const changesPossession = Boolean(recovery && recovery.recoveredByTeam !== canonicalTeam(offenseTeam));
+  const at = recovery ? possessionTextToPercent(recovery.at, { homeTeam }) : null;
+  const finish = recovery ? possessionTextToPercent(recovery.returnTo, { homeTeam }) : carriers.at(-1).end;
+  if (recovery && (finish - at) * (changesPossession ? -dir : dir) !== recovery.returnYards) return null;
+  const reportedEnd = possessionTextToPercent(play.endPossessionText, { homeTeam })
+    ?? yardLineToPercent(play.endYardLine);
+  if (reportedEnd != null && reportedEnd !== finish) return null;
+  return {
+    sequence, carriers, start, finish, dir, offenseTeam, changesPossession,
+    recoveryAt: at,
+    // The defense's return is separate from the offense's advance.
+    yards: ((changesPossession ? at : finish) - start) * dir,
+  };
+}
+
+function isPossessionChangingPlay(play, context = {}) {
+  const lateral = getPassLateralGeometry(play, context);
+  if (lateral) return lateral.changesPossession;
   const slug = String(play?.typeSlug ?? '').toLowerCase();
   if (!slug) return false;
   // A kick is a possession change the two sides line up for: the kicking team
@@ -148,6 +194,8 @@ function isPossessionChangingPlay(play) {
 export function getOffenseTeam(play, { homeTeam, awayTeam } = {}) {
   const team = play?.team ?? null;
   if (team == null || homeTeam == null || awayTeam == null) return team;
+  const lateral = getPassLateralGeometry(play, { homeTeam, awayTeam });
+  if (lateral) return lateral.offenseTeam;
   if (!isPossessionChangingPlay(play) && !isTurnoverOnDowns(play)) return team;
   return team === homeTeam ? awayTeam : homeTeam;
 }
@@ -213,7 +261,7 @@ export function getPlaySegment(play, { homeTeam, awayTeam } = {}) {
     ?? yardLineToPercent(play?.startYardLine)
     ?? toFieldPercent(play?.startYardsToEndzone, { possessionTeam: offenseTeam, homeTeam });
 
-  const changesPossession = isPossessionChangingPlay(play);
+  const changesPossession = isPossessionChangingPlay(play, { homeTeam, awayTeam });
   const towardHomeEndzone = offenseTeam != null && offenseTeam !== homeTeam;
   const attackingEndzonePct = towardHomeEndzone ? 100 : 0;
 
@@ -360,10 +408,11 @@ export function classifyPlay(play) {
   const slugType = typeOf(slug);
   const slugFlag = flagOf(slug);
   const classified = slugType != null || slugFlag != null;
+  const lateral = parsePassLaterals(play?.rawText ?? play?.description);
 
   return {
-    type: slugType ?? typeOf(text) ?? 'rush',
-    flag: slugFlag ?? (classified ? null : flagOf(text)),
+    type: lateral ? 'pass' : slugType ?? typeOf(text) ?? 'rush',
+    flag: lateral?.fumble ? 'fumble' : slugFlag ?? (classified ? null : flagOf(text)),
   };
 }
 
@@ -471,6 +520,7 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
   const { type, flag } = classifyPlay(play);
   const dir = segment.direction === 'right' ? 1 : -1;
   const start = segment.startPct;
+  const lateral = getPassLateralGeometry(play, { homeTeam, awayTeam });
 
   const distance = Number(play?.startDistance);
   const dist = Number.isFinite(distance) && distance > 0 && Number(play?.startDown) > 0 ? distance : 0;
@@ -490,7 +540,12 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
   // the next possession, not a return. With no stated return, the play ends
   // where the defender caught it. This is also the point the turnover mark and
   // replay must share.
-  const turnover = turnoverAt == null ? null : {
+  const turnover = lateral?.changesPossession ? {
+    at: lateral.recoveryAt,
+    finish: lateral.finish,
+    returnYards: lateral.sequence.fumble.returnYards,
+    hasReturn: Math.abs(lateral.finish - lateral.recoveryAt) > 0.5,
+  } : turnoverAt == null ? null : {
     at: turnoverAt,
     finish: turnoverReturnTo ?? turnoverAt,
     returnYards: interception.returnYards,
@@ -499,12 +554,12 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
 
   // A kick reads its own frame off the description, because the possession
   // fields it would otherwise use are reported from the receiving team.
-  const drawable = type === 'kick'
+  const drawable = lateral ? true : type === 'kick'
     ? kick != null && kick.kickYards > 0
     : turnover
       ? start != null
       : segment.drawable;
-  const yards = kick
+  const yards = lateral ? lateral.yards : kick
     ? kick.kickYards
     : turnover
       ? Math.round(Math.abs(turnover.at - start))
@@ -512,6 +567,7 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
 
   return {
     ...segment,
+    gained: lateral ? lateral.yards : segment.gained,
     drawable,
     type,
     flag,
@@ -520,12 +576,13 @@ export function getPlayTrajectory(play, { homeTeam, awayTeam } = {}) {
     scoring: isScoringPlay(play, flag),
     dir: kick ? kick.dir : dir,
     start: kick ? kick.start : start,
-    end: kick ? kick.finish : turnover?.finish ?? segment.endPct,
+    end: lateral?.finish ?? (kick ? kick.finish : turnover?.finish ?? segment.endPct),
     yards,
     dist,
     firstDown: kick ? null : firstDown,
     kick,
     turnover,
+    lateral,
     zero: yards != null && Math.abs(yards) < 0.5,
   };
 }
@@ -549,7 +606,9 @@ export function getDriveNetYards(plays = [], context = {}) {
   // measured to the last line of scrimmage instead. On a sack-fumble that
   // ignores the sack itself, because the spot the quarterback went down is only
   // ever named in the description, never in a field of its own.
-  const end = isPossessionChangingPlay(last.play) ? last.geometry.start : last.geometry.end;
+  const end = last.geometry.lateral?.changesPossession
+    ? last.geometry.lateral.recoveryAt
+    : isPossessionChangingPlay(last.play, context) ? last.geometry.start : last.geometry.end;
   return Math.round((end - first.start) * first.dir);
 }
 

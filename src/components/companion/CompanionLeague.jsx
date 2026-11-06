@@ -365,7 +365,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
 
 function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
-    platform, season,
+    platform, season, selectedLeagueId,
     leagueUsers, rosters, myRoster, getUserDisplayName,
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
@@ -626,7 +626,8 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
           the same readable cascade as the other Fantasy lists.
           Knobs and definitions: docs/Loading Motion.md. */}
       <LoadingSwap
-        loading={!players}
+        loading={!players || !selectedRoster}
+        navigationScope={`rosters:${platform}:${selectedLeagueId}:${season}`}
         resetKey={selectedRosterId ?? ''}
         skeleton={<SkeletonRows count={rosterSkeletonCount} height="4rem" className="mx-2 sm:mx-4" />}
       >

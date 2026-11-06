@@ -46,6 +46,7 @@ tests/e2e/*
 !tests/e2e/league-history.spec.js
 !tests/e2e/player-matchup-drilldown.spec.js
 !tests/e2e/statistics-scores-sources.spec.js
+!tests/e2e/statistics-scores-laterals.spec.js
 !tests/e2e/tradeTestHarness.js
 !tests/e2e/whats-new-tour.spec.js
 !tests/unit/
@@ -54,6 +55,7 @@ tests/unit/*
 !tests/fixtures/
 tests/fixtures/*
 !tests/fixtures/tradeFixtures.js
+!tests/fixtures/nflLateralPlay.js
 !tests/drilldown/
 
 # Local docs drafts
@@ -95,3 +97,12 @@ scripts/ollama-broker.js
 docs/Ollama Delegation.md
 docs/examples/ollama-tasks.example.json
 docs/examples/ollama-observations.md
+
+# Local planning and tool settings (keep workspace copies out of Git).
+# Agent instructions (AGENTS.md, CLAUDE.md, .agents/, docs/Agent Workflow.md)
+# and DESIGN.md stay tracked so cloud agent sessions can read them.
+/[Tt][Oo]_[Dd][Oo].md
+/[Tt][Oo]-[Dd][Oo].md
+/[Tt][Oo][Oo][Ll][Ss].md
+/[Tt][Oo][Oo][Ll].md
+/.claude/

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FantasyTabActivationContext } from '../../context/FantasyTabVisibility.js';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsEnhancing, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints } from '../../utils/scoringEngine';
@@ -97,6 +98,8 @@ const LIVE_CHART_MAX_WAIT_MS = 10000;
 // Long enough for the shared reveal (duration + capped stagger) to finish.
 // After it, rows that mount (plays arriving, scrubbing) appear without motion.
 const LIVE_REVEAL_WINDOW_MS = 800;
+// Navigation memory lasts until refresh, including a main-section unmount.
+let lastPresentedMatchupIdentity = null;
 const MATCHUP_RESPONSE_CACHE = new Map();
 const MATCHUP_RESPONSE_IN_FLIGHT = new Map();
 const MATCHUP_RESPONSE_CACHE_LIMIT = 12;
@@ -331,6 +334,7 @@ function CompanionMatchupView({
   seasonSchedule = null,
   liveSandboxStandsIn = false,
 }) {
+  const activation = useContext(FantasyTabActivationContext);
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const statsEnhancing = useSleeperStatsEnhancing();
@@ -383,12 +387,11 @@ function CompanionMatchupView({
 
   const [matchups, setMatchups] = useState(null);
   const [matchupRefreshTick, setMatchupRefreshTick] = useState(0);
-  // Returning to the Matchups tab replays the live layer's reveal.
-  const [activationCount, setActivationCount] = useState(0);
   const [matchupLoading, setMatchupLoading] = useState(false);
   const handledMatchupRefreshTickRef = useRef(0);
   const hasMatchupsRef = useRef(false);
   const wasMatchupActiveRef = useRef(isActive);
+  const handledActivationRef = useRef(activation);
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [showMatchupPicker, setShowMatchupPicker] = useState(false);
   const [selectedRosterIdState, setSelectedRosterIdState] = useState(selectedRosterId);
@@ -446,13 +449,13 @@ function CompanionMatchupView({
       wasMatchupActiveRef.current = false;
       return undefined;
     }
-    if (!wasMatchupActiveRef.current) {
+    if (!wasMatchupActiveRef.current || handledActivationRef.current !== activation) {
       wasMatchupActiveRef.current = true;
+      handledActivationRef.current = activation;
       setMatchupRefreshTick((current) => current + 1);
-      setActivationCount((current) => current + 1);
     }
     return undefined;
-  }, [isActive]);
+  }, [activation, isActive]);
   useEffect(() => {
     if (insightsRequested || !selectedLeagueId) return undefined;
     debugCompanionLog('Matchup insights requested');
@@ -1367,7 +1370,8 @@ function CompanionMatchupView({
         matchupSnapshotGateTimerRef.current = null;
       }
       setMatchupSnapshotGate({ key: matchupSnapshotKey, status: 'idle' });
-      setMatchupSnapshot(null);
+      // Keep a same-matchup snapshot visible during a background refresh.
+      // The compatibility check below excludes other leagues/weeks/opponents.
       return undefined;
     }
 
@@ -1518,12 +1522,23 @@ function CompanionMatchupView({
   );
 
   useEffect(() => {
-    setFinalMatchupReconciliation({
-      key: finalMatchupReconciliationKey,
-      status: 'idle',
-      attempts: 0,
-    });
+    setFinalMatchupReconciliation((current) => (
+      current.key === finalMatchupReconciliationKey ? current : {
+        key: finalMatchupReconciliationKey,
+        status: 'idle',
+        attempts: 0,
+      }
+    ));
   }, [finalMatchupReconciliationKey]);
+
+  useEffect(() => {
+    if (!shouldReconcileFinalMatchup) return;
+    setFinalMatchupReconciliation((current) => (
+      current.key === finalMatchupReconciliationKey && current.status === 'idle'
+        ? { ...current, status: 'pending', attempts: current.attempts + 1 }
+        : current
+    ));
+  }, [finalMatchupReconciliationKey, finalMatchupReconciliation.status, shouldReconcileFinalMatchup]);
 
   useEffect(() => {
     if (
@@ -1531,16 +1546,11 @@ function CompanionMatchupView({
       || !selectedLeagueId
       || currentMatchupId == null
       || finalMatchupReconciliation.key !== finalMatchupReconciliationKey
-      || finalMatchupReconciliation.status !== 'idle'
+      || finalMatchupReconciliation.status !== 'pending'
     ) return undefined;
 
     let cancelled = false;
-    const attempts = finalMatchupReconciliation.attempts + 1;
-    setFinalMatchupReconciliation({
-      key: finalMatchupReconciliationKey,
-      status: 'pending',
-      attempts,
-    });
+    const attempts = finalMatchupReconciliation.attempts;
     getLiveMatchups(selectedLeagueId, week)
       .then((rows) => {
         if (cancelled) return;
@@ -1882,16 +1892,30 @@ function CompanionMatchupView({
     if (live.ready) traceLiveMilestone('page shown (live layer answered)');
   }, [live.ready, matchupIdentityKey]);
 
-  // The live layer reveals on page load, a week or matchup change, and a
-  // return to the Matchups tab; never on a Lineup / Scoring plays switch.
-  const liveRevealKey = `${matchupIdentityKey}:${activationCount}`;
+  // Disable entrances before the hidden page can be painted on tab return.
+  // A new matchup identity enables them again; background refreshes do not.
+  const [entrance, setEntrance] = useState({
+    activation,
+    key: matchupIdentityKey,
+    enabled: isActive && lastPresentedMatchupIdentity !== matchupIdentityKey,
+  });
+  if (entrance.activation !== activation || entrance.key !== matchupIdentityKey) {
+    setEntrance({
+      activation,
+      key: matchupIdentityKey,
+      enabled: isActive && lastPresentedMatchupIdentity !== matchupIdentityKey,
+    });
+  } else if (!isActive && entrance.enabled) {
+    setEntrance({ activation, key: matchupIdentityKey, enabled: false });
+  }
+  const animateEntrance = entrance.key === matchupIdentityKey && entrance.enabled && isActive;
   const [liveRevealDoneKey, setLiveRevealDoneKey] = useState(null);
   useEffect(() => {
-    if (!liveLayerActive) return undefined;
-    const timer = window.setTimeout(() => setLiveRevealDoneKey(liveRevealKey), LIVE_REVEAL_WINDOW_MS);
+    if (!liveLayerActive || !animateEntrance) return undefined;
+    const timer = window.setTimeout(() => setLiveRevealDoneKey(matchupIdentityKey), LIVE_REVEAL_WINDOW_MS);
     return () => window.clearTimeout(timer);
-  }, [liveLayerActive, liveRevealKey]);
-  const liveRevealing = liveLayerActive && liveRevealDoneKey !== liveRevealKey;
+  }, [animateEntrance, liveLayerActive, matchupIdentityKey]);
+  const liveRevealing = animateEntrance && liveLayerActive && liveRevealDoneKey !== matchupIdentityKey;
   const liveMineKey = live.sideKeyByRosterId[myRosterId] ?? 'a';
   const [replayAt, setReplayAt] = useState(null);
   const [selectedPlayId, setSelectedPlayId] = useState(null);
@@ -1959,10 +1983,17 @@ function CompanionMatchupView({
           return total;
         });
         const nameOf = (playerId) => starterById.get(String(playerId))?.player?.name ?? getSleeperPlayerName(players?.[playerId] ?? {});
+        const sideGroups = (event.sideEvents ?? []).map((part) => {
+          const partSide = starterById.get(String(part.playerId))?.side ?? null;
+          const members = getEventContributions(part);
+          return { side: partSide, pts: part.pts, playerName: members.map(({ playerId }) => nameOf(playerId)).join(' & ') };
+        }).filter((part) => part.side).sort((a, b) => (a.side === 'mine' ? 0 : 1) - (b.side === 'mine' ? 0 : 1));
         const combined = contributions.length > 1;
         return {
           ...event,
           side,
+          sides: sideGroups.map((part) => part.side),
+          sideGroups,
           playerName: combined
             ? [...contributions].sort((left, right) => right.pts - left.pts).map(({ playerId }) => nameOf(playerId)).join(' & ')
             : nameOf(event.playerId),
@@ -2074,7 +2105,7 @@ function CompanionMatchupView({
     // Rewind the whole page to the moment right after this play.
     const position = Number(event.progress);
     setReplayAt(Number.isFinite(position) && position < live.nowProgress - 1e-6 ? position : null);
-    if (playSide !== 'all' && playSide !== event.side) setPlaySide('all');
+    if (playSide !== 'all' && ![event.side, ...(event.sides ?? [])].includes(playSide)) setPlaySide('all');
     if (bigPlaysOnly) setBigPlaysOnly(false);
     if (source !== 'list') setPlayScrollRequest((request) => request + 1);
   }, [bigPlaysOnly, live.nowProgress, liveEvents, playSide, selectedPlayId]);
@@ -2263,6 +2294,12 @@ function CompanionMatchupView({
       || liveLayerPending
     );
 
+  useEffect(() => {
+    if (isActive && !isPreparingMatchupView && myMatchup && opponentMatchup) {
+      lastPresentedMatchupIdentity = matchupIdentityKey;
+    }
+  }, [isActive, isPreparingMatchupView, matchupIdentityKey, myMatchup, opponentMatchup]);
+
   const matchupControls = selectedLeagueId && !hasNoMatchup && (hasStarterIds || hasRenderableStarterRows) ? (
     <div className="companion-matchup-controls companion-matchup-controls__row mx-2 sm:mx-4 mb-3" data-tour="matchup-live-layer">
       <CompanionSelectorButton
@@ -2429,14 +2466,15 @@ function CompanionMatchupView({
     );
   }
 
+  const StarterReveal = animateEntrance ? RevealList : 'div';
   const startersContent = (
     <>
           {/* Head-to-head starter rows. Loading motion: reveal only — the slots
               are already in hand by the time this page mounts, so there is
               nothing to place-hold, but the rows still arrive on the shared
-              stagger and replay on every week/matchup move.
+              stagger on first arrival and week/matchup moves, but not tab return.
               Knobs and definitions: docs/Loading Motion.md. */}
-          <RevealList resetKey={`${selectedLeagueId ?? ''}:${season}:${week}:${opponentName}`}>
+          <StarterReveal {...(animateEntrance ? { resetKey: matchupIdentityKey } : {})}>
             {displaySlots.map((slot, i) => (
               <HeadToHeadRow
                 key={i}
@@ -2453,7 +2491,7 @@ function CompanionMatchupView({
                 onSelectOpp={() => slot.opp?.id && setSelectedPlayer({ id: slot.opp.id, projection: slot.opp.projection ?? null, enriched: slot.opp })}
               />
             ))}
-          </RevealList>
+          </StarterReveal>
 
           {/* Bench section */}
           {(enrichedMyBench.length > 0 || enrichedOppBench.length > 0) && (
@@ -2571,6 +2609,7 @@ function CompanionMatchupView({
   return (
     <div
       ref={pageFrameRef}
+      data-matchup-entrance={animateEntrance ? 'animate' : 'static'}
       className={`page-frame-workbench companion-matchup pb-6${liveLayerActive ? ' matchup-live' : ''}${liveRevealing ? ' is-revealing' : ''}`}
     >
       <SeasonHintBanner capability="current-only" feature="Weekly matchups" className="mx-2 sm:mx-4 mb-3" />
@@ -2595,6 +2634,7 @@ function CompanionMatchupView({
         {/* Keyed on the matchup identity so the masthead's wipe and the win-chance
             bar's grow replay on every week or opponent change, not just on mount. */}
         <MatchupMasthead
+          animateEntrance={animateEntrance}
           key={`${selectedLeagueId ?? ''}:${season}:${week}:${opponentName}`}
           myName={myName}
           opponentName={opponentName}
@@ -2904,6 +2944,7 @@ function ByeWeekMatchup({ teamName, week, points, onOpenBreakdown }) {
 }
 
 function MatchupMasthead({
+  animateEntrance = true,
   myName,
   opponentName,
   mySeedLabel,
@@ -3113,7 +3154,7 @@ function MatchupMasthead({
   return (
     <div ref={frameRef} className="companion-matchup-masthead-frame">
     <section
-      className="companion-matchup-masthead gridshift-reveal mx-2 mb-3 sm:mx-4"
+      className={`companion-matchup-masthead${animateEntrance ? ' gridshift-reveal' : ''} mx-2 mb-3 sm:mx-4`}
       aria-label={isSettled ? 'Final matchup result' : winProbability?.mode === 'live' ? 'Live matchup win chance' : 'Matchup forecast'}
       data-testid={winProbability ? 'matchup-win-probability' : undefined}
     >

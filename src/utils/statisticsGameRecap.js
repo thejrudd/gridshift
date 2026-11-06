@@ -3,7 +3,7 @@ import { parsePlayNarrative } from './nflPlays/playNarrative.js';
 // A plain-language recap assembled from the normalized play-by-play. It only
 // restates plays the provider reported: each scoring play or turnover reuses the
 // shared play narrative sentence, and the quarter's closing score frames it.
-// Nothing here is inferred editorial content; StoryStats owns that.
+// This recap is derived from recorded plays.
 
 const PERIOD_NAMES = { 1: 'first quarter', 2: 'second quarter', 3: 'third quarter', 4: 'fourth quarter' };
 const PERIOD_HEADINGS = { 1: 'First quarter', 2: 'Second quarter', 3: 'Third quarter', 4: 'Fourth quarter' };

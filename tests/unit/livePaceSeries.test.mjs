@@ -6,13 +6,31 @@ import {
   getStarterPace,
   getStarterReplayRemainingFraction,
 } from '../../src/utils/livePace.js';
-import { getPlayProgress, parseGlanceProgress } from '../../src/utils/livePlaysFeed.js';
+import { getPlayProgress, parseGlanceProgress, groupMatchupPlayMoments } from '../../src/utils/livePlaysFeed.js';
 
 const event = (id, side, progress, pts, kind = 'rush', extra = {}) => ({
   id, playerId: `p-${side}`, progress, pts, kind, desc: `${kind} play`, ...extra,
 });
 
 const sideKeyOf = (item) => (item.playerId.endsWith('a') ? 'a' : 'b');
+
+it('applies both teams on one snap before calculating a single win-chance step', () => {
+  const sides = [event('mine', 'a', 0.3, -3.9, 'to', { gameId: 'g', sharedPlayId: 'snap', timelineAt: 10 }),
+    event('theirs', 'b', 0.3, 2.93, 'pass', { gameId: 'g', sharedPlayId: 'snap', timelineAt: 10 })];
+  const moments = groupMatchupPlayMoments(sides);
+  assert.equal(moments.length, 1);
+  const { points } = buildPaceSeries({ events: moments, sideKeyOf, totals: { a: -3.9, b: 2.93 }, slateProgress: 0.3,
+    scoreAxisIsAuthoritative: true,
+    snapshotAt: (point, context) => ({ p: 50 + (context?.currentByPlayer?.get('p-a') ?? 0) - (context?.currentByPlayer?.get('p-b') ?? 0) }) });
+  const steps = points.filter((point) => point.eventId);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].a, -3.9);
+  assert.equal(steps[0].b, 2.93);
+  assert.ok(Math.abs(steps[0].p - 43.17) < 0.001);
+  assert.equal(moments[0].contributors.length, 2);
+  assert.equal(groupMatchupPlayMoments([sides[0]])[0].id, moments[0].id);
+  assert.equal(groupMatchupPlayMoments([sides[0], { ...sides[1], gameId: 'other' }]).length, 2);
+});
 
 describe('getStarterPace', () => {
   it('uses the canonical ahead-or-behind outlook for its live projection', () => {

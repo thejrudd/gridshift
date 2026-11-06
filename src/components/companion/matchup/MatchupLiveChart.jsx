@@ -117,7 +117,7 @@ export default function MatchupLiveChart({
       .map((event) => {
         const point = pointByEvent.get(event.id);
         if (!point) return null;
-        return { id: event.id, p: Number(point.x), event, cx: x(Number(point.x)), cy: y(valueOf(point)), side: event.side, negative: Number(event.pts) < 0 };
+        return { id: event.id, p: Number(point.x), event, cx: x(Number(point.x)), cy: y(valueOf(point)), side: event.side, shared: event.sideGroups?.length > 1, negative: Number(event.pts) < 0 };
       })
       .filter(Boolean);
     const projection = isLead && at == null && position < 1
@@ -246,8 +246,8 @@ export default function MatchupLiveChart({
               cx={dot.cx}
               cy={dot.cy}
               r={3.5}
-              className={`matchup-live-chart__dot${dot.negative ? ' is-negative' : ''}`}
-              fill={dot.negative ? undefined : (dot.side === 'mine' ? mineColor : oppColor)}
+              className={`matchup-live-chart__dot${dot.negative && !dot.shared ? ' is-negative' : ''}`}
+              fill={dot.shared ? 'var(--color-signature)' : dot.negative ? undefined : (dot.side === 'mine' ? mineColor : oppColor)}
             />
           ))}
           {!final && <line x1={model.x(livePosition)} x2={model.x(livePosition)} y1={model.m.t} y2={model.H - model.m.b} className="matchup-live-chart__live" />}
@@ -259,7 +259,9 @@ export default function MatchupLiveChart({
               ? `${valueOf(point) >= 0 ? 'UP' : 'DOWN'} ${Math.abs(valueOf(point)).toFixed(1)}`
               : `${winMine(point)}% TO WIN`;
             const lines = [
-              `${String(event.playerName ?? '').toUpperCase()} ${signed(event.pts, 2)}`,
+              event.sideGroups?.length > 1
+                ? event.sideGroups.map((part) => `${part.side === 'mine' ? 'YOU' : 'THEM'} ${signed(part.pts, 2)}`).join(' · ')
+                : `${String(event.playerName ?? '').toUpperCase()} ${signed(event.pts, 2)}`,
               Number.isFinite(Number(event.swingMine)) && Math.abs(Number(event.swingMine)) >= 0.5
                 ? `${value} · ${signed(event.swingMine, 0)}% WIN`
                 : value,

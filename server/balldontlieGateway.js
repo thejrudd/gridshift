@@ -6,8 +6,6 @@ const DEFAULT_PER_PAGE = 100;
 const DEFAULT_MAX_PAGES = 12;
 const DEFAULT_CACHE_ENTRIES = 250;
 const RATE_WINDOW_MS = 60_000;
-const STORY_STATS_PATH_PREFIX = '/stories/nfl/';
-const DEFAULT_STORY_STATS_DAILY_LIMIT = 10;
 
 const TIER_PROFILES = Object.freeze({
   free: Object.freeze({
@@ -75,7 +73,6 @@ function getCadence(profile, effectiveLimit, internalCeiling) {
 
 export function getBalldontlieGatewayConfig(env = process.env) {
   const apiKeyReady = hasValue(env.GRIDSHIFT_BDL_API_KEY);
-  const storyStatsApiKeyReady = hasValue(env.GRIDSHIFT_STORY_STATS_API_KEY);
   const tier = normalizeTier(env.GRIDSHIFT_BDL_TIER);
   const profile = TIER_PROFILES[tier];
   const requestedEffectiveLimit = parsePositiveInteger(
@@ -94,11 +91,6 @@ export function getBalldontlieGatewayConfig(env = process.env) {
     : 0;
   return {
     apiKeyReady,
-    storyStatsApiKeyReady,
-    storyStatsDailyLimit: parsePositiveInteger(
-      env.GRIDSHIFT_STORY_STATS_DAILY_LIMIT,
-      DEFAULT_STORY_STATS_DAILY_LIMIT,
-    ),
     tier,
     capabilities: { ...profile.capabilities },
     effectiveRequestsPerMinute,
@@ -184,18 +176,12 @@ export function createBalldontlieGateway({
 } = {}) {
   const config = getBalldontlieGatewayConfig(env);
   const apiKey = String(env.GRIDSHIFT_BDL_API_KEY ?? '').trim();
-  const storyStatsApiKey = String(env.GRIDSHIFT_STORY_STATS_API_KEY ?? '').trim();
   const credentialFingerprint = apiKey
     ? crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 16)
-    : 'missing';
-  const storyStatsCredentialFingerprint = storyStatsApiKey
-    ? crypto.createHash('sha256').update(storyStatsApiKey).digest('hex').slice(0, 16)
     : 'missing';
   const cache = new Map();
   const inFlight = new Map();
   let requestTimestamps = [];
-  let storyStatsDay = null;
-  let storyStatsUsedRequests = 0;
   let backoffUntilMs = 0;
   let consecutiveFailures = 0;
   let totalUpstreamRequests = 0;
@@ -213,34 +199,6 @@ export function createBalldontlieGateway({
       totalUpstreamRequests,
       backoffUntil: backoffUntilMs > nowMs ? new Date(backoffUntilMs).toISOString() : null,
     };
-  }
-
-  function getStoryStatsQuotaSnapshot(nowMs = now()) {
-    const day = new Date(nowMs).toISOString().slice(0, 10);
-    if (storyStatsDay !== day) {
-      storyStatsDay = day;
-      storyStatsUsedRequests = 0;
-    }
-    const nextDay = new Date(Date.parse(`${day}T00:00:00.000Z`) + 86_400_000).toISOString();
-    return {
-      dailyLimit: config.storyStatsDailyLimit,
-      usedRequests: storyStatsUsedRequests,
-      remainingRequests: Math.max(0, config.storyStatsDailyLimit - storyStatsUsedRequests),
-      resetAt: nextDay,
-    };
-  }
-
-  function consumeStoryStatsQuota(nowMs) {
-    const quota = getStoryStatsQuotaSnapshot(nowMs);
-    if (quota.usedRequests >= quota.dailyLimit) {
-      throw makeGatewayError('StoryStats daily beta request limit reached.', {
-        statusCode: 429,
-        retryAfterMs: Math.max(1_000, Date.parse(quota.resetAt) - nowMs),
-        localQuota: true,
-      });
-    }
-    storyStatsUsedRequests += 1;
-    totalUpstreamRequests += 1;
   }
 
   function consumeQuota(nowMs, lane) {
@@ -303,15 +261,13 @@ export function createBalldontlieGateway({
 
   async function fetchPage(path, params, lane) {
     const requestStartedAt = now();
-    const isStoryStatsPath = path.startsWith(STORY_STATS_PATH_PREFIX);
-    if (isStoryStatsPath) consumeStoryStatsQuota(requestStartedAt);
-    else consumeQuota(requestStartedAt, lane);
+    consumeQuota(requestStartedAt, lane);
     try {
       const url = new URL(path, BDL_BASE_URL);
       canonicalizeParams(params).forEach((value, key) => url.searchParams.append(key, value));
       const response = await fetcher(url, {
         headers: {
-          Authorization: isStoryStatsPath ? `Bearer ${storyStatsApiKey}` : apiKey,
+          Authorization: apiKey,
           Accept: 'application/json',
         },
       });
@@ -373,19 +329,10 @@ export function createBalldontlieGateway({
   }
 
   function supports(capability) {
-    if (capability === 'storyStats') return config.storyStatsApiKeyReady;
     return config.apiKeyReady && config.capabilities[capability] === true;
   }
 
   function assertReady(capability = 'games') {
-    if (capability === 'storyStats') {
-      if (!config.storyStatsApiKeyReady) {
-        throw makeGatewayError('StoryStats is not configured with a server-side API key.', {
-          statusCode: 503,
-        });
-      }
-      return;
-    }
     if (!config.apiKeyReady) {
       throw makeGatewayError('Statistics Scores is not configured with a server-side BALLDONTLIE API key.', {
         statusCode: 503,
@@ -400,13 +347,11 @@ export function createBalldontlieGateway({
 
   function getStatus() {
     const quota = getQuotaSnapshot();
-    const storyStatsQuota = getStoryStatsQuotaSnapshot();
     return {
       tier: config.tier,
       capabilities: {
         ...config.capabilities,
         liveScores: config.apiKeyReady && config.cadence.scoresLiveEnabled,
-        storyStats: config.storyStatsApiKeyReady,
       },
       cadence: { ...config.cadence },
       rateLimit: {
@@ -418,13 +363,6 @@ export function createBalldontlieGateway({
         usedRequests: quota.usedRequests,
         remainingRequests: quota.remainingRequests,
         backoffUntil: quota.backoffUntil,
-      },
-      storyStats: {
-        apiKeyReady: config.storyStatsApiKeyReady,
-        dailyLimit: storyStatsQuota.dailyLimit,
-        usedRequests: storyStatsQuota.usedRequests,
-        remainingRequests: storyStatsQuota.remainingRequests,
-        resetAt: storyStatsQuota.resetAt,
       },
     };
   }
@@ -443,17 +381,8 @@ export function createBalldontlieGateway({
     lane = 'background',
   } = {}) {
     assertReady(capability);
-    const isStoryStatsPath = typeof path === 'string' && path.startsWith(STORY_STATS_PATH_PREFIX);
-    const validPath = capability === 'storyStats'
-      ? isStoryStatsPath
-      : typeof path === 'string' && path.startsWith('/nfl/v1/');
-    if (!validPath) {
-      throw makeGatewayError(
-        capability === 'storyStats'
-          ? 'A valid BALLDONTLIE StoryStats NFL path is required.'
-          : 'A valid BALLDONTLIE NFL path is required.',
-        { statusCode: 400 },
-      );
+    if (typeof path !== 'string' || !path.startsWith('/nfl/v1/')) {
+      throw makeGatewayError('A valid BALLDONTLIE NFL path is required.', { statusCode: 400 });
     }
     const safeCacheTtlMs = Math.max(0, Number(cacheTtlMs) || 0);
     const safeStaleTtlMs = Math.max(safeCacheTtlMs, Number(staleTtlMs) || safeCacheTtlMs);
@@ -461,7 +390,7 @@ export function createBalldontlieGateway({
     const resolvedFreshnessKey = freshnessKey
       ?? `fresh:${safeCacheTtlMs}:stale:${safeStaleTtlMs}`;
     const key = buildBalldontlieRequestKey({
-      credentialFingerprint: isStoryStatsPath ? storyStatsCredentialFingerprint : credentialFingerprint,
+      credentialFingerprint,
       path,
       params,
       paginate,

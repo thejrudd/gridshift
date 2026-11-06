@@ -5,7 +5,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getStatisticsScoresEspnWeek } from '../../api/statisticsScoresApi.js';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { buildFantasyScoringBreakdown } from '../../utils/fantasyBreakdownRows.js';
-import { buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
+import { buildFilteredHeatmapMatchupTables, buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 import { normalizeEspnScoreboardEvent, NFL_SEASON_PHASES } from '../../utils/espnNflScoreboard.js';
 import { resolveFantasyLiveAvailability } from '../../utils/fantasyLiveAvailability.js';
@@ -822,6 +822,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const [locationFilter, setLocationFilter] = useState('all'); // 'all' | 'home' | 'away'
   const [showFutureOpponents, setShowFutureOpponents] = useState(true);
   const [matchupWindow, setMatchupWindow] = useState('season');
+  const [capMatchupOutliers, setCapMatchupOutliers] = useState(false);
+  const [unrosteredMatchupOnly, setUnrosteredMatchupOnly] = useState(false);
   const [sortKey, setSortKey] = useState('avg');
   const [sortDir, setSortDir] = useState('desc');
   const [teamSort, setTeamSort] = useState('alpha');
@@ -1065,6 +1067,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     [activePositions],
   );
   const isGameStatMode = SHARED_GAME_STAT_MODES.has(viewMode === 'offense' ? statMode : defStatMode);
+  const matchupPointsMode = viewMode === 'offense'
+    ? statMode === 'pts' || statMode === 'pts_allowed'
+    : defStatMode === 'pts' || defStatMode === 'pts_allowed';
+  const rosterDataReady = Boolean(selectedLeagueId && league && rosters?.length);
+  const matchupFiltersApply = !isGameStatMode && matchupPointsMode && activePos !== 'ALL';
   const isFantasyPointsAllowed = viewMode === 'offense'
     ? statMode === 'pts_allowed'
     : !isGameStatMode && defStatMode === 'pts_allowed';
@@ -1096,16 +1103,31 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (isGameStatMode) return {};
     const scoringTable = viewMode === 'offense' ? matchupOffenseTable : matchupDefenseTable;
     const positions = viewMode === 'offense' ? offensePositions : defensePositions;
-    if (!scoringTable) return {};
+    if (!scoringTable || (matchupFiltersApply && unrosteredMatchupOnly && !rosterDataReady)) return {};
+    const filteredTables = matchupFiltersApply && (capMatchupOutliers || unrosteredMatchupOnly)
+      ? buildFilteredHeatmapMatchupTables({
+          weeklyStats,
+          players,
+          scheduleMap,
+          getPosition: player => viewMode === 'offense'
+            ? (OFF_POSITIONS.includes(player.position) ? player.position : null)
+            : normDefPos(player.position),
+          getValue: (entry, player) => calcPoints(entry, activeScoringSettings, player.position),
+          getTeam: viewMode === 'defense' ? (entry, player) => (entry.team || player.team)?.toUpperCase() : undefined,
+          capOutliers: capMatchupOutliers,
+          rosteredPlayerIds: unrosteredMatchupOnly ? rosteredPlayerIds : null,
+        })
+      : null;
     return buildHeatmapMatchupRatings({
-      positionTable: scoringTable,
+      positionTable: filteredTables?.scoringTable ?? scoringTable,
+      allowedTable: filteredTables?.allowedTable,
       scheduleMap,
       teams: ALL_TEAMS,
       positions: positions.filter(position => position !== 'ALL'),
       weeks: fantasySeasonWeeks,
       window: matchupWindow,
     });
-  }, [defensePositions, defStatMode, fantasySeasonWeeks, isGameStatMode, matchupDefenseTable, matchupOffenseTable, matchupWindow, offensePositions, scheduleMap, statMode, viewMode]);
+  }, [activeScoringSettings, capMatchupOutliers, defensePositions, fantasySeasonWeeks, isGameStatMode, matchupDefenseTable, matchupFiltersApply, matchupOffenseTable, matchupWindow, offensePositions, players, rosterDataReady, rosteredPlayerIds, scheduleMap, unrosteredMatchupOnly, viewMode, weeklyStats]);
 
   const isFutureMatchupWeek = useCallback((week) => {
     const weekSchedule = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? null;
@@ -1511,6 +1533,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     const results = [];
     for (const [playerId, player] of Object.entries(players)) {
       if (!isWaiverEligiblePlayerRecord(player)) continue;
+      if (matchupFiltersApply && unrosteredMatchupOnly && (!rosterDataReady || rosteredPlayerIds.has(String(playerId)))) continue;
       if (player.team?.toUpperCase() !== scoringTeam) continue;
 
       const rawPosition = String(player.position ?? '').toUpperCase();
@@ -1577,6 +1600,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     weeklyStats,
     activeScoringSettings,
     rosteredPlayerIds,
+    rosterDataReady,
+    offenseStatModes,
+    defenseStatModes,
+    matchupFiltersApply,
+    unrosteredMatchupOnly,
   ]);
 
   const handleFuturePlayerStatsClick = useCallback(async (playerId) => {
@@ -1980,8 +2008,10 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     if (!isGameStatMode && activePos !== 'ALL') {
       summary.push({ id: 'matchup-window', label: matchupWindow === 'recent' ? 'Matchup L4' : 'Matchup YTD' });
     }
+    if (matchupFiltersApply && capMatchupOutliers) summary.push({ id: 'cap-outliers', label: 'Cap Outliers' });
+    if (matchupFiltersApply && unrosteredMatchupOnly) summary.push({ id: 'unrostered', label: 'Unrostered' });
     return summary;
-  }, [activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, isGameStatMode, matchupWindow, showFutureOpponents, statMode, vegasOddsView, viewMode]);
+  }, [capMatchupOutliers, matchupFiltersApply, unrosteredMatchupOnly, activeLocationLabel, activePos, activeScopeLabel, activeStatLabel, isGameStatMode, matchupWindow, showFutureOpponents, statMode, vegasOddsView, viewMode]);
 
   const showFilterPanel = filtersOpen;
 
@@ -2146,6 +2176,28 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             </FilterGroup>
           )}
 
+          {matchupFiltersApply && (
+            <FilterGroup label="Matchup Filters" labelWidth={heatmapFilterLabelWidth}>
+              <Btn
+                active={capMatchupOutliers}
+                onClick={() => setCapMatchupOutliers(enabled => !enabled)}
+                title="Cap player-game scores at the position average plus two standard deviations for future matchup calculations. Historical game cells remain unchanged."
+              >
+                Cap Outliers
+              </Btn>
+              <Btn
+                active={unrosteredMatchupOnly}
+                disabled={!rosterDataReady && !unrosteredMatchupOnly}
+                onClick={() => setUnrosteredMatchupOnly(enabled => !enabled)}
+                title={rosterDataReady
+                  ? 'Calculate team scoring using players currently unrostered in this league; opponent points allowed includes all players.'
+                  : 'League rosters must be available to filter unrostered players.'}
+              >
+                Unrostered
+              </Btn>
+            </FilterGroup>
+          )}
+
           <FilterGroup label="Color" labelWidth={heatmapFilterLabelWidth}>
             {HEATMAP_SCOPES.map(s => {
               const disabled = statMode === 'vegas_odds';
@@ -2204,6 +2256,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           Knobs and definitions: docs/Loading Motion.md. */}
       <LoadingSwap
         loading={!loaded}
+        navigationScope={`heatmap:${platform}:${selectedLeagueId}:${season}`}
         entrance="fade"
         resetKey={`${league?.league_id ?? ''}:${sortKey}`}
         skeleton={(
@@ -2380,6 +2433,25 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
             {drilldown.isFutureOpponent && !isGameStatMode ? (
               <>
+                {matchupPointsMode && activePos !== 'ALL' && (() => {
+                  const opponent = scheduleMap?.[drilldown.week]?.[drilldown.team]?.opp?.toUpperCase();
+                  const scoringTeam = isFantasyPointsAllowed ? opponent : drilldown.team;
+                  const defendingTeam = isFantasyPointsAllowed ? drilldown.team : opponent;
+                  const rating = matchupRatings?.[drilldown.week]?.[scoringTeam]?.[activePos];
+                  if (!rating || !scoringTeam || !defendingTeam) return null;
+                  return (
+                    <div style={{ padding: '0 0 12px', color: 'var(--color-label-secondary)', fontSize: 'var(--type-label)' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--color-label)' }}>
+                        {scoringTeam} {activePos} scored: {rating.teamAverage.toFixed(1)} PPG
+                      </div>
+                      <div style={{ fontWeight: 700, color: 'var(--color-label)' }}>
+                        {defendingTeam} allowed to {activePos}: {rating.opponentPointsAllowedAverage.toFixed(1)} PPG
+                      </div>
+                      <div>{matchupWindow === 'recent' ? 'Last 4 completed games' : 'Season to date'}{capMatchupOutliers ? ' · Outliers capped' : ''}{unrosteredMatchupOnly ? ' · Team scoring: unrostered' : ''}</div>
+                      {isFantasyPointsAllowed && <div>Grid rank reflects {drilldown.team}'s matchup.</div>}
+                    </div>
+                  );
+                })()}
                 <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '0 0 12px' }}>
                   No Week {drilldown.week} scores yet.
                   {statsLoading && !weeklyStats
@@ -2387,6 +2459,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                     : latestCompletedFantasyWeek != null
                       ? ` ${activeStatLabel} totals and per-game averages through Week ${latestCompletedFantasyWeek}.`
                       : ' Selected-stat totals and per-game averages will appear after the first completed week.'}
+                  {matchupFiltersApply && capMatchupOutliers ? ' Player totals show actual scores.' : ''}
                 </div>
                 {futurePlayerNavigationId && (
                   <div aria-live="polite" style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-secondary)', padding: '0 0 10px' }}>
@@ -2400,7 +2473,11 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                 )}
                 {futureOpponentPlayers.length === 0 ? (
                   <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '8px 0 16px' }}>
-                    No players at this position are listed for this team.
+                    {matchupFiltersApply && unrosteredMatchupOnly && !rosterDataReady
+                      ? 'League rosters are unavailable.'
+                      : matchupFiltersApply && unrosteredMatchupOnly
+                        ? 'No unrostered players at this position are listed for this team.'
+                        : 'No players at this position are listed for this team.'}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

@@ -103,7 +103,7 @@ Rules: retune in the tokens, never at a call site. A surface with sticky or fixe
 
 | File | Owns |
 | --- | --- |
-| `src/context/PredictionContext.jsx` | Prediction state — high blast radius, see CLAUDE.md State Risk Areas |
+| `src/context/PredictionContext.jsx` | Prediction state — high blast radius; trace consumers and persisted-state effects before changing |
 | `src/utils/predictionSnapshot.js` | Completion rules, season policy, immutable snapshot schema, import materialization |
 | `src/utils/predictionPlayoffSeeding.js` | Canonical seed ordering shared by picker, validator, randomizer, share cards |
 | `src/utils/playoffBracket.js` | NFL lowest-remaining-seed reseeding |
@@ -200,7 +200,7 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/utils/statisticsScoresPlayStats.js` | Scores Team Stats rows counted from the play-by-play (success rate, explosive plays, goal-to-go, drives, special teams, late-half points) |
 | `src/utils/statisticsScoresSeasonContext.js`, `src/components/statistics/scores/ScoresPregame.jsx` | Scores pregame: matchup ranks, recent form, season leaders and player card, season Team Stats and game logs, and live Team Stats season averages and ranks, from the team season route |
 | `src/utils/statisticsGameRecap.js` | Game Story fallback recap built from the play-by-play |
-| `src/components/statistics/scores/StoryStatsPanel.jsx`, `server/storyStatsHandlers.js`, `server/storyStatsScheduler.js` | Optional Game Story section, fixed stats/editorial StoryStats requests, automatic production primetime warming, and daily beta guard |
+| `src/components/statistics/scores/GameRecapPanel.jsx` | Game Story recap presentation |
 | `src/components/statistics/scores/PlayCard.jsx` | One play row: sentence, trajectory strip, per-player breakdown |
 | `src/components/statistics/scores/StatisticsScores.css` | Feature-owned responsive styling |
 | `src/api/statisticsScoresApi.js` | Browser-to-sidecar Scores requests |
@@ -395,7 +395,7 @@ Read first: [[Trade Engine]] (must be updated in the same pass as any valuation/
 | `src/utils/ktcApi.js` | KTC values |
 | `src/utils/idpEngine.js` | IDP valuation |
 
-Rules: keep legacy provider guards intact where they prevent old persisted sessions from exposing unsupported Trade behavior. Watch the `productionAdjustedValue` null-propagation gotcha (CLAUDE.md).
+Rules: keep legacy provider guards intact where they prevent old persisted sessions from exposing unsupported Trade behavior. `productionAdjustedValue` must preserve null propagation and return `ktcVal` rather than converting missing values to zero.
 
 ## Companion And Trade Selector Rows
 

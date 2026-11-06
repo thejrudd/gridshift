@@ -14,7 +14,7 @@ export function gainedFirstDown(play, geometry) {
 /** The one outcome tag that matters most on a play. */
 export function getPlayTag(play, geometry) {
   const yards = geometry.yards;
-  if (geometry.flag === 'td') return ['td', 'Touchdown'];
+  if (geometry.flag === 'td' || (geometry.lateral && geometry.scoring)) return ['td', 'Touchdown'];
   if (geometry.scoring && geometry.type === 'kick') return ['td', 'Good'];
   if (geometry.flag === 'fg') return ['loss', 'No good'];
   if (geometry.flag === 'int') return ['loss', 'Intercepted'];
@@ -30,6 +30,7 @@ export function getPlayTag(play, geometry) {
 
 /** Whether the provider row indicates that the next snap belongs to the other side. */
 export function isPossessionChange(play, geometry = {}) {
+  if (geometry.lateral) return geometry.lateral.changesPossession;
   const slug = String(play?.typeSlug ?? play?.type ?? play?.description ?? '').toLowerCase();
   if (/kickoff|punt|interception/.test(slug)) return true;
   if (/field.?goal.?(?:missed|blocked)|blocked.?field.?goal/.test(slug)) return true;

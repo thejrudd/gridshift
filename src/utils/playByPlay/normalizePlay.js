@@ -89,9 +89,9 @@ function readGeometryFields(play) {
   const raw = play?.raw ?? null;
   const pick = (own, rawKey) => (play?.[own] !== undefined && play?.[own] !== null
     ? play[own]
-    : raw?.[rawKey]);
+    : raw?.[rawKey] ?? play?.[rawKey]);
   return {
-    team: play?.team ?? readPossessionTeam(raw ?? play),
+    team: typeof play?.team === 'string' ? play.team : readPossessionTeam(raw ?? play),
     // Wider than `canonical.typeSlug`, which feeds `parsePlayNarrative()` and
     // must stay the provider's slug. Some rows carry only `type_text`
     // ("Interception Return Touchdown"); reading the slug alone left those
@@ -109,6 +109,11 @@ function readGeometryFields(play) {
     endDown: asNumberOrNull(pick('endDown', 'end_down')),
     // Credited yards on a play with an accepted penalty (see isTurnoverOnDowns).
     narrative: play?.narrative ?? null,
+    rawText: firstString(play?.rawText, raw?.text, raw?.description, play?.description, play?.text),
+    startPossessionText: pick('startPossessionText', 'start_possession_text'),
+    startYardLine: pick('startYardLine', 'start_yard_line'),
+    endPossessionText: pick('endPossessionText', 'end_possession_text'),
+    endYardLine: pick('endYardLine', 'end_yard_line'),
   };
 }
 

@@ -638,7 +638,7 @@ test('a summary-only pick-six recovers the same-possession passer and credits Ho
   ).filter((event) => event.sharedPlayId === '401873286469');
 
   assert.deepEqual(events.map((event) => event.playerId).sort(), ['hou-dst', 'mendoza', 'woodaz']);
-  assert.deepEqual(events.find((event) => event.playerId === 'mendoza').stats, { pass_int: 1 });
+  assert.deepEqual(events.find((event) => event.playerId === 'mendoza').stats, { pass_int: 1, pass_att: 1, pass_inc: 1 });
   assert.equal(events.find((event) => event.playerId === 'woodaz').play.defenseTeamAbbr, 'HOU');
   assert.equal(events.find((event) => event.playerId === 'hou-dst').play.defenseTeamAbbr, 'HOU');
   const mendoza = events.find((event) => event.playerId === 'mendoza');

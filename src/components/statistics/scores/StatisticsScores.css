@@ -1081,7 +1081,7 @@ button.scores-stat-players-row:hover strong { text-decoration: underline; }
 .scores-scoring-quarter article > div > span { color: var(--color-label-secondary); font-size: var(--type-label); }
 .scores-scoring-quarter article > b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-emphasis); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* StoryStats is a narrative sidecar. It has its own section in the drilldown,
+/* Game Story has its own section in the drilldown,
    while the score, clock, and play-by-play remain the authoritative game feed. */
 .scores-story-panel { margin-top: 30px; padding: 18px 0 26px; border-top: 2px solid var(--color-label); }
 .scores-story-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }

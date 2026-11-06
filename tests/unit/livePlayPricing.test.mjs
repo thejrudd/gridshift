@@ -31,6 +31,177 @@ function statsByPlayer(events) {
   return Object.fromEntries(events.map((event) => [event.playerId, event.stats]));
 }
 
+test('a completed pass and lateral split the receiving yards and charge the fumble to the last carrier', () => {
+  const text = 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards (J.Bullard). FUMBLES (J.Bullard), RECOVERED by GB-B.Cox at CAR 25. B.Cox to CAR 22 for 3 yards (B.Young).';
+  assert.equal(parseFumbleCredit(text).fumbledBy, 'J.Coker');
+  const events = eventsFor([
+    { id: 'young', name: 'Bryce Young', position: 'QB', team: 'CAR' },
+    { id: 'mcmillan', name: 'Tetairoa McMillan', position: 'WR', team: 'CAR' },
+    { id: 'coker', name: 'Jalen Coker', position: 'WR', team: 'CAR' },
+    { id: 'bullard', name: 'Javon Bullard', position: 'DB', team: 'GB' },
+    { id: 'cox', name: 'Brenton Cox', position: 'DL', team: 'GB' },
+  ], {
+    gameRecord: game('car-gb', 'CAR', 'GB'),
+    scoring: { pass_yd: 0.04, rec: 1, rec_yd: 0.1, fum_lost: -2, idp_ff: 2, idp_fr: 2 },
+    // Captured provider shape: the recovery side owns `team`, while the slug
+    // stays a pass and stat_yardage is the defender's three-yard return.
+    plays: [{ id: 'lateral', type_slug: 'pass-reception', team: { abbreviation: 'GB' }, text,
+      short_text: 'Bryce Young Pass Complete for 8 Yds to Tetairoa McMillan Jalen Coker Fumble Brenton Cox Jr. 3 Yd Fumble Recovery', stat_yardage: 3, end_down: 1, period: 4, clock_display: '0:04' }],
+  });
+  const byId = Object.fromEntries(events.map((event) => [event.playerId, event]));
+  assert.equal(byId.young.stats.pass_yd, 9);
+  assert.equal(byId.young.stats.idp_tkl, 1);
+  assert.deepEqual(byId.mcmillan.stats, { rec: 1, rec_yd: 8 });
+  assert.deepEqual(byId.coker.stats, { fum: 1, fum_lost: 1, rec_yd: 1 });
+  assert.equal(byId.mcmillan.pts, 1.8);
+  assert.equal(byId.coker.pts, -1.9);
+  assert.equal(byId.coker.desc, 'Bryce Young found Tetairoa McMillan, who lateraled to Jalen Coker. Jalen Coker fumbled; Brenton Cox Jr. recovered.');
+  assert.equal(byId.bullard.stats.idp_ff, 1);
+  assert.equal(byId.cox.stats.idp_fr, 1);
+});
+
+test('a passer receives both pass and explicitly named fumble-return tackle points', async () => {
+  const { buildPlayPointsBreakdown } = await import('../../src/utils/matchupPlayBreakdown.js');
+  const scoring = { pass_yd: 0.02, pass_cmp: 0.1, idp_tkl_solo: 1.4 };
+  const events = eventsFor([
+    { id: 'young', name: 'Bryce Young', position: 'QB', team: 'CAR' },
+    { id: 'coker', name: 'Jalen Coker', position: 'WR', team: 'CAR' },
+  ], { gameRecord: game('car-gb', 'CAR', 'GB'), scoring, plays: [{
+    id: 'last', type_slug: 'pass-reception', team: { abbreviation: 'GB' }, stat_yardage: 3,
+    text: 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards (J.Bullard). FUMBLES (J.Bullard), RECOVERED by GB-B.Cox at CAR 25. B.Cox to CAR 22 for 3 yards (B.Young).',
+    short_text: 'Bryce Young Pass Complete for 8 Yds to Tetairoa McMillan Jalen Coker Fumble Brenton Cox Jr. 3 Yd Fumble Recovery',
+  }] });
+  const young = events.find((event) => event.playerId === 'young');
+  assert.equal(young.pts, 1.68);
+  assert.equal(young.stats.pass_yd, 9);
+  assert.equal(young.stats.idp_tkl, 1);
+  assert.match(young.desc, /Bryce Young made the tackle/);
+  const card = buildPlayPointsBreakdown({ ...young, rawPts: young.pts }, scoring);
+  assert.deepEqual(Object.fromEntries(card.rows.map((row) => [row.key, row.pts])), { idp_tkl_solo: 1.4, pass_yd: 0.18, pass_cmp: 0.1 });
+  const { estimatePlayPoints } = await import('../../src/utils/playByPlay/playStatDelta.js');
+  const genericScoring = { pass_yd: 0.02, pass_cmp: 0.1, idp_tkl: 1 };
+  const genericPoints = estimatePlayPoints(young.play, 'passer', 'QB', genericScoring, null, [], {
+    lateral: { passingYards: 9, turnover: true }, returnTackle: true,
+  });
+  assert.equal(genericPoints, 1.28);
+});
+
+test('an interception counts as an incomplete pass and attempt, but not on a two-point try', async () => {
+  const { buildPlayStatDelta } = await import('../../src/utils/playByPlay/playStatDelta.js');
+  assert.deepEqual(buildPlayStatDelta({ description: 'Pass intercepted', type: 'pass-interception' }, 'passer'), { pass_int: 1, pass_att: 1, pass_inc: 1 });
+  assert.deepEqual(buildPlayStatDelta({ description: 'Two-point conversion intercepted', type: 'two-point' }, 'passer'), { pass_2pt: 1 });
+});
+
+test('the interception and mixed passing/tackle snap reconcile to the official stat line without a correction', async () => {
+  const { createReconciliationState, reconcileLivePlays } = await import('../../src/utils/liveReconciliation.js');
+  const scoring = { pass_yd: 0.02, pass_cmp: 0.1, pass_inc: -0.05, pass_int: -3, idp_tkl_solo: 1.4 };
+  const events = eventsFor([
+    { id: 'young', name: 'Bryce Young', position: 'QB', team: 'CAR' },
+    { id: 'coker', name: 'Jalen Coker', position: 'WR', team: 'CAR' },
+  ], { gameRecord: game('car-gb', 'CAR', 'GB'), scoring, plays: [
+    { id: 'seed', type_slug: 'pass-incompletion', team: { abbreviation: 'CAR' }, period: 2, clock_display: '6:00',
+      text: 'B.Young pass incomplete short middle.', short_text: 'Bryce Young Incomplete Pass', stat_yardage: 0 },
+    { id: 'pick', type_slug: 'pass-interception-return', team: { abbreviation: 'GB' }, period: 2, clock_display: '5:23',
+      text: '(Shotgun) B.Young pass short left intended for J.Coker INTERCEPTED by T.Hopper at CAR 44. T.Hopper to CAR 43 for 1 yard (J.Coker).', short_text: "Ty'Ron Hopper 1 Yd Interception Return", stat_yardage: 1 },
+    { id: 'last', type_slug: 'pass-reception', team: { abbreviation: 'GB' }, period: 4, clock_display: '0:04', stat_yardage: 3,
+      text: 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards (J.Bullard). FUMBLES (J.Bullard), RECOVERED by GB-B.Cox at CAR 25. B.Cox to CAR 22 for 3 yards (B.Young).',
+      short_text: 'Bryce Young Pass Complete for 8 Yds to Tetairoa McMillan Jalen Coker Fumble Brenton Cox Jr. 3 Yd Fumble Recovery' },
+  ] }).filter((event) => event.playerId === 'young');
+  const state = reconcileLivePlays(createReconciliationState(), { playEvents: events, sleeperPointsById: { young: -1.42 },
+    sleeperStatsById: { young: { pass_att: 3, pass_cmp: 1, pass_inc: 2, pass_int: 1, pass_yd: 9, idp_tkl: 1, idp_tkl_solo: 1 } },
+    positionsById: new Map([['young', 'QB']]), settledPlayerIds: ['young'], scoringSettings: scoring, now: 100 });
+  assert.equal(state.feedEvents.find((event) => event.sharedPlayId === 'pick').displayPts, -3.05);
+  const last = state.feedEvents.find((event) => event.sharedPlayId === 'last');
+  assert.equal(last.displayPts, 1.68);
+  assert.equal(last.adjustment, 0);
+  assert.equal(state.players.get('young').displayedPoints, -1.42);
+});
+
+test('lateral plays without trustworthy net yards do not invent offensive receiving credits', () => {
+  const events = eventsFor([{ id: 'coker', name: 'Jalen Coker', position: 'WR', team: 'CAR' }], {
+    gameRecord: game('car-gb', 'CAR', 'GB'), scoring: { rec: 1, rec_yd: 0.1, fum_lost: -2 },
+    plays: [{ id: 'partial', type_slug: 'fumble-recovery-opponent', team: { abbreviation: 'GB' },
+      text: 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards. FUMBLES, RECOVERED by GB-B.Cox.', period: 4 }],
+  });
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].stats, { fum: 1, fum_lost: 1 });
+  assert.equal(events[0].pts, -2);
+});
+
+test('multiple laterals can give one carrier negative receiving yards without another catch', () => {
+  const events = eventsFor([
+    { id: 'first', name: 'Tetairoa McMillan', position: 'WR', team: 'CAR' },
+    { id: 'second', name: 'Jalen Coker', position: 'WR', team: 'CAR' },
+    { id: 'third', name: 'Chuba Hubbard', position: 'RB', team: 'CAR' },
+  ], {
+    gameRecord: game('car-gb', 'CAR', 'GB'), scoring: { rec: 1, rec_yd: 0.1 },
+    plays: [{ id: 'multiple', type_slug: 'pass', team: { abbreviation: 'CAR' }, stat_yardage: 7, period: 4,
+      text: 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards. Lateral to C.Hubbard to CAR 23 for -3 yards.' }],
+  });
+  const byId = Object.fromEntries(events.map((event) => [event.playerId, event]));
+  assert.deepEqual(byId.first.stats, { rec: 1, rec_yd: 8 });
+  assert.deepEqual(byId.second.stats, { rec_yd: 2 });
+  assert.deepEqual(byId.third.stats, { rec_yd: -3 });
+  assert.equal(byId.third.pts, -0.3);
+});
+
+test('an offensive starter earns a tackle on the return after an interception', () => {
+  const events = eventsFor([{ id: 'coker', name: 'Jalen Coker', position: 'WR', team: 'CAR' }], {
+    gameRecord: game('car-gb', 'CAR', 'GB'), scoring: { idp_tkl_solo: 1.4, rec: 0.5 },
+    plays: [{ id: 'pick', type_slug: 'pass-interception-return', team: { abbreviation: 'GB' },
+      text: '(Shotgun) B.Young pass short left intended for J.Coker INTERCEPTED by T.Hopper at CAR 44. T.Hopper to CAR 43 for 1 yard (J.Coker).',
+      short_text: "Ty'Ron Hopper 1 Yd Interception Return", stat_yardage: 1, period: 2, clock_display: '5:23' }],
+  });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].role, 'defense');
+  assert.deepEqual(events[0].stats, { idp_tkl: 1 });
+  assert.equal(events[0].pts, 1.4);
+  assert.match(events[0].desc, /Jalen Coker made the tackle\.$/);
+});
+
+test('a pass and fumble without a lateral gets a readable feed description', () => {
+  const events = eventsFor([{ id: 'watson', name: 'Christian Watson', position: 'WR', team: 'GB' }], {
+    gameRecord: game('car-gb', 'CAR', 'GB'), scoring: { rec: 0.5, rec_yd: 0.1, fum_lost: -1.5 },
+    plays: [{ id: 'watson-fumble', type_slug: 'fumble-recovery-opponent', team: { abbreviation: 'CAR' }, period: 2,
+      text: '(Shotgun) J.Love pass short left to C.Watson to CAR 42 for 8 yards (N.Scott). FUMBLES (N.Scott), touched at CAR 40, RECOVERED by CAR-B.Okereke at CAR 37.',
+      short_text: 'Jordan Love Pass Complete for 8 Yds to Christian Watson Christian Watson Fumble Bobby Okereke 0 Yd Fumble Recovery', stat_yardage: 8 }],
+  });
+  assert.equal(events[0].desc, 'Jordan Love found Christian Watson, who fumbled. Bobby Okereke recovered.');
+  assert.equal(events[0].stats.fum_lost, 1);
+  assert.equal(events[0].stats.rec, 1);
+});
+
+test('the offensive tackle and fumble stay on their own plays after reconciliation', async () => {
+  const { createReconciliationState, reconcileLivePlays } = await import('../../src/utils/liveReconciliation.js');
+  const { buildPlayPointsBreakdown } = await import('../../src/utils/matchupPlayBreakdown.js');
+  const scoring = { rec: 0.5, rec_yd: 0.1, rec_td: 6, fum: -2.5, fum_lost: -1.5, idp_tkl_solo: 1.4 };
+  const plays = eventsFor([{ id: 'coker', name: 'Jalen Coker', position: 'WR', team: 'CAR' }], {
+    gameRecord: game('car-gb', 'CAR', 'GB'), scoring,
+    plays: [
+      { id: 'pick', type_slug: 'pass-interception-return', team: { abbreviation: 'GB' }, period: 2, clock_display: '5:23',
+        text: '(Shotgun) B.Young pass short left intended for J.Coker INTERCEPTED by T.Hopper at CAR 44. T.Hopper to CAR 43 for 1 yard (J.Coker).', short_text: "Ty'Ron Hopper 1 Yd Interception Return", stat_yardage: 1 },
+      { id: 'catch', type_slug: 'pass-reception', team: { abbreviation: 'CAR' }, period: 4, clock_display: '9:39',
+        text: 'B.Young pass short middle to J.Coker to GB 48 for 9 yards (E.Williams).', short_text: 'Bryce Young Pass Complete for 9 Yds to Jalen Coker', stat_yardage: 9 },
+      { id: 'td', type_slug: 'passing-touchdown', team: { abbreviation: 'CAR' }, period: 4, clock_display: '5:45', scoring_play: true,
+        text: 'B.Young pass short middle to J.Coker for 26 yards, TOUCHDOWN.', short_text: 'Jalen Coker 26 Yd pass from Bryce Young', stat_yardage: 26 },
+      { id: 'fumble', type_slug: 'pass-reception', team: { abbreviation: 'GB' }, period: 4, clock_display: '0:04', stat_yardage: 3,
+        text: 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards (J.Bullard). FUMBLES (J.Bullard), RECOVERED by GB-B.Cox at CAR 25. B.Cox to CAR 22 for 3 yards (B.Young).',
+        short_text: 'Bryce Young Pass Complete for 8 Yds to Tetairoa McMillan Jalen Coker Fumble Brenton Cox Jr. 3 Yd Fumble Recovery' },
+    ],
+  });
+  const state = reconcileLivePlays(createReconciliationState(), { playEvents: plays, sleeperPointsById: { coker: 8 },
+    sleeperStatsById: { coker: { rec: 2, rec_yd: 36, rec_td: 1, fum: 1, fum_lost: 1, idp_tkl_solo: 1 } },
+    positionsById: new Map([['coker', 'WR']]), settledPlayerIds: ['coker'], scoringSettings: scoring, now: 100 });
+  const tackle = state.feedEvents.find((event) => event.sharedPlayId === 'pick');
+  const fumble = state.feedEvents.find((event) => event.sharedPlayId === 'fumble');
+  assert.equal(tackle.displayPts, 1.4);
+  assert.equal(fumble.displayPts, -3.9);
+  assert.equal(fumble.adjustment, 0);
+  assert.equal(state.players.get('coker').displayedPoints, 8);
+  const card = buildPlayPointsBreakdown({ ...tackle, pts: tackle.displayPts, rawPts: tackle.pts }, scoring);
+  assert.deepEqual(card.rows.map(({ key, pts }) => [key, pts]), [['idp_tkl_solo', 1.4]]);
+});
+
 test('a run with a penalty enforced behind it is credited the yards short_text states', () => {
   const events = eventsFor(
     [{ id: 'swift', name: "D'Andre Swift", position: 'RB', team: 'CHI' }],

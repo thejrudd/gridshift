@@ -1,6 +1,11 @@
+import { useContext, useEffect, useState } from 'react';
+import { FantasyTabActivationContext } from '../../context/FantasyTabVisibility.js';
 import useLoadingReveal from '../../hooks/useLoadingReveal';
 import { LOADING_MOTION, loadingMotionAttrs } from '../../utils/loadingMotion';
 import { Skeleton } from './Skeleton';
+
+// UI history only: tab returns stay still until refresh. Data is never cached here.
+const presentedSelections = new Map();
 
 /**
  * LoadingSwap — the one place a Fantasy surface goes from placeholder to data.
@@ -30,6 +35,8 @@ import { Skeleton } from './Skeleton';
  * @param {boolean} [rails]         grow each row's leading accent bar. The row
  *                                  must render that bar as `.gs-reveal-rail`.
  * @param {*} [resetKey]            changing it restarts the load (tab, week…).
+ * @param {string} [navigationScope] Opt-in surface/league/season identity. Remounting
+ *                                  the same selection skips its entrance; resetKey changes still enter.
  * @param {object} [timing]         { showAfter, minimumHold, handoffFade } ms
  *                                  overrides for surfaces with a genuinely
  *                                  different arrival profile.
@@ -45,6 +52,7 @@ export default function LoadingSwap({
   handoff = LOADING_MOTION.handoff,
   rails = false,
   resetKey,
+  navigationScope,
   timing = {},
   role,
   'aria-label': ariaLabel,
@@ -55,15 +63,42 @@ export default function LoadingSwap({
     resetKey,
   });
 
+  const activation = useContext(FantasyTabActivationContext);
+  const [visit, setVisit] = useState(() => ({
+    activation,
+    scope: navigationScope,
+    selection: resetKey,
+    loading,
+    animate: !navigationScope || !presentedSelections.has(navigationScope)
+      || !Object.is(presentedSelections.get(navigationScope), resetKey),
+  }));
+  if (visit.activation !== activation || visit.scope !== navigationScope || !Object.is(visit.selection, resetKey) || visit.loading !== loading) {
+    const newArrival = visit.activation !== activation || visit.scope !== navigationScope || !Object.is(visit.selection, resetKey) || loading;
+    setVisit({
+      activation,
+      scope: navigationScope,
+      selection: resetKey,
+      loading,
+      animate: newArrival
+        ? !navigationScope || !presentedSelections.has(navigationScope)
+          || !Object.is(presentedSelections.get(navigationScope), resetKey)
+        : visit.animate,
+    });
+  }
+  useEffect(() => {
+    if (navigationScope && showContent) presentedSelections.set(navigationScope, resetKey);
+  }, [navigationScope, resetKey, showContent]);
+  const animate = !navigationScope || visit.animate;
+
   const revealClass = [
     'gs-loadswap__content',
-    'gridshift-reveal',
-    'gridshift-reveal--auto',
-    rails ? 'gridshift-reveal--rails' : '',
+    animate ? 'gridshift-reveal' : '',
+    animate ? 'gridshift-reveal--auto' : '',
+    animate && rails ? 'gridshift-reveal--rails' : '',
     className,
   ].filter(Boolean).join(' ');
 
-  const skeletonMounted = showSkeleton || isHandingOff;
+  const skeletonMounted = showSkeleton || (isHandingOff && animate);
 
   return (
     <div
@@ -82,7 +117,7 @@ export default function LoadingSwap({
         </div>
       )}
       {showContent && (
-        <div className={revealClass} key={revealKey}>
+        <div className={revealClass} key={navigationScope ? `${revealKey}:${String(resetKey ?? '')}` : revealKey}>
           {children}
         </div>
       )}

@@ -15,6 +15,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups and the Heatmap never refreshed Sleeper's stat lines during games, so Matchups could not confirm plays by stats, drop plays Sleeper never credited, or add stats no play explained. | v9.3.8 |
 | Statistics player game-log scroll arrows could open the game behind them instead of scrolling, and the left arrow was hidden behind frozen columns. | v9.3.7 |
 | Matchups starter rows could show about double a player's points during a live game: plays the live feed delivered after Sleeper had already counted them stayed pending and were added on top of Sleeper's total until the game ended. | v9.3.6 |
 | Matchups' win chance chart could hold flat for hours while plays kept scoring, because a win chance saved early in the day stood in for every later play. | v9.3.5 |

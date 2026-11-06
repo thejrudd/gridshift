@@ -7,7 +7,8 @@
 // tolerates alternates.
 
 import { getTeamAbbr, normalizeName } from './liveScoringFeed.js';
-import { PLAY_ROLES, parseFumbleCredit } from './nflPlays/playNarrative.js';
+import { PLAY_ROLES, parseFumbleCredit, parseTacklers } from './nflPlays/playNarrative.js';
+import { possessionTextToPercent } from './nflPlays/fieldSpots.js';
 import { buildPlayerNameIndex, lookupPlayerByName } from './nflPlays/playerNameIndex.js';
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 import {
@@ -82,6 +83,26 @@ function addInferredPasserToInterception(sentence, passerName) {
  * show for it), and the sentence is the narrative parser's when it is
  * confident, with an inferred passer folded in and a display clamp applied.
  */
+function describePassFumble(raw) {
+  const text = String(raw?.text ?? '');
+  const short = String(raw?.short_text ?? '');
+  const match = /^(.+?) Pass Complete for (-?\d+) Yds to (.+?) Fumble (.+?) (-?\d+) Yd Fumble Recovery\b/i.exec(short);
+  const fumble = parseFumbleCredit(text);
+  if (!match || !fumble?.fumbledBy || /\bpenalty\b/i.test(text)) return null;
+  const [initial, surname] = fumble.fumbledBy.split('.');
+  if (!initial || !surname) return null;
+  const escaped = surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const carrierMatch = new RegExp(`(?:^| )(${initial}[A-Za-z.'’\\-]* ${escaped}(?: (?:Jr\\.|Sr\\.|II|III|IV))?)$`, 'i').exec(match[3]);
+  if (!carrierMatch) return null;
+  const carrier = carrierMatch[1];
+  const receiver = match[3].slice(0, carrierMatch.index).trim();
+  if (!receiver) return null;
+  const lateral = /\blateral to\b/i.test(text);
+  if (!lateral && receiver !== carrier) return null;
+  if (lateral) return `${match[1]} found ${receiver}, who lateraled to ${carrier}. ${carrier} fumbled; ${match[4]} recovered.`;
+  return `${match[1]} found ${receiver}, who fumbled. ${match[4]} recovered.`;
+}
+
 export function normalizePlay(raw, gameId, { inferredPasserName = null } = {}) {
   const canonical = normalizeCanonicalPlay(raw, {
     gameId,
@@ -164,7 +185,7 @@ export function buildStarterNameIndex(rows) {
     // teammate apart from the actual named player when a full first name is
     // given (see its "fullFirstNameGiven" check).
     meta: new Map([...meta].map(([id, record]) => (
-      [id, { team: record.team, position: record.position, normalizedName: record.normalizedName }]
+      [id, { name: record.name, team: record.team, position: record.position, normalizedName: record.normalizedName }]
     ))),
     teamDefenseIds,
   };
@@ -179,6 +200,8 @@ function getFantasyRoleForActor(actorRole, playerMeta, play) {
   if (actorRole === PLAY_ROLES.KICKER) return 'kicker';
   if (actorRole === PLAY_ROLES.PUNTER) return 'punter';
   if (actorRole === PLAY_ROLES.RETURNER) return 'returner';
+  if (actorRole === PLAY_ROLES.TACKLER && /intercept/i.test(play?.raw?.text ?? '')
+    && playerMeta?.team && playerMeta.team === play.offenseTeamAbbr) return 'defense';
   if ([
     PLAY_ROLES.SACKER,
     PLAY_ROLES.INTERCEPTER,
@@ -231,6 +254,8 @@ const NARRATIVE_OFFENSIVE_ROLES = [
 function getActorExpectedTeam(play, actorRole, isKickReturn) {
   if (NARRATIVE_OFFENSIVE_ROLES.includes(actorRole)) return play.offenseTeamAbbr;
   if (actorRole === PLAY_ROLES.RETURNER) return play.defenseTeamAbbr;
+  // The interception returner is stopped by the team that threw the pass.
+  if (actorRole === PLAY_ROLES.TACKLER && /intercept/i.test(play?.raw?.text ?? '')) return play.offenseTeamAbbr;
   return isKickReturn ? play.offenseTeamAbbr : play.defenseTeamAbbr;
 }
 
@@ -375,13 +400,82 @@ function withFumbleCredit(matches, play, nameIndex) {
   ));
 }
 
+// A player can both throw the pass and stop the subsequent fumble return.
+// Only names in the recovery return's tackle clause qualify; the forcer or
+// pre-fumble tackle must not be mistaken for the return tackle.
+function withFumbleReturnTackles(matches, play, nameIndex) {
+  const text = String(play?.raw?.text ?? '');
+  const fumble = parseFumbleCredit(text);
+  if (!fumble?.recoveredByTeam || !play.offenseTeamAbbr || fumble.recoveredByTeam === play.offenseTeamAbbr) return matches;
+  const recoveryIndex = text.search(/\bRECOVERED by\b/i);
+  if (recoveryIndex < 0) return matches;
+  const tacklerIds = new Set(parseTacklers(text.slice(recoveryIndex)).map((name) => {
+    const record = lookupPlayerByName(nameIndex, name, { team: play.offenseTeamAbbr, normalize: normalizeStarterName });
+    return getIndexedPlayerId(nameIndex, record);
+  }).filter(Boolean));
+  return matches.map((match) => (
+    match.role !== 'defense' && tacklerIds.has(match.playerId)
+      ? { ...match, returnTackle: true } : match
+  ));
+}
+
+// A completed pass followed by laterals has one reception, but each carrier
+// receives their own share of receiving yards. The provider's net play yards
+// includes a fumble lost behind the last carrier's spot; use the remainder for
+// that carrier instead of assigning the entire snap to every named receiver.
+function withPassLateralCredit(matches, play, nameIndex) {
+  const text = String(play?.raw?.text ?? '');
+  if (!/\blateral to\b/i.test(text)) return matches;
+  if (!/\bpass\b/i.test(text.slice(0, text.search(/\blateral to\b/i)))) return matches;
+  const name = "[A-Z][A-Za-z.'’-]*\\.[A-Za-z.'’-]+";
+  const pass = new RegExp(`\\bpass\\b.*?\\bto (${name})\\s+to [A-Z]{2,3} -?\\d+ for (-?\\d+) yards?`, 'i').exec(text);
+  const laterals = [...text.matchAll(new RegExp(`\\blateral to (${name})\\s+to [A-Z]{2,3} -?\\d+ for (-?\\d+) yards?`, 'gi'))];
+  let total = play?.raw?.stat_yardage;
+  const fumble = parseFumbleCredit(text);
+  if (fumble?.recoveredByTeam && fumble.recoveredByTeam !== play.offenseTeamAbbr && laterals.length) {
+    // On this provider shape stat_yardage is the defender's return, not the
+    // pass. Measure the lost ball from the final carrier's spot to recovery.
+    const end = /\bto ([A-Z]{2,3} -?\d+) for -?\d+ yards?/i.exec(laterals.at(-1)[0])?.[1];
+    const recovery = /RECOVERED by [A-Z]{2,3}-[^ ]+ at ([A-Z]{2,3} -?\d+)/i.exec(text)?.[1];
+    const from = possessionTextToPercent(end, { homeTeam: play.defenseTeamAbbr });
+    const to = possessionTextToPercent(recovery, { homeTeam: play.defenseTeamAbbr });
+    total = from == null || to == null ? null : Number(pass?.[2] ?? 0) + laterals.reduce((sum, part) => sum + Number(part[2]), 0) + to - from;
+  }
+  // Do not invent per-player credits for a partial or penalty-adjusted record.
+  if (!pass || !laterals.length || laterals.length !== (text.match(/\blateral to\b/gi) ?? []).length
+    || total == null || !Number.isFinite(Number(total)) || /\bpenalty\b/i.test(text)) {
+    const safe = matches.filter((match) => !['receiver', 'rusher'].includes(match.role));
+    const fumbler = parseFumbleCredit(text)?.fumbledBy;
+    const record = fumbler && lookupPlayerByName(nameIndex, fumbler, { team: play.offenseTeamAbbr, normalize: normalizeStarterName });
+    const playerId = getIndexedPlayerId(nameIndex, record);
+    if (playerId) safe.push({ playerId, role: 'receiver', textPos: 0, detail: null, attributionRoles: [], lateral: { onlyFumble: true } });
+    return safe;
+  }
+  const carriers = [pass, ...laterals].map((part) => ({ name: part[1], yards: Number(part[2]) }));
+  carriers[carriers.length - 1].yards = Number(total) - carriers.slice(0, -1).reduce((sum, carrier) => sum + carrier.yards, 0);
+  const offensive = new Map();
+  carriers.forEach((carrier, index) => {
+    const record = lookupPlayerByName(nameIndex, carrier.name, { team: play.offenseTeamAbbr, normalize: normalizeStarterName });
+    const playerId = getIndexedPlayerId(nameIndex, record);
+    if (!playerId) return;
+    const existing = offensive.get(playerId) ?? { playerId, role: 'receiver', textPos: index, detail: null, attributionRoles: [], lateral: { yards: 0, reception: false, finalCarrier: false, turnover: Boolean(fumble?.recoveredByTeam && fumble.recoveredByTeam !== play.offenseTeamAbbr) } };
+    existing.lateral.yards += carrier.yards;
+    existing.lateral.reception ||= index === 0;
+    existing.lateral.finalCarrier ||= index === carriers.length - 1;
+    offensive.set(playerId, existing);
+  });
+  return [...matches.filter((match) => !['receiver', 'rusher'].includes(match.role)).map((match) => (
+    match.role === 'passer' ? { ...match, lateral: { passingYards: Number(total), turnover: Boolean(fumble?.recoveredByTeam && fumble.recoveredByTeam !== play.offenseTeamAbbr) } } : match
+  )), ...offensive.values()];
+}
+
 /**
  * Returns [{ playerId, role }] for starters involved in the play.
  * Roles: passer | receiver | rusher | returner | kicker | defense | team_defense.
  */
 export function matchPlayToStarters(play, nameIndex) {
   const narrativeMatches = matchNarrativeActors(play, nameIndex);
-  if (play?.narrative?.confident && narrativeMatches) return withFumbleCredit(narrativeMatches, play, nameIndex);
+  if (play?.narrative?.confident && narrativeMatches) return withFumbleReturnTackles(withFumbleCredit(withPassLateralCredit(narrativeMatches, play, nameIndex), play, nameIndex), play, nameIndex);
 
   const { index, meta, teamDefenseIds } = nameIndex;
   // A touchdown row can carry its two-point try. That try's players are not
@@ -434,7 +528,7 @@ export function matchPlayToStarters(play, nameIndex) {
 
   const isSack = /sack/i.test(play.description);
 
-  return withFumbleCredit([...matches.entries()]
+  return withFumbleReturnTackles(withFumbleCredit(withPassLateralCredit([...matches.entries()]
     .sort((left, right) => {
       const leftPos = typeof left[1] === 'number' ? left[1] : left[1].textPos;
       const rightPos = typeof right[1] === 'number' ? right[1] : right[1].textPos;
@@ -453,7 +547,7 @@ export function matchPlayToStarters(play, nameIndex) {
       else if (isPass) role = PASSER_POSITIONS.has(playerMeta.position) ? 'passer' : 'receiver';
       else if (isSack && PASSER_POSITIONS.has(playerMeta.position)) role = 'passer';
       return { playerId, role, textPos, detail: null, attributionRoles: [] };
-    }), play, nameIndex);
+    }), play, nameIndex), play, nameIndex), play, nameIndex);
 }
 
 function isTeamDefensePosition(position) {
@@ -674,10 +768,14 @@ function crossedMilestones(before, after) {
  * point, and the kicker credited from it must not be shown the scorer's run or
  * catch.
  */
-export function describePlayForRole(play, role) {
+export function describePlayForRole(play, role, playerName = null) {
   const extraPoint = play?.narrative?.extraPoint;
   if (role === 'kicker' && extraPoint?.sentence) return extraPoint.sentence;
-  return play?.description ?? '';
+  if (role === 'defense' && playerName && /intercept/i.test(play?.raw?.text ?? '')
+    && play?.defensiveActors?.some((actor) => actor.role === PLAY_ROLES.TACKLER)) {
+    return `${play?.description ?? ''} ${playerName} made the tackle.`;
+  }
+  return describePassFumble(play?.raw) ?? play?.description ?? '';
 }
 
 export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positionsById, gamesById) {
@@ -735,18 +833,35 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
       // interception/opponent-fumble test: kickoffs, punts, missed or blocked
       // field goals, and turnovers on downs now flip too, matching Statistics
       // Scores' drive grouping and field graphics.
-      const { offenseTeam, defenseTeam } = resolveOffenseDefenseTeams(play, {
+      let { offenseTeam, defenseTeam } = resolveOffenseDefenseTeams(play, {
         homeTeam: context.homeTeam,
         awayTeam: context.awayTeam,
         normalizeTeam: getTeamAbbr,
       });
+      // Some pass-lateral fumbles retain a pass slug even though `team` is
+      // the recovery side. A uniquely matched fumbler supplies the missing
+      // offense, without guessing from the side of the field.
+      if (/\blateral to\b/i.test(play.raw?.text ?? '')) {
+        const fumble = parseFumbleCredit(play.raw?.text);
+        const player = fumble?.fumbledBy && lookupPlayerByName(nameIndex, fumble.fumbledBy, { normalize: normalizeStarterName });
+        if (player?.team && fumble.recoveredByTeam && player.team !== fumble.recoveredByTeam
+          && [context.homeTeam, context.awayTeam].includes(player.team)
+          && [context.homeTeam, context.awayTeam].includes(fumble.recoveredByTeam)) {
+          offenseTeam = player.team;
+          defenseTeam = fumble.recoveredByTeam;
+        }
+      }
       play.defenseTeamAbbr = defenseTeam;
       play.offenseTeamAbbr = offenseTeam;
-      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles, conversion, fumble }) => {
+      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles, conversion, fumble, lateral, returnTackle }) => {
         const position = positionsById.get(playerId) ?? 'FLEX';
-        const credit = { conversion, fumble };
+        const credit = { conversion, fumble, lateral, returnTackle };
         const statDelta = buildPlayStatDelta(play, role, detail, attributionRoles, credit);
-        let pts = estimatePlayPoints(play, role, position, scoringSettings, detail, attributionRoles, credit);
+        // An offensive player can make a real tackle after an interception.
+        // Price this explicit defensive action without opening IDP scoring for
+        // every offensive player's unrelated provider stat line.
+        const scoringPosition = role === 'defense' && !isDefensivePosition(position) ? null : position;
+        let pts = estimatePlayPoints(play, role, scoringPosition, scoringSettings, detail, attributionRoles, credit);
         // Running game totals, kept even for plays worth nothing on their own
         // (a no-gain carry still counts toward 20 carries).
         const totalsKey = `${gameId}:${playerId}`;
@@ -773,8 +888,10 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
           playerId,
           position,
           role,
+          offPositionDefense: role === 'defense' && !isDefensivePosition(position),
+          returnTackle: Boolean(returnTackle),
           ...classification,
-          desc: describePlayForRole(play, role),
+          desc: `${describePlayForRole(play, role, nameIndex.meta.get(playerId)?.name)}${returnTackle ? ` ${nameIndex.meta.get(playerId)?.name} made the tackle.` : ''}`,
           pts,
           stats: statDelta,
           at: play.wallclock ?? Date.now(),
@@ -887,7 +1004,8 @@ function round2(value) {
 }
 
 function describeSharedPlay(primary, contributors) {
-  const description = primary.play?.description ?? primary.desc;
+  const description = contributors.find((contributor) => / made the tackle\.$/.test(contributor.desc ?? ''))?.desc
+    ?? describePassFumble(primary.play?.raw) ?? primary.play?.description ?? primary.desc;
   const extraPoint = primary.play?.narrative?.extraPoint;
   if (!extraPoint || !contributors.some((contributor) => contributor.role === 'kicker')) return description;
   return `${description} ${extraPoint.kicker} ${extraPoint.good ? 'made' : 'missed'} the extra point.`.replace(/\.\.+/g, '.');
@@ -926,6 +1044,8 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         stats: event.stats,
         position: event.position,
         role: event.role,
+        offPositionDefense: event.offPositionDefense,
+        returnTackle: event.returnTackle,
         desc: event.desc,
         kind: event.kind,
         mechanism: event.mechanism,
@@ -981,4 +1101,32 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         contributors,
       };
     });
+}
+
+/** Join the two fantasy sides of the same NFL snap into one replay moment. */
+export function groupMatchupPlayMoments(events = []) {
+  const groups = new Map();
+  events.forEach((event, index) => {
+    const key = event.sharedPlayId && event.source !== 'stat-update'
+      ? `moment-${event.gameId ?? 'unknown'}-${event.sharedPlayId}` : `event-${index}`;
+    const group = groups.get(key);
+    if (group) group.push(event);
+    else groups.set(key, [event]);
+  });
+  return [...groups.entries()].map(([key, sides]) => {
+    if (!sides[0].sharedPlayId || sides[0].source === 'stat-update') return sides[0];
+    const primary = sides[0];
+    return {
+      ...primary,
+      id: key,
+      sideEvents: sides,
+      status: sides.some((event) => event.status === 'pending') ? 'pending' : primary.status,
+      contributors: sides.flatMap((event) => event.contributors?.length ? event.contributors : [{
+        playerId: event.playerId, pts: event.pts, stats: event.stats, position: event.position,
+        role: event.role, kind: event.kind, desc: event.desc, rawPts: event.rawPts,
+        adjustment: event.adjustment, adjustmentParts: event.adjustmentParts,
+        offPositionDefense: event.offPositionDefense,
+      }]),
+    };
+  });
 }

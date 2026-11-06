@@ -27,6 +27,23 @@ import {
 } from './CompanionSelectorControls.jsx';
 
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const DESIGNATION_SNAPSHOT_CACHE = new Map();
+const DESIGNATION_SNAPSHOT_CACHE_LIMIT = 8;
+
+function buildDesignationKey(scope, nflState, candidateTeamKey) {
+  return isValidNflState(nflState)
+    ? `${scope}:${nflState.season}:${nflState.week}:${candidateTeamKey}`
+    : null;
+}
+
+function cacheDesignationSnapshot(key, response) {
+  if (!key) return;
+  DESIGNATION_SNAPSHOT_CACHE.delete(key);
+  DESIGNATION_SNAPSHOT_CACHE.set(key, response);
+  while (DESIGNATION_SNAPSHOT_CACHE.size > DESIGNATION_SNAPSHOT_CACHE_LIMIT) {
+    DESIGNATION_SNAPSHOT_CACHE.delete(DESIGNATION_SNAPSHOT_CACHE.keys().next().value);
+  }
+}
 
 function isValidNflState(state) {
   const season = Number(state?.season);
@@ -209,7 +226,35 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
   const { players, loadPlayers } = useSleeperStats();
   const { darkMode } = useTheme();
   const compact = useMediaQuery(COMPACT_PHONE_QUERY);
-  const [sourceState, setSourceState] = useState({ status: 'idle', nflState: null, response: null, error: null });
+  const sourceScope = `${platform}:${selectedLeagueId ?? ''}:${season ?? ''}`;
+  const sleeperCandidateTeams = useMemo(() => getFantasyInjurySleeperCandidateTeams({
+    players: players ?? {},
+    rosters: rosters ?? [],
+  }), [players, rosters]);
+  // Roster synchronization can replace the array every 30 seconds. The
+  // designation request should restart only when the actual team set changes.
+  const sleeperCandidateTeamKey = sleeperCandidateTeams.join(',');
+  const stableSleeperCandidateTeams = useMemo(
+    () => (sleeperCandidateTeamKey ? sleeperCandidateTeamKey.split(',') : []),
+    [sleeperCandidateTeamKey],
+  );
+  const initialDesignationKey = platform === 'sleeper'
+    && selectedLeagueId
+    && isValidNflState(nflState)
+    && isFantasyInjuryCurrentSeason({ selectedSeason: season, nflSeason: nflState.season })
+    ? buildDesignationKey(sourceScope, nflState, sleeperCandidateTeamKey)
+    : null;
+  const cachedDesignationResponse = initialDesignationKey
+    ? DESIGNATION_SNAPSHOT_CACHE.get(initialDesignationKey) ?? null
+    : null;
+  const [sourceState, setSourceState] = useState(() => ({
+    scope: sourceScope,
+    status: isValidNflState(nflState) ? 'loading' : 'idle',
+    nflState: isValidNflState(nflState) ? nflState : null,
+    response: cachedDesignationResponse,
+    responseKey: cachedDesignationResponse ? initialDesignationKey : null,
+    error: null,
+  }));
   const [refreshKey, setRefreshKey] = useState(0);
   const [position, setPosition] = useState('ALL');
   const [rosterFilter, setRosterFilter] = useState({ scope: '', ids: [] });
@@ -224,17 +269,12 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
     leagueSeason: league?.season,
     seasonSwitching,
   });
-  const sleeperCandidateTeams = useMemo(() => getFantasyInjurySleeperCandidateTeams({
-    players: players ?? {},
-    rosters: rosters ?? [],
-  }), [players, rosters]);
-  // Roster synchronization can replace the array every 30 seconds. The
-  // designation request should restart only when the actual team set changes.
-  const sleeperCandidateTeamKey = sleeperCandidateTeams.join(',');
-  const stableSleeperCandidateTeams = useMemo(
-    () => (sleeperCandidateTeamKey ? sleeperCandidateTeamKey.split(',') : []),
-    [sleeperCandidateTeamKey],
-  );
+  const currentNflState = isValidNflState(nflState)
+    ? nflState
+    : nflStateLoading && sourceState.scope === sourceScope && isValidNflState(sourceState.nflState)
+      ? sourceState.nflState
+      : null;
+  const designationKey = buildDesignationKey(sourceScope, currentNflState, sleeperCandidateTeamKey);
 
   useEffect(() => {
     if (platform === 'sleeper') void loadPlayers();
@@ -252,13 +292,13 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
       if (cancelled) return;
       setSourceState((current) => ({ ...current, status: 'loading', error: null }));
       if (nflStateLoading || !nflState) {
-        if (!cancelled && nflStateLoading) {
-          setSourceState((current) => ({ ...current, status: 'loading', nflState: null, error: null }));
-        } else if (!cancelled) {
+        if (!cancelled && !nflStateLoading) {
           setSourceState({
+            scope: sourceScope,
             status: 'unavailable',
             nflState: null,
             response: null,
+            responseKey: null,
             error: nflStateError
               ? new Error(nflStateError)
               : new Error('Current NFL week unavailable.'),
@@ -268,12 +308,12 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
       }
 
       if (!isValidNflState(nflState)) {
-        if (!cancelled) setSourceState({ status: 'unavailable', nflState: null, response: null, error: new Error('Current NFL week unavailable.') });
+        if (!cancelled) setSourceState({ scope: sourceScope, status: 'unavailable', nflState: null, response: null, responseKey: null, error: new Error('Current NFL week unavailable.') });
         return;
       }
 
       if (!isFantasyInjuryCurrentSeason({ selectedSeason: season, nflSeason: nflState.season })) {
-        if (!cancelled) setSourceState({ status: 'out-of-scope', nflState, response: null, error: null });
+        if (!cancelled) setSourceState({ scope: sourceScope, status: 'out-of-scope', nflState, response: null, responseKey: null, error: null });
         return;
       }
 
@@ -283,6 +323,7 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
       if (!cancelled) {
         setSourceState((current) => ({
           ...current,
+          scope: sourceScope,
           status: 'loading',
           nflState,
           error: null,
@@ -290,7 +331,7 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
       }
 
       if (stableSleeperCandidateTeams.length === 0) {
-        if (!cancelled) setSourceState({ status: 'not-needed', nflState, response: null, error: null });
+        if (!cancelled) setSourceState({ scope: sourceScope, status: 'not-needed', nflState, response: null, responseKey: null, error: null });
         return;
       }
 
@@ -301,10 +342,14 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
           teams: stableSleeperCandidateTeams,
           signal: controller.signal,
         });
-        if (!cancelled) setSourceState({ status: 'ready', nflState, response, error: null });
+        if (!cancelled) {
+          cacheDesignationSnapshot(designationKey, response);
+          setSourceState({ scope: sourceScope, status: 'ready', nflState, response, responseKey: designationKey, error: null });
+        }
       } catch (error) {
         if (cancelled || error?.name === 'AbortError') return;
-        setSourceState({ status: 'unavailable', nflState, response: null, error });
+        DESIGNATION_SNAPSHOT_CACHE.delete(designationKey);
+        setSourceState({ scope: sourceScope, status: 'unavailable', nflState, response: null, responseKey: null, error });
       }
     }
 
@@ -315,6 +360,7 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
     };
   }, [
     leagueSnapshotReady,
+    designationKey,
     nflState,
     nflStateError,
     nflStateLoading,
@@ -323,21 +369,31 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
     refreshKey,
     season,
     selectedLeagueId,
+    sourceScope,
     stableSleeperCandidateTeams,
   ]);
 
+  const scopedSourceState = sourceState.scope === sourceScope ? sourceState : {
+    status: 'idle', nflState: null, response: null, responseKey: null, error: null,
+  };
+  const reportNflState = currentNflState;
   const currentSeasonReady = isFantasyInjuryCurrentSeason({
     selectedSeason: season,
-    nflSeason: sourceState.nflState?.season,
+    nflSeason: reportNflState?.season,
   });
   const reportScopeReady = leagueSnapshotReady && currentSeasonReady;
-  const report = useMemo(() => buildFantasyInjuryReport({
-    players: reportScopeReady ? players ?? {} : {},
-    rosters: reportScopeReady ? rosters : [],
-    leagueUsers: reportScopeReady ? leagueUsers : [],
-    sleeperUser,
-    designationRows: reportScopeReady ? sourceState.response?.data ?? [] : [],
-  }), [leagueUsers, players, reportScopeReady, rosters, sleeperUser, sourceState]);
+  const report = useMemo(() => {
+    const designationRows = sourceState.scope === sourceScope && sourceState.responseKey === designationKey
+      ? sourceState.response?.data ?? []
+      : [];
+    return buildFantasyInjuryReport({
+      players: reportScopeReady ? players ?? {} : {},
+      rosters: reportScopeReady ? rosters : [],
+      leagueUsers: reportScopeReady ? leagueUsers : [],
+      sleeperUser,
+      designationRows: reportScopeReady ? designationRows : [],
+    });
+  }, [designationKey, leagueUsers, players, reportScopeReady, rosters, sleeperUser, sourceScope, sourceState]);
 
   const positionOptions = useMemo(() => getFantasyInjuryPositionOptions(report), [report]);
   const currentUserId = sleeperUser?.user_id ?? sleeperUser?.userId ?? sleeperUser?.id ?? null;
@@ -381,8 +437,8 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
     !players
     || connectLoading
     || seasonSwitching != null
-    || nflStateLoading
-    || (leagueSnapshotReady && !sourceState.nflState && (sourceState.status === 'idle' || sourceState.status === 'loading'))
+    || (nflStateLoading && !currentNflState)
+    || (leagueSnapshotReady && !reportNflState && (scopedSourceState.status === 'idle' || scopedSourceState.status === 'loading'))
   );
   const routeTargetId = String(initialPlayerId ?? '').trim() || null;
   const routeTargetPlayer = routeTargetId ? players?.[routeTargetId] ?? null : null;
@@ -395,7 +451,7 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
   const routeTargetPending = Boolean(routeTargetId && !routeTargetRow && (
     loading
     || !reportScopeReady
-    || ['idle', 'loading'].includes(sourceState.status)
+    || ['idle', 'loading'].includes(scopedSourceState.status)
   ));
   const routeTargetNotFound = Boolean(routeTargetId && !routeTargetRow && !routeTargetPending);
   const displayedPosition = routeTargetRow?.position ?? routeTargetPlayer?.position ?? position;
@@ -437,9 +493,10 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
     nflTeams.length > 0,
     playerQuery.trim() !== '',
   ].filter(Boolean).length;
-  const currentWeekUnavailable = sourceState.status === 'unavailable' && !currentSeasonReady;
-  const week = sourceState.nflState?.week ?? null;
-  const freshnessTime = formatTimestamp(sourceState.response?.freshness?.providerFetchedAt);
+  const currentWeekUnavailable = scopedSourceState.status === 'unavailable' && !currentSeasonReady;
+  const week = reportNflState?.week ?? null;
+  const visibleResponse = scopedSourceState.responseKey === designationKey ? scopedSourceState.response : null;
+  const freshnessTime = formatTimestamp(visibleResponse?.freshness?.providerFetchedAt);
 
   const clearPlayerTarget = () => {
     if (initialPlayerId) onClearPlayerTarget?.();
@@ -480,7 +537,7 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
     );
   }
 
-  if (!loading && sourceState.status === 'out-of-scope') {
+  if (!loading && scopedSourceState.status === 'out-of-scope') {
     return (
       <div className="page-frame-data pb-6 fantasy-injuries-page" data-testid="fantasy-injuries-page">
         <EmptyState
@@ -510,20 +567,20 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
           <strong>{report.length} {report.length === 1 ? 'concern' : 'concerns'}</strong>
         </div>
         <div className="fantasy-injuries-source__provider">
-          <span>{getSourceCopy(sourceState)}</span>
-          {freshnessTime && <time dateTime={sourceState.response?.freshness?.providerFetchedAt}>Updated {freshnessTime}</time>}
+          <span>{getSourceCopy({ ...scopedSourceState, response: visibleResponse })}</span>
+          {freshnessTime && <time dateTime={visibleResponse?.freshness?.providerFetchedAt}>Updated {freshnessTime}</time>}
         </div>
         <button
           type="button"
           className="fantasy-injuries-refresh"
           onClick={() => setRefreshKey((value) => value + 1)}
-          disabled={sourceState.status === 'loading'}
+          disabled={scopedSourceState.status === 'loading'}
         >
-          {sourceState.status === 'loading' ? 'Refreshing…' : 'Refresh'}
+          {scopedSourceState.status === 'loading' ? 'Refreshing…' : 'Refresh'}
         </button>
       </section>
 
-      {sourceState.status === 'unavailable' && (
+      {scopedSourceState.status === 'unavailable' && (
         <div className="fantasy-injuries-fallback" role="status">
           <strong>Sleeper-only operation</strong>
           <span>Weekly designations are unavailable. Missing BALLDONTLIE data is unknown and is not treated as healthy.</span>
@@ -622,10 +679,10 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
           action={<button type="button" className="fantasy-injuries-empty-action" onClick={clearFilters}>Show all concerns</button>}
         />
       )}
-      {!loading && !routeTargetId && report.length === 0 && sourceState.status === 'ready' && (
+      {!loading && !routeTargetId && report.length === 0 && scopedSourceState.status === 'ready' && (
         <EmptyState title="No rostered concerns this week." hint="No actionable Sleeper status or unique weekly designation was found." />
       )}
-      {!loading && !routeTargetId && report.length === 0 && sourceState.status === 'unavailable' && (
+      {!loading && !routeTargetId && report.length === 0 && scopedSourceState.status === 'unavailable' && (
         <EmptyState title="No Sleeper roster concerns found." hint="BALLDONTLIE is unavailable, so unmatched and missing designations remain unknown." />
       )}
       {!loading && !routeTargetPending && !routeTargetId && report.length > 0 && filteredReport.length === 0 && (
@@ -640,6 +697,7 @@ export default function CompanionInjuries({ initialPlayerId = null, onClearPlaye
       {(loading || routeTargetPending || filteredReport.length > 0) && (
         <LoadingSwap
           loading={loading || routeTargetPending}
+          navigationScope={`injuries:${platform}:${selectedLeagueId}:${season}`}
           resetKey={`${platform}:${week ?? ''}:${routeTargetId ?? ''}`}
           role="region"
           aria-label={loading || routeTargetPending ? 'Loading injury report' : `${filteredReport.length} rostered injury concerns`}

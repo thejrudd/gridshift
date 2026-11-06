@@ -814,7 +814,8 @@ test('a summary-only pick-six inherits its passer from the same Statistics drive
 
   assert.equal(pickSix.inferredPasserName, 'Fernando Mendoza');
   const timeline = getPlayTimeline(pickSix, { homeTeam: 'HOU', awayTeam: 'LV' });
-  assert.match(timeline.beats.find((beat) => beat.role === 'passer')?.text ?? '', /^Fernando Mendoza drops back/);
+  // A summary has no formation note, so the snap stays neutral (no drop back).
+  assert.match(timeline.beats.find((beat) => beat.role === 'passer')?.text ?? '', /^Fernando Mendoza takes the snap\.$/);
   assert.match(timeline.beats.find((beat) => beat.kind === 'release')?.text ?? '', /^Fernando Mendoza throws/);
 });
 
