@@ -13,11 +13,31 @@ Full token table and dark-mode values: **`docs/Design Tokens.md`**
 - Use semantic `--type-*` tokens instead of new pixel font sizes. Meaningful labels start at `--type-label`; `--type-micro` is decorative/status chrome only.
 - Route roots use one intentional frame: readable (`1200px`), data (`1600px`), or workbench (`1920px`). Long lists should not stretch identity and metrics across the full monitor width.
 - Important user-facing content must fit without truncation. Names, dates, venues, stats, scores, labels, and controls should wrap, reflow, resize, or drop lower-priority chrome before using ellipsis. Ellipsis is only acceptable for nonessential decorative metadata.
+- Exception (user decision, 2026-10-31): Standings, Rosters, and Matchups names stay on one line with ellipsis only after reclaiming space from portraits, gaps, and lower-priority columns. Keep the full name in the row title and accessible name. This is a scoped exception, not a rollout to other screens.
 - Mobile controls, menus, popovers, and other interactive elements must stay fully within the viewport at 100% zoom. Open flyouts inward from their nearest edge, cap widths with viewport-relative constraints, and avoid horizontal page overflow.
 - Table headers should be vertically centered over their metric data and should not truncate. Let labels wrap or use controlled overflow while preserving consistent header height, and resize or remove lower-priority columns before table elements overlap.
-- Roster player names are priority content: do not truncate or ellipsize them. Let names wrap when needed, and drop lower-priority row chrome before hiding identity text.
+- Roster player names are priority content: give them the most room the row allows (narrow lower-priority columns first), then keep them on one line with an ellipsis and the full name in the row's title and accessible name. Never break a name mid-word.
 - Horizontal scroll cues must cover the same rendered width as the scroll rail they describe. For full-bleed mobile tab rails, wrap the cue around the full-bleed shell, not an inset parent, so tab text cannot peek through beside the arrow. Add or preserve Playwright geometry checks that compare the cue edge to the rail's actual rendered edge.
 - Sticky tabs, filters, and headers inside a scrolling content area must have an opaque surface that also shields any top padding/offset above them. Content must never paint through above or behind the sticky control.
+
+## Retained Core Design Foundation
+
+Tokens: **`docs/Design Tokens.md`** › Design Foundation. Core retains `Section`/`PageHeader`, `DataTable`, and `Tabs` with their `.gs-*` styles for flat Standings and the Rosters content tabs.
+
+- **Flat layout.** Sections sit on the page surface, separated by space (`--space-section`), a heading, and a divider. No card inside a card. A raised surface (`--color-surface-object`) is only for a thing that is itself an object: a dialog, a sheet, a draggable item, a team-gradient player row.
+- **Text hierarchy.** Six roles, each a class and a token set: page title (`.gs-text-page-title`), section heading (`.gs-text-section`), row title (`.gs-text-row-title`), body (`.gs-text-body`), secondary (`.gs-text-secondary`), meta (`.gs-text-meta`). One page title per page. Meta is readable (`--color-text-meta` = secondary), never tertiary.
+- **Interaction states.** Every interactive element shows hover (`--color-state-hover`), active (`--color-state-active`), keyboard focus (a `--focus-ring-width` outline in `--color-focus-ring`, offset `--focus-ring-offset`), and disabled (`--color-text-disabled`, `cursor: not-allowed`, no opacity on text parents). A clickable row shows a pointer cursor, a hover background, and a chevron. Add `.gs-focusable` to a shared control that has no focus ring of its own.
+- **Tabs.** The selected tab keeps the gold underline (`--color-state-selected`); inactive tabs use secondary text and darken on hover.
+- **Component set.**
+
+| Component | File | Use |
+| --- | --- | --- |
+| Section, SectionHeader, PageHeader | `ui/Section.jsx` | Page title block; a titled section with optional meta, icon, colour marker, actions |
+| DataTable | `ui/DataTable.jsx` | Flat table: hairline rows, meta headers, `is-start`/`is-center` alignment, `is-interactive` rows |
+| Tabs | `ui/Tabs.jsx` | Roving-tabindex tab rail on `.season-tab`; `variant="secondary"` inside a page |
+
+- Player and asset rows stay on the Companion shared row system (`CompanionPlayerRow`); the foundation only changes what surrounds them.
+- Position groups in player lists keep the full-width position colour bar; its foreground comes from the canonical `pickReadableForeground` helper for the position colour.
 
 ## Desktop Legibility and Viewing Distance
 

@@ -517,7 +517,7 @@ for (const viewport of MOBILE_VIEWPORTS) {
       await page.locator('#root').waitFor({ state: 'visible' });
       await page.waitForLoadState('networkidle').catch(() => {});
       await expectNoDocumentOverflow(page, route);
-      await expectNoCompanionIdentityEllipsis(page, route);
+      await expectCompanionIdentityFits(page, route);
       if (route === '/fantasy/matchups') {
         await expectNoContentAreaHorizontalOverflow(page, route);
         await expectNoMatchupRowCrowding(page, route);
@@ -1941,7 +1941,7 @@ async function expectNoContentAreaHorizontalOverflow(page, route) {
   expect(overflow, `${route} has main content horizontal overflow`).toBeLessThanOrEqual(1);
 }
 
-async function expectNoCompanionIdentityEllipsis(page, route) {
+async function expectCompanionIdentityFits(page, route) {
   const offenders = await page.evaluate(() => (
     [...document.querySelectorAll('.companion-player-row__identity-label')]
       .filter((element) => {
@@ -1957,6 +1957,7 @@ async function expectNoCompanionIdentityEllipsis(page, route) {
           text: element.textContent?.trim(),
           textOverflow: style.textOverflow,
           whiteSpace: style.whiteSpace,
+          intentionalEllipsis: Boolean(row?.matches('.companion-roster-player-row, .companion-matchup-player-row') && row.getAttribute('title')?.includes(element.textContent?.trim())),
           clippedByRow: rowRect
             ? rect.left < rowRect.left - 1 || rect.right > rowRect.right + 1
             : false,
@@ -1964,7 +1965,7 @@ async function expectNoCompanionIdentityEllipsis(page, route) {
       })
       .filter((item) => (
         item.text
-        && (item.textOverflow === 'ellipsis' || item.whiteSpace === 'nowrap' || item.clippedByRow)
+        && (item.clippedByRow || (!item.intentionalEllipsis && (item.textOverflow === 'ellipsis' || item.whiteSpace === 'nowrap')))
       ))
   ));
 
@@ -2203,4 +2204,101 @@ test('Rankings leaves unavailable players and backup quarterbacks without a week
   await expect(projectionValue('Case Keenum')).toHaveText('—');
   await expect(projectionValue('Edgerrin Cooper')).toHaveText('—');
   await expect(projectionValue('Third Quarterback')).toHaveText(/^\d+\.\d$/);
+});
+
+
+test('Standings and Rosters keep the design foundation visuals', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('gridshift:installedVersion', '9.3.7');
+    localStorage.setItem('gridshift:onboardingTour', 'complete');
+  });
+  await page.goto('/league/standings');
+  await expect(page.getByRole('heading', { name: '2026 Standings' })).toBeVisible();
+  await expect(page.locator('.gs-table')).toBeVisible();
+  await page.goto('/fantasy/rosters');
+  const tabs = page.getByRole('tablist', { name: 'Rosters content' });
+  await expect(tabs).toBeVisible();
+  await expect(tabs.getByRole('tab', { name: 'Players', exact: true })).toHaveAttribute('aria-controls', 'roster-content-panel-roster');
+  await expect(page.getByRole('tabpanel', { name: 'Players', exact: true })).toBeVisible();
+  await tabs.getByRole('tab', { name: 'Draft Picks' }).click();
+  await expect(tabs.getByRole('tab', { name: 'Draft Picks' })).toHaveAttribute('aria-selected', 'true');
+  await tabs.getByRole('tab', { name: 'Players', exact: true }).click();
+  await expect(page.locator('.companion-roster-player-row').first()).toBeVisible();
+  await page.goto('/fantasy/matchups');
+  await expect(page.locator('.companion-matchup-player-row').first()).toBeVisible();
+});
+
+for (const width of [320, 390, 430]) {
+  test(`Phone rows reserve name space before ellipsis at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem('gridshift:installedVersion', '9.3.7');
+      localStorage.setItem('gridshift:onboardingTour', 'complete');
+    });
+    for (const [route, selector] of [
+      ['/fantasy/rosters', '.companion-roster-player-row'],
+      ['/fantasy/matchups', '.companion-matchup-player-row'],
+    ]) {
+      await page.goto(route);
+      await expect(page.locator(selector).first()).toBeVisible();
+      const rows = await page.locator(selector).evaluateAll((elements) => elements.map((row) => {
+        const label = row.querySelector('.companion-player-row__identity-label');
+        const body = row.querySelector('.companion-player-row__body');
+        const columns = row.querySelector('.companion-player-row__columns');
+        const name = label.getBoundingClientRect();
+        const facts = columns.getBoundingClientRect();
+        const bounds = row.getBoundingClientRect();
+        return {
+          name: label.textContent.trim(), width: name.width, fits: label.scrollWidth <= label.clientWidth + 1,
+          fullName: row.getAttribute('title'), accessibleName: row.getAttribute('aria-label'),
+          whitespace: getComputedStyle(label).whiteSpace,
+          overlap: body.getBoundingClientRect().right > facts.left + 1,
+          metricsInside: facts.right <= bounds.right + 1,
+        };
+      }));
+      for (const row of rows) {
+        expect(row.whitespace, row.name).toBe('nowrap');
+        const minimum = selector.includes('roster') ? (width === 320 ? 70 : 120) : (width === 320 ? 35 : 60);
+        if (!row.fits) expect(row.width, `${route}: ${row.name}`).toBeGreaterThanOrEqual(minimum);
+        expect(row.fullName).toContain(row.name);
+        expect(row.accessibleName).toContain(row.name);
+        expect(row.overlap, row.name).toBe(false);
+        expect(row.metricsInside, row.name).toBe(true);
+      }
+      await expectNoDocumentOverflow(page, route);
+    }
+  });
+}
+
+test('Compact Matchups keep the injury hit target and a separate player action', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixtures = responsiveFixtureOverrides();
+  await installTradeFixtures(page, {
+    ...fixtures,
+    installedVersion: '9.3.7',
+    players: { ...fixtures.players, 101: { ...fixtures.players[101], injury_status: 'Questionable' } },
+  });
+  await page.addInitScript(() => localStorage.setItem('gridshift:onboardingTour', 'complete'));
+  await page.goto('/fantasy/matchups');
+  const link = page.locator('.companion-matchup-injury-link').first();
+  await expect(link).toBeVisible();
+  const hits = await link.evaluate((button) => {
+    const bounds = button.getBoundingClientRect();
+    const x = bounds.x + bounds.width / 2;
+    const y = bounds.y + bounds.height / 2;
+    return [-21, 0, 21].flatMap((dy) => [-21, 0, 21].map((dx) => ({
+      dx, dy, hit: document.elementFromPoint(x + dx, y + dy)?.closest('.companion-matchup-injury-link') === button,
+    })));
+  });
+  expect(hits.filter((point) => !point.hit)).toEqual([]);
+  const row = link.locator('xpath=ancestor::div[contains(@class,"companion-matchup-player-row")]');
+  await expect(row.locator('.companion-player-row__primary-action')).toBeVisible();
+  const rect = await link.boundingBox();
+  await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2 - 20);
+  await expect(page).toHaveURL(/\/fantasy\/injuries/);
+  await page.goto('/fantasy/matchups');
+  const primary = page.locator('.companion-matchup-player-row.has-separate-action .companion-player-row__primary-action').first();
+  await expect(primary).toBeVisible();
+  await primary.click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole('dialog')).toBeVisible();
 });
