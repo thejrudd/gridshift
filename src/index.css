@@ -129,6 +129,61 @@
   /* Readable by JS via getComputedStyle for dynamic height calculations */
   --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* ── Design foundation ────────────────────────────────────────
+     Semantic roles for the flat layout. Rules and the component set that
+     consumes them: docs/Design System Quick Ref.md, docs/Design Tokens.md.
+     Each role points at a base token above, so .dark follows automatically. */
+
+  /* Text hierarchy: page title > section heading > row title > body >
+     secondary > meta. Sizes follow the active Display Size preset. */
+  --text-page-title-font: 'Barlow Condensed', sans-serif;
+  --text-page-title-size: clamp(var(--type-heading-lg), 4.2vw, var(--type-display));
+  --text-page-title-weight: 800;
+  --text-page-title-tracking: -0.01em;
+  --text-section-font: 'Barlow Condensed', sans-serif;
+  --text-section-size: var(--type-heading-sm);
+  --text-section-weight: 750;
+  --text-section-tracking: 0.04em;
+  --text-row-title-size: var(--type-emphasis);
+  --text-row-title-weight: 650;
+  --text-body-size: var(--type-body);
+  --text-body-weight: 400;
+  --text-secondary-size: var(--type-meta);
+  --text-secondary-weight: 500;
+  --text-meta-font: 'Barlow Condensed', sans-serif;
+  --text-meta-size: var(--type-label);
+  --text-meta-weight: 700;
+  --text-meta-tracking: 0.1em;
+
+  /* Colour roles. Meta stays readable (secondary), never tertiary. */
+  --color-text-primary: var(--color-label);
+  --color-text-secondary: var(--color-label-secondary);
+  --color-text-meta: var(--color-label-secondary);
+  --color-text-disabled: var(--color-label-tertiary);
+  --color-surface-page: var(--color-bg);
+  /* Raised surface: only for a thing that is itself an object (dialog, sheet,
+     draggable item). Sections and tables sit on the page surface. */
+  --color-surface-object: var(--color-bg-secondary);
+  --color-divider: var(--color-separator);
+  --color-divider-strong: var(--color-separator-opaque);
+  /* Text on the fixed, bright position colours (POSITION_COLORS), both modes. */
+  --color-position-bar-fg: var(--color-signature-fg);
+
+  /* Interaction states, shared by every interactive element. */
+  --color-state-hover: var(--color-fill-secondary);
+  --color-state-active: var(--color-fill);
+  --color-state-selected: var(--color-signature);
+  --color-focus-ring: var(--color-accent);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --state-transition: 160ms cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Flat layout spacing: sections are separated by space and dividers. */
+  --space-section: clamp(28px, 3.4vw, 44px);
+  --space-section-header: 10px;
+  --space-row-y: 12px;
+  --space-row-x: 12px;
+
   /* ── Loading motion — the knobs behind every skeleton and reveal ─────────
      Full glossary of what each one means: docs/Loading Motion.md.
      The JS mirror lives in src/utils/loadingMotion.js and
@@ -26078,24 +26133,24 @@ button.trade-history-asset-card:focus-visible {
   color: var(--color-label-secondary);
 }
 
-.league-history-table-scroll,
-.league-standings-table-scroll {
+.league-history-table-scroll
+{
   overflow-x: auto;
   border: 1px solid var(--color-separator);
   border-radius: 12px;
   background: var(--color-bg-secondary);
 }
 
-.league-history-table,
-.league-standings-table {
+.league-history-table
+{
   width: 100%;
   min-width: 680px;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
 
-.league-history-table th,
-.league-standings-table th {
+.league-history-table th
+{
   height: 38px;
   padding: 0 14px;
   border-bottom: 1px solid var(--color-separator);
@@ -26107,11 +26162,11 @@ button.trade-history-asset-card:focus-visible {
   color: var(--color-label-tertiary);
 }
 
-.league-history-table th:first-child,
-.league-standings-table th:nth-child(2) { text-align: left; }
+.league-history-table th:first-child
+{ text-align: left; }
 
-.league-history-table td,
-.league-standings-table td {
+.league-history-table td
+{
   height: 58px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--color-separator);
@@ -26119,15 +26174,15 @@ button.trade-history-asset-card:focus-visible {
   text-align: right;
 }
 
-.league-history-table tr:last-child td,
-.league-standings-table tr:last-child td { border-bottom: 0; }
-.league-history-table td:first-child,
-.league-standings-table td:nth-child(2) { text-align: left; }
+.league-history-table tr:last-child td
+{ border-bottom: 0; }
+.league-history-table td:first-child
+{ text-align: left; }
 .league-history-table td:first-child { display: flex; align-items: center; gap: 12px; }
-.league-history-table td strong,
-.league-standings-table td strong { display: block; font-size: var(--type-meta); }
-.league-history-table td small,
-.league-standings-table td small { display: block; margin-top: 2px; color: var(--color-label-tertiary); font-size: var(--type-label); }
+.league-history-table td strong
+{ display: block; font-size: var(--type-meta); }
+.league-history-table td small
+{ display: block; margin-top: 2px; color: var(--color-label-tertiary); font-size: var(--type-label); }
 
 .league-history-rank,
 .league-seed {
@@ -26212,9 +26267,6 @@ button.trade-history-asset-card:focus-visible {
 .league-history-state-action:active { transform: scale(0.97); }
 .league-history-state-action:focus-visible { outline: 2px solid var(--color-label); outline-offset: 3px; }
 
-.league-standings-table { min-width: 560px; }
-.league-standings-table th:first-child,
-.league-standings-table td:first-child { width: 64px; text-align: center; }
 
 .league-bracket-rounds {
   display: flex;
@@ -26467,8 +26519,8 @@ button.trade-history-asset-card:focus-visible {
 
 .league-champion-list,
 .league-rivalry-list,
-.league-history-table-scroll,
-.league-standings-table-scroll {
+.league-history-table-scroll
+{
   border-radius: 12px;
   box-shadow: 0 6px 16px color-mix(in srgb, var(--color-label) 7%, transparent);
 }
@@ -26487,10 +26539,10 @@ button.trade-history-asset-card:focus-visible {
 .league-champion-row__tag { flex: 0 0 auto; padding: 4px 9px; border-radius: 999px; background: var(--color-signature); color: var(--color-signature-fg); font-family: 'Barlow Condensed', sans-serif; font-size: var(--type-micro); font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
 
 .league-history-table { min-width: 640px; }
-.league-history-table th,
-.league-standings-table th { height: 34px; background: var(--color-fill-secondary); font-family: 'Barlow Condensed', sans-serif; }
-.league-history-table td,
-.league-standings-table td { height: 50px; padding: 6px 12px; font-size: var(--type-meta); }
+.league-history-table th
+{ height: 34px; background: var(--color-fill-secondary); font-family: 'Barlow Condensed', sans-serif; }
+.league-history-table td
+{ height: 50px; padding: 6px 12px; font-size: var(--type-meta); }
 .league-history-table td.is-win { color: var(--color-label); font-weight: 800; }
 
 .league-history-rank,
@@ -26520,9 +26572,6 @@ button.trade-history-asset-card:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 0 20px;
 }
-.league-standings-table { min-width: 640px; }
-.league-standings-table tr.is-playoff-team td { background: color-mix(in srgb, var(--color-signature) 6%, transparent); }
-.league-standings-table tr.is-playoff-team small { color: color-mix(in srgb, var(--color-signature) 76%, var(--color-label-tertiary)); }
 .league-seed.is-playoff-seed { background: var(--color-fill); box-shadow: inset 0 0 0 2px var(--color-signature), inset 0 1px 0 color-mix(in srgb, white 22%, transparent); }
 .league-standing-record { white-space: nowrap; }
 .league-standing-record b,
@@ -26647,8 +26696,6 @@ button.trade-history-asset-card:focus-visible {
 .league-toilet-bowl-glyph { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: color-mix(in srgb, var(--color-accent-orange) 18%, transparent); font-size: 21px; line-height: 1; }
 .league-champion-banner small { display: block; font-family: 'Barlow Condensed', sans-serif; font-size: var(--type-micro); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.75; }
 .league-champion-banner strong { display: block; margin-top: 1px; font-family: 'Barlow Condensed', sans-serif; font-size: 17px; line-height: 1; text-transform: uppercase; }
-.league-standings-live-note { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 12px 14px; border: 1px dashed color-mix(in srgb, var(--color-accent) 40%, var(--color-separator)); border-radius: 10px; color: var(--color-label-secondary); font-size: var(--type-meta); }
-.league-standings-live-note strong { color: var(--color-label); }
 
 @media (min-width: 1024px) and (max-width: 1559px) {
   .league-standings-page .league-division-grid { grid-template-columns: minmax(0, 1fr); }
@@ -26777,14 +26824,13 @@ button.trade-history-asset-card:focus-visible {
   .league-record-tile strong { font-size: 27px; }
   .league-champion-row { display: grid; grid-template-columns: 46px 34px minmax(0, 1fr); gap: 9px; }
   .league-champion-row__tag { display: none; }
-  .league-history-table,
-  .league-standings-table { min-width: 0; }
-  .league-history-table .is-desktop-only,
-  .league-standings-table .is-desktop-only { display: none; }
+  .league-history-table
+  { min-width: 0; }
+  .league-history-table .is-desktop-only
+  { display: none; }
   .league-history-table th,
-  .league-history-table td,
-  .league-standings-table th,
-  .league-standings-table td { padding-right: 8px; padding-left: 8px; }
+  .league-history-table td
+  { padding-right: 8px; padding-left: 8px; }
   .league-history-table td:first-child { gap: 8px; }
   .league-bracket-viewport {
     overflow-x: auto;
@@ -29944,4 +29990,348 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   .global-search-detail {
     padding-left: 16px;
   }
+}
+
+/* ── Design foundation primitives ─────────────────────────────
+   Flat layout: sections sit on the page surface, separated by space, a
+   heading, and dividers; never a box inside a box. A raised surface is only
+   for a thing that is itself an object (dialog, sheet, draggable item).
+   Components: src/components/ui/{Section,DataTable,Tabs}.jsx. Rules: docs/Design System Quick Ref.md. */
+
+/* Text roles */
+.gs-text-page-title {
+  margin: 0;
+  font-family: var(--text-page-title-font);
+  font-size: var(--text-page-title-size);
+  font-weight: var(--text-page-title-weight);
+  letter-spacing: var(--text-page-title-tracking);
+  line-height: 0.95;
+  text-transform: uppercase;
+  text-wrap: balance;
+  color: var(--color-text-primary);
+}
+.gs-text-section {
+  margin: 0;
+  font-family: var(--text-section-font);
+  font-size: var(--text-section-size);
+  font-weight: var(--text-section-weight);
+  letter-spacing: var(--text-section-tracking);
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+}
+.gs-text-row-title {
+  font-size: var(--text-row-title-size);
+  font-weight: var(--text-row-title-weight);
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+.gs-text-body {
+  font-size: var(--text-body-size);
+  font-weight: var(--text-body-weight);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.gs-text-secondary {
+  font-size: var(--text-secondary-size);
+  font-weight: var(--text-secondary-weight);
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+.gs-text-meta {
+  font-family: var(--text-meta-font);
+  font-size: var(--text-meta-size);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--color-text-meta);
+}
+
+/* Page header */
+.gs-page-header {
+  display: grid;
+  gap: 6px;
+  margin-bottom: var(--space-section);
+}
+.gs-page-header__description {
+  max-width: 680px;
+  margin: 4px 0 0;
+  text-wrap: pretty;
+}
+.gs-page-header__description strong { color: var(--color-text-primary); font-weight: 700; }
+
+/* Section */
+.gs-section {
+  min-width: 0;
+  margin: 0 0 var(--space-section);
+}
+.gs-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  flex-wrap: wrap;
+  padding-bottom: var(--space-section-header);
+  border-bottom: 1px solid var(--color-divider-strong);
+}
+.gs-section__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.gs-section__marker {
+  width: 4px;
+  height: 0.95em;
+  border-radius: 2px;
+  background: var(--gs-section-marker, var(--color-state-selected));
+  flex: 0 0 auto;
+}
+.gs-section__actions { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Flat note: an inline statement on the page surface, no frame */
+.gs-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-row-y) 0;
+}
+.gs-note strong { color: var(--color-text-primary); font-weight: 700; }
+
+/* Table */
+.gs-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.gs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.gs-table th {
+  height: 36px;
+  padding: 0 var(--space-row-x);
+  border-bottom: 1px solid var(--color-divider);
+  font-family: var(--text-meta-font);
+  font-size: var(--text-meta-size);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  text-transform: uppercase;
+  text-align: right;
+  vertical-align: middle;
+  white-space: nowrap;
+  color: var(--color-text-meta);
+}
+.gs-table td {
+  padding: var(--space-row-y) var(--space-row-x);
+  border-bottom: 1px solid var(--color-divider);
+  font-size: var(--text-body-size);
+  text-align: right;
+  vertical-align: middle;
+  color: var(--color-text-primary);
+}
+.gs-table th:first-child,
+.gs-table td:first-child { padding-left: 0; }
+.gs-table th:last-child,
+.gs-table td:last-child { padding-right: 0; }
+.gs-table .is-start { text-align: left; }
+.gs-table .is-center { text-align: center; }
+.gs-table tbody tr { transition: background var(--state-transition); }
+.gs-table tbody tr.is-interactive { cursor: pointer; }
+.gs-table tbody tr.is-interactive:hover { background: var(--color-state-hover); }
+.gs-table tbody tr.is-interactive:active { background: var(--color-state-active); }
+
+/* Tabs: selected tab carries the gold underline. Extends .season-tab. */
+.gs-tab { color: var(--color-text-secondary); transition: color var(--state-transition); }
+.gs-tab:hover:not(:disabled):not(.active) { color: var(--color-text-primary); }
+.gs-tab:disabled { color: var(--color-text-disabled); }
+.gs-tab:active:not(:disabled) { color: var(--color-text-primary); }
+.gs-tab.active { color: var(--color-text-primary); }
+.gs-tabs.gs-tabs--secondary { gap: 4px; margin: 0; padding: 0; border-bottom: 1px solid var(--color-divider); }
+.gs-tabs--secondary .season-tab {
+  padding: 8px 14px 7px;
+  font-size: var(--type-body);
+}
+.gs-tabs--secondary .season-tab:first-child { padding-left: 0; }
+
+/* Keyboard focus: one visible ring for every primitive. */
+:where(.gs-tab, .gs-table tr.is-interactive, .gs-focusable):focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+.gs-tab:focus-visible { outline-offset: -2px; border-radius: 4px; }
+
+@media (pointer: coarse) {
+  .gs-tabs--secondary .season-tab { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-tab, .gs-table tbody tr { transition: none; }
+}
+
+/* Standings on the flat primitives (reference screen). Cell
+   content only; the table, sections, and header come from .gs-*. */
+.league-standings-table { min-width: 560px; }
+.league-standings-table th:first-child,
+.league-standings-table td:first-child { width: 56px; }
+.league-standings-table td strong,
+.league-standings-table td small { display: block; }
+/* Team and manager names stay on one line with an ellipsis. A fixed table
+   layout gives the metric columns set widths and the team column the rest,
+   so text-overflow can work. The full name is in the title attribute. */
+.league-standings-table { table-layout: fixed; }
+.league-standings-table th:not(:first-child):not(.is-start) { width: 104px; }
+.league-standings-table td.league-standing-team strong,
+.league-standings-table td.league-standing-team small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.league-standings-page .league-bracket-matchup__team strong,
+.league-standings-page .league-champion-banner strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.league-standings-page .league-champion-banner > span { min-width: 0; }
+.league-standings-table td small { margin-top: 2px; }
+.league-standings-table tr.is-playoff-team small { color: var(--color-text-secondary); }
+.league-standings-page .league-seed { width: 28px; height: 28px; border-radius: 50%; background: var(--color-fill); box-shadow: none; font-size: var(--type-body); }
+.league-standings-page .league-seed.is-playoff-seed { box-shadow: inset 0 0 0 2px var(--color-state-selected); }
+.league-standings-page .league-standing-record { font-size: var(--text-row-title-size); }
+.league-standings-page .league-standing-record span { padding: 0 1px; color: var(--color-text-secondary); }
+.league-standings-page .league-standings-live-note { margin-top: calc(var(--space-section) * -0.5); }
+.league-standings-page .league-final-placements {
+  gap: 0 20px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.league-standings-page .league-final-placement {
+  padding: var(--space-row-y) 0;
+  border-bottom: 1px solid var(--color-divider);
+  background: transparent;
+}
+.league-standings-page .league-final-placement__team small { color: var(--color-text-secondary); }
+
+@media (max-width: 760px) {
+  .league-standings-table { min-width: 0; }
+  .league-standings-table .is-desktop-only { display: none; }
+  .league-standings-table th,
+  .league-standings-table td { padding-right: 8px; padding-left: 8px; }
+  .league-standings-table th:first-child,
+  .league-standings-table td:first-child { width: 44px; padding-left: 0; }
+  .league-standings-table th:not(:first-child):not(.is-start) { width: 76px; }
+}
+
+/* Fantasy Rosters on the flat primitives (reference screen).
+   Player rows stay on the Companion shared row system; only the position
+   bars, column header, name overflow, and interaction states change here. */
+.companion-roster-column-header { margin-bottom: 4px; border-bottom: 1px solid var(--color-divider); }
+.companion-roster-position-bar {
+  padding: 8px 16px;
+  color: var(--color-position-bar-fg);
+}
+.companion-roster-position-bar .gs-text-meta { margin: 0; color: inherit; letter-spacing: 0.16em; }
+.companion-roster-position-bar.is-following { margin-top: 16px; }
+/* Player names stay on one line; the row's title and accessible name carry
+   the full name. */
+.companion-roster-player-row .companion-player-row__identity-label {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.companion-roster-player-row { transition: transform var(--state-transition); }
+.companion-roster-player-row:active { transform: scale(0.995); }
+.companion-roster-player-row:focus-visible { outline-offset: var(--focus-ring-offset); }
+.companion-roster-trade-action:active:not(:disabled) { background: var(--color-state-active); }
+@media (prefers-reduced-motion: reduce) {
+  .companion-roster-player-row { transition: none; }
+  .companion-roster-player-row:active { transform: none; }
+}
+
+/* Identity has priority over portrait size and spacing on narrow rows. Scores,
+   injury actions and metadata keep their existing structure and type sizes. */
+.companion-roster-player-row .companion-player-row__avatar {
+  width: var(--roster-avatar-size, 44px);
+  height: var(--roster-avatar-size, 44px);
+}
+.companion-roster-player-row .companion-player-row__columns {
+  gap: var(--roster-metric-gap, 8px);
+}
+.companion-matchup-masthead__team-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.companion-matchup-player-row .companion-player-row__identity-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.companion-player-row.companion-matchup-player-row.is-compact {
+  gap: 3px;
+}
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__avatar {
+  width: var(--matchup-avatar-size, 22px);
+  height: var(--matchup-avatar-size, 22px);
+}
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity-label,
+.companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__identity-label {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__position--inline,
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity-accessory {
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+@media (max-width: 360px) {
+  .companion-player-row.companion-matchup-player-row.is-compact {
+    --matchup-avatar-size: 18px;
+    gap: 2px;
+  }
+}
+
+/* Compact injury links keep their independent 44px target on the metadata
+   line; only the badge intercepts clicks above the row's player action. */
+.companion-matchup-player-row.is-compact .companion-player-row__meta .companion-matchup-injury-link {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  pointer-events: auto;
+}
+.companion-matchup-player-row.is-compact .companion-player-row__meta .companion-matchup-injury-link::before {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, 44px);
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* Let the compact injury link's enlarged hit area extend beyond the text
+   line. Other metadata keeps its own overflow rules and the row bounds it. */
+.companion-matchup-player-row.is-compact .companion-player-row__meta,
+.companion-matchup-player-row.is-compact .companion-player-row__meta-item:has(.companion-matchup-injury-link) {
+  overflow: visible;
+}
+.companion-matchup-player-row.is-compact .companion-player-row__meta-item:has(.companion-matchup-injury-link) {
+  flex-shrink: 0;
 }

@@ -3068,7 +3068,7 @@ function MatchupMasthead({
           {seedLabel && <span>{seedLabel}</span>}
         </span>
       )}
-      <span className="companion-matchup-masthead__team-name">{name}</span>
+      <span className="companion-matchup-masthead__team-name" title={name}>{name}</span>
       <span className="companion-matchup-masthead__score-label">{scoreLabel}</span>
       <strong className="companion-matchup-masthead__score tabular-nums">{score}</strong>
       {projectedFinal != null && (
@@ -3532,9 +3532,9 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
-  // Phones put the position in a chip beside the name, leaving the game alone
-  // on the second line.
-  const matchupMeta = [compact ? null : player.position, getGameLabel(player)]
+  // Keep the phone name line clear; position, game and injury status use the
+  // existing metadata line without changing the avatar/identity/score grid.
+  const matchupMeta = [player.position, getGameLabel(player)]
     .filter(Boolean)
     .join(' ');
   const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} Overall` : null;
@@ -3611,7 +3611,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   // The status badge rides beside the name rather than taking its own trailing
   // column, so the team logo and score columns stay aligned across every row.
   const gridTemplate = compact
-    ? `30px minmax(0, 1fr) ${metricColumn}`
+    ? `var(--matchup-avatar-size, 22px) minmax(0, 1fr) ${metricColumn}`
     : isTeamDefense
       ? `44px minmax(0, 1fr) ${metricColumn}`
       : `44px minmax(0, 1fr) 36px ${metricColumn}`;
@@ -3627,10 +3627,10 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       showAccentRail={false}
       className={`companion-matchup-player-row${isTeamDefense ? ' is-team-defense' : ''}`}
       useTeamLogoAsAvatar={isTeamDefense}
-      showPosition={compact}
+      showPosition={false}
       positionPlacement="identity"
       showTeamLogo={!compact && !isTeamDefense}
-      metaSegments={[matchupMeta, ...detailSegments]}
+      metaSegments={[matchupMeta, ...detailSegments, ...(compact && injuryStatus ? [injuryStatus] : [])]}
       columns={isBye ? [
         <CompanionPlayerStatus
           key="bye-week"
@@ -3638,12 +3638,12 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
           className="companion-matchup-bye-metric"
         />,
       ] : scoreColumns}
-      identityAccessory={injuryStatus}
+      identityAccessory={compact ? null : injuryStatus}
       gridTemplate={gridTemplate}
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
       separateAction={Boolean(onOpenInjuries && player.availabilityStatus && player.id != null)}
       name={player.name}
-      title=""
+      title={player.name}
       style={{
         borderRadius: 0,
         borderLeftWidth: isRight ? 1 : 4,
@@ -3651,7 +3651,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         borderRight: isRight ? `4px solid ${rowAccent}` : undefined,
         minHeight: compact ? 56 : 70,
         padding: compact
-          ? isRight ? '7px 6px' : '7px 6px 7px 7px'
+          ? '7px 3px'
           : isRight ? '10px 12px' : '10px 18px 10px 12px',
         '--matchup-player-name-size': `${nameFontSize}px`,
         '--matchup-player-score-size': scoreFontSize,

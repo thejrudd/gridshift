@@ -14,10 +14,10 @@ import {
 } from '../../utils/playerAvailabilityStatus.js';
 import {
   CompanionFantasyTeamMenu,
-  CompanionSegmentedControl,
   CompanionSelectorButton,
 } from './CompanionSelectorControls.jsx';
 import { POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
+import { pickReadableForeground } from '../../utils/teamVisualTheme.js';
 import { getDraftSlotForRoster } from '../../utils/draftPickDisplay.js';
 import CompanionPlayerRow, {
   CompanionPlayerAction,
@@ -26,6 +26,7 @@ import CompanionPlayerRow, {
 import StatsProgressBanner from '../ui/StatsProgressBanner';
 import UiEmptyState from '../ui/EmptyState';
 import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
+import Tabs from '../ui/Tabs.jsx';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
 const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ rounds
@@ -109,17 +110,19 @@ function getLeagueMetaSegments(player) {
 function getLeagueLayout(isCompactPhone, bodyColPx) {
   if (isCompactPhone) {
     return {
-      avatarSize: 38,
-      gap: 8,
+      avatarSize: 28,
+      gap: 4,
       nameFontSize: 13,
       metaFontSize: 11,
       nameCol: 'minmax(0,1fr)',
       // avatar | name | metric block | chevron. The status badge lives inside the
       // metric block so it never shifts the season value out of its column.
-      rowTemplate: '38px minmax(0,1fr) auto 10px',
-      metricTemplate: '26px 48px 80px',
-      metricGap: 8,
-      sidePadding: 8,
+      // Names stay on one line (ellipsis), so the metric block is kept as
+      // narrow as its values allow to leave the name the most room.
+      rowTemplate: '28px minmax(0,1fr) auto 8px',
+      metricTemplate: '20px 36px 58px',
+      metricGap: 4,
+      sidePadding: 6,
       tradeWidth: 30,
       verticalPadding: 11,
     };
@@ -325,19 +328,21 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
 
   return (
     <div className="page-frame-data pb-6">
-      <div className="max-w-sm px-4 pb-4">
-        <CompanionSegmentedControl
+      <div className="px-4 pb-4">
+        <Tabs
+          variant="secondary"
           value={subView}
-          options={[
+          items={[
             { value: 'roster', label: 'Players' },
             { value: 'picks', label: 'Draft Picks' },
           ]}
-          columns={2}
           ariaLabel="Rosters content"
+          idPrefix="roster-content"
           onChange={(nextView) => onRouteStateChange?.({ ...(routeState ?? {}), subView: nextView })}
         />
       </div>
 
+      <div id="roster-content-panel-roster" role="tabpanel" aria-labelledby="roster-content-roster" hidden={subView !== 'roster'} tabIndex={0}>
       {subView === 'roster' && (
         <LeagueRosterView
           onTradePlayer={onTradePlayer}
@@ -348,7 +353,10 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
           onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
         />
       )}
-      {subView === 'picks' && <LeaguePicksView />}
+      </div>
+      <div id="roster-content-panel-picks" role="tabpanel" aria-labelledby="roster-content-picks" hidden={subView !== 'picks'} tabIndex={0}>
+        {subView === 'picks' && <LeaguePicksView />}
+      </div>
     </div>
   );
 }
@@ -463,9 +471,8 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
     [isCompactPhone, bodyColPx],
   );
   const headerTracking = isCompactPhone ? 0.1 : 0.18;
-  const metricHeaderClass = 'min-w-0 text-center text-[length:var(--type-label)] font-semibold uppercase whitespace-nowrap';
+  const metricHeaderClass = 'min-w-0 text-center gs-text-meta whitespace-nowrap';
   const metricHeaderStyle = {
-    color: 'var(--color-label-tertiary)',
     letterSpacing: `${headerTracking}em`,
     // Cancel the trailing letter-space so the label optically centers on its column.
     marginRight: `-${headerTracking}em`,
@@ -585,7 +592,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
       {statsLoading && <LeagueStatsLoadingBanner />}
 
       {/* Column headers */}
-      <div className="px-2 sm:px-4 pb-2 mb-1" style={{ borderBottom: '1px solid var(--color-separator)' }}>
+      <div className="companion-roster-column-header px-2 sm:px-4 pb-2">
         <div className="flex items-center w-full">
           <div
             className="grid items-center flex-1 min-w-0"
@@ -597,7 +604,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
             }}
           >
             <div />
-            <span className="min-w-0 text-[length:var(--type-label)] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-label-tertiary)' }}>Player</span>
+            <span className="min-w-0 gs-text-meta">Player</span>
             {/* Mirrors the row's metric block so each label centers over its own column. */}
             <div
               className="grid items-center min-w-0"
@@ -629,13 +636,13 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
           return [
             <div
               key={`${pos}-heading`}
-              className={`mx-2 sm:mx-4 mb-0 px-4 py-2 text-xs font-bold uppercase tracking-widest${groupIndex > 0 ? ' mt-4' : ''}`}
+              className={`companion-roster-position-bar mx-2 sm:mx-4${groupIndex > 0 ? ' is-following' : ''}`}
               style={{
-                color: 'white',
                 background: POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)',
+                color: POSITION_COLORS[pos] ? pickReadableForeground([POSITION_COLORS[pos]]) : 'var(--color-label)',
               }}
             >
-              {pos}
+              <h2 className="gs-text-meta">{pos}</h2>
             </div>,
             ...grouped[pos].map(player => (
               <LeagueResponsivePlayerRow
@@ -694,7 +701,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
           player={player}
           darkMode={darkMode}
           onClick={onSelect}
-          className={`companion-roster-player-row flex-1${player.isKeeper ? ' is-keeper' : ''}`}
+          className={`companion-roster-player-row gs-focusable flex-1${player.isKeeper ? ' is-keeper' : ''}`}
           showAccentRail={false}
           showPosition={false}
           showTeamLogo={false}
@@ -742,6 +749,8 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
             </svg>
           )}
           style={{
+            '--roster-avatar-size': `${layout.avatarSize}px`,
+            '--roster-metric-gap': `${layout.metricGap}px`,
             gap: layout.gap,
             columnGap: layout.gap,
             borderLeftWidth: LEAGUE_ROW_LEFT_BORDER,
@@ -764,7 +773,7 @@ function LeagueResponsivePlayerRow({ player, onSelect, onTrade, tradeDisabled = 
               onClick={onTrade}
               disabled={tradeDisabled}
               title={tradeDisabled ? tradeDisabledTitle : undefined}
-              className="w-full rounded-lg font-semibold transition-colors active:opacity-60 inline-flex items-center justify-center gap-1.5"
+              className="companion-roster-trade-action gs-focusable w-full rounded-lg font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M16 3h5v5" />
