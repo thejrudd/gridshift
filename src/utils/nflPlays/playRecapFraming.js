@@ -122,7 +122,19 @@ export function selectViewerFantasyReplay(event, isViewerTeam, positionOf = () =
  * the moment the ball does instead of drifting on through the beats that follow
  * the whistle.
  */
-export function getYardageProgress(geometry, ballYard) {
+export function getYardageProgress(geometry, ballYard, { fired = null } = {}) {
+  // The final spot cannot measure individual carriers on a path that doubles
+  // back. Settle compound yardage at the closing beat using existing credits.
+  if (geometry?.lateral) return fired?.has('stop') || fired?.has('score') ? 1 : 0;
+  if (fired?.has('snap')) {
+    const resolved = fired.has('stop') || fired.has('score');
+    // The snap travels behind the line without earning negative yardage. A
+    // loss settles at the stop: its endpoint may be closer to the line than
+    // the shotgun snap, so position alone would count the whole loss early
+    // and could then run the ticker backward.
+    if (geometry?.gained < 0) return resolved ? 1 : 0;
+    if (!fired.has('release') && !fired.has('pressure') && !resolved) return 0;
+  }
   const start = Number(geometry?.start);
   const end = Number(geometry?.end);
   const at = Number(ballYard);

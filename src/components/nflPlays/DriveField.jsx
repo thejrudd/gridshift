@@ -69,7 +69,7 @@ export function DriveField({
 
   const trajectories = plays.map((play) => ({ play, geometry: getPlayTrajectory(play, { homeTeam, awayTeam }) }));
   const lanes = trajectories.filter(({ geometry }) => geometry.drawable);
-  if (lanes.length < 2) return null;
+  if (!lanes.length) return null;
 
   // The drive's own team, not its first drawable play: the feed files a kickoff
   // under the receiving team, so the opening lane can run the other way.
@@ -212,7 +212,7 @@ function DriveLane({ geometry, barColor, top, height, label, flipped = false }) 
             <i className="df-ret" data-dir={drawDir > 0 ? 'l' : 'r'} style={span(x(kick.land), x(kick.finish))} />
           )}
         </>
-      ) : flag === 'int' && turnover ? (
+      ) : turnover ? (
         <>
           <i className="df-bar" data-type="pass" data-dir={drawDir > 0 ? 'r' : 'l'}
             style={{ ...span(x(start), x(turnover.at)), '--c': color }} />
@@ -232,8 +232,8 @@ function DriveLane({ geometry, barColor, top, height, label, flipped = false }) 
         <TypeGlyph type={type} dir={drawDir} color={color} size={9} />
       </span>
       <span
-        className={`df-end${flag === 'int' && turnover ? ' is-turnover' : ''}`}
-        style={{ left: `${x(flag === 'int' && turnover ? turnover.at : kick ? kick.finish : end)}%` }}
+        className={`df-end${turnover ? ' is-turnover' : ''}`}
+        style={{ left: `${x(turnover ? turnover.at : kick ? kick.finish : end)}%` }}
       >
         <OutcomeMark flag={flag} scoring={scoring} />
       </span>

@@ -48,6 +48,8 @@ import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 import SeasonHintBanner from '../ui/SeasonHintBanner';
 import EmptyState from '../ui/EmptyState.jsx';
 import RankingsImageExportModal from './RankingsImageExportModal.jsx';
+// Successful snapshots survive tab remounts; every visit still revalidates.
+const ADP_SNAPSHOT_CACHE = new Map();
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const HIDE_AVG_QUERY = '(max-width: 900px)';
 const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
@@ -462,6 +464,7 @@ export default function CompanionRankings({
     leagueUsers,
     league,
     season,
+    platform, selectedLeagueId,
     currentFantasyWeek,
     myRoster,
     getUserDisplayName,
@@ -491,7 +494,7 @@ export default function CompanionRankings({
   const [freeAgentsOnly, setFreeAgentsOnly] = useState(unrosteredOnlyFilter);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [imageExportOpen, setImageExportOpen] = useState(false);
-  const [adpState, setAdpState] = useState({
+  const [adpState, setAdpState] = useState(() => ADP_SNAPSHOT_CACHE.get(selectedSeasonKey) ?? {
     season: null,
     status: 'idle',
     rows: [],
@@ -575,13 +578,13 @@ export default function CompanionRankings({
   useEffect(() => {
     const nextFilters = parsePositionFilterList(positionFilter);
     if (!availablePositions.length) {
-      setSelectedFilters(nextFilters);
+      setSelectedFilters(current => current.join(',') === nextFilters.join(',') ? current : nextFilters);
       return;
     }
     const visibleChips = new Set(filterChips);
     const validFilters = nextFilters.filter((filter) => visibleChips.has(filter));
     const normalizedFilters = validFilters.length ? validFilters : ['ALL'];
-    setSelectedFilters(normalizedFilters);
+    setSelectedFilters(current => current.join(',') === normalizedFilters.join(',') ? current : normalizedFilters);
     const normalizedPositionRoute = serializePositionFilterList(normalizedFilters);
     const currentPositionRoute = positionFilter === 'ALL' ? null : positionFilter;
     if (normalizedPositionRoute !== currentPositionRoute) {
@@ -591,10 +594,13 @@ export default function CompanionRankings({
   useEffect(() => {
     const nextRosterIds = parseRosterFilter(rosterFilter)
       .filter((rosterId) => rosterPlayerIdByRosterId.has(rosterId));
-    setSelectedRosterIds(nextRosterIds);
+    setSelectedRosterIds(current => current.join(',') === nextRosterIds.join(',') ? current : nextRosterIds);
   }, [rosterFilter, rosterPlayerIdByRosterId]);
   useEffect(() => { setSearch(queryFilter ?? ''); }, [queryFilter]);
-  useEffect(() => { setSelectedNflTeams(parseNflTeamFilter(nflTeamFilter)); }, [nflTeamFilter]);
+  useEffect(() => {
+    const nextTeams = parseNflTeamFilter(nflTeamFilter);
+    setSelectedNflTeams(current => current.join(',') === nextTeams.join(',') ? current : nextTeams);
+  }, [nflTeamFilter]);
   useEffect(() => { setSortBy(sortFilter); }, [sortFilter]);
   useEffect(() => { setSortDir(sortDirFilter); }, [sortDirFilter]);
   useEffect(() => { setSortValueMode(valueModeFilter); }, [valueModeFilter]);
@@ -639,27 +645,30 @@ export default function CompanionRankings({
     async function loadAdp() {
       await Promise.resolve();
       if (cancelled) return;
-      setAdpState({
-        season: selectedSeasonKey,
-        status: 'loading',
-        rows: [],
-        snapshot: null,
-        error: '',
-      });
+      setAdpState((current) => current.season === selectedSeasonKey && current.status === 'ready'
+        ? current
+        : ADP_SNAPSHOT_CACHE.get(selectedSeasonKey) ?? {
+          season: selectedSeasonKey,
+          status: 'loading',
+          rows: [],
+          snapshot: null,
+          error: '',
+        });
 
       try {
         const response = await getFantasyAdp({ season: selectedSeasonKey, signal: controller.signal });
         if (cancelled) return;
         const { rows, snapshot } = normalizeFantasyAdpResponse(response);
-        setAdpState({
-          season: selectedSeasonKey,
-          status: 'ready',
-          rows,
-          snapshot,
-          error: '',
-        });
+        const next = { season: selectedSeasonKey, status: 'ready', rows, snapshot, error: '' };
+        ADP_SNAPSHOT_CACHE.set(selectedSeasonKey, next);
+        // The visible season is the only cached ADP response needed on return.
+        for (const key of ADP_SNAPSHOT_CACHE.keys()) {
+          if (key !== selectedSeasonKey) ADP_SNAPSHOT_CACHE.delete(key);
+        }
+        setAdpState(next);
       } catch (error) {
         if (cancelled || error?.name === 'AbortError') return;
+        ADP_SNAPSHOT_CACHE.delete(selectedSeasonKey);
         setAdpState({
           season: selectedSeasonKey,
           status: 'error',
@@ -1372,6 +1381,7 @@ export default function CompanionRankings({
           gesture come from the --gs-load-* tokens; see docs/Loading Motion.md. */}
       <LoadingSwap
         loading={rowsPending}
+        navigationScope={`rankings:${platform}:${selectedLeagueId}:${season}`}
         resetKey={`${selectedSeasonKey}:${isAdpMode ? 'adp' : 'scoring'}`}
         skeleton={<SkeletonRows count={6} height="3.5rem" className="px-4 py-4" />}
       >

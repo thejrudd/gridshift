@@ -63,8 +63,10 @@ const MOTION_SCALE = 1000;
 // fires while the ball is still creeping toward the spot is the whole point.
 const MIN_TRAVEL_MS = 1900;
 const MAX_TRAVEL_MS = 7000;
-// The drop back is motion, not a pause: the ball drifts back off the line.
+// An under-center pass can develop behind the exchange; this is illustrative
+// motion, never a measured drop depth from the feed.
 const DROPBACK_MS = 1500;
+const SNAP_TRAVEL_MS = 1500;
 
 // Dead time. Every millisecond here is a millisecond nothing moves.
 //
@@ -371,6 +373,20 @@ function passDepth(receiver) {
   return DEPTH_PHRASE.exec(String(receiver?.detail ?? ''))?.[0] ?? null;
 }
 
+// Only formation notes at the start of the official description are evidence.
+// No marker means unknown, including compact scoring summaries. In particular,
+// absence of "Shotgun" does not establish an under-center snap. These depths
+// stage the animation; they must never be presented as reported yardage.
+function snapFormation(rawText) {
+  const notes = /^(?:\s*\([^)]*\))*/.exec(rawText)?.[0] ?? '';
+  const matches = [
+    /\bshotgun\b/i.test(notes) && 'shotgun',
+    /\bpistol\b/i.test(notes) && 'pistol',
+    /\bunder[\s-]+cent(?:er|re)\b/i.test(notes) && 'under center',
+  ].filter(Boolean);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 /**
  * `{ segments, beats, duration, hold, bespoke }` for one play, or null when the
  * play has no trustworthy geometry to animate.
@@ -395,6 +411,25 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   const { start, end, dir, dist, scoring, yards } = geometry;
   const track = timeline(start);
   const rawText = String(play.rawText ?? play.description ?? '');
+  const formation = snapFormation(rawText);
+  const snap = ({ passer = null, passing = false } = {}) => {
+    track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
+    track.wait(PRESNAP_MS);
+    const subject = passer ?? 'The quarterback';
+    const action = formation === 'under center' ? 'takes the snap under center'
+      : formation ? `takes the snap in ${formation}` : 'takes the snap';
+    const snapText = passer || passing ? `${subject} ${action}.`
+      : `The ball is snapped${formation === 'under center' ? ' under center' : formation ? ` in ${formation}` : ''}.`;
+    track.beat(snapText, { kind: 'snap', role: PLAY_ROLES.PASSER, name: passer });
+    const depth = formation === 'shotgun' ? 5 : formation === 'pistol' ? 3 : 0.5;
+    if (formation) track.move(start - depth * dir, SNAP_TRAVEL_MS);
+    else track.wait(SNAP_TRAVEL_MS);
+
+    if (passing && formation === 'under center') {
+      track.beat(`${subject} prepares to pass.`, { role: PLAY_ROLES.PASSER, name: passer });
+      track.move(start - 3 * dir, DROPBACK_MS);
+    }
+  };
   const kickPenalty = type === 'kick' ? parsePenaltyClause(rawText) : null;
   const placedKickPenalty = kickPenalty?.enforcedAt && /\bplaced at\b/i.test(rawText)
     ? kickPenalty
@@ -405,6 +440,67 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   // before the confidence gate so a missing or unfamiliar compact summary does
   // not collapse a clearly described pass into the ground-level generic path.
   const officialInterception = flag === 'int' ? parseInterception(rawText) : null;
+
+  // The official completion/lateral grammar stands on its own, just like an
+  // interception: compact summaries often concatenate names without separators.
+  if (geometry.lateral) {
+    const { sequence, carriers, recoveryAt, changesPossession } = geometry.lateral;
+    const passer = resolveName(sequence.passer, PLAY_ROLES.PASSER);
+    const receiver = resolveName(carriers[0].name, PLAY_ROLES.RECEIVER);
+    const air = estimateAirYards(sequence.depth, carriers[0].yards);
+    const catchYard = air == null ? carriers[0].end : start + air * dir;
+    snap({ passer, passing: true });
+    track.beat(`${passer} throws${sequence.depth ? ` ${sequence.depth}` : ''} for ${receiver}.`, {
+      kind: 'release', role: PLAY_ROLES.PASSER, name: passer,
+    });
+    track.move(catchYard, travelMs(catchYard - track.yard, 22), { apex: 0.9 });
+    track.beat(`Caught by ${receiver}.`, { kind: 'catch', role: PLAY_ROLES.RECEIVER, name: receiver });
+    if (Math.abs(carriers[0].end - track.yard) > 0.5) {
+      track.move(carriers[0].end, travelMs(carriers[0].end - track.yard, 20));
+    } else track.wait(READ_MS);
+    for (let index = 1; index < carriers.length; index += 1) {
+      const carrier = carriers[index];
+      const from = resolveName(carriers[index - 1].name, PLAY_ROLES.RECEIVER);
+      const to = resolveName(carrier.name, PLAY_ROLES.RECEIVER);
+      track.beat(`${from} laterals to ${to}.`, { kind: 'lateral', role: PLAY_ROLES.RECEIVER, name: to });
+      // A short hop identifies the transfer without inventing a release spot
+      // or a sideways coordinate. Reported endpoints bound each carrier's leg.
+      track.move(track.yard, READ_MS, { apex: 0.2 });
+      const carrierEnd = index === carriers.length - 1 && !sequence.fumble
+        ? finishYard(carrier.end, dir, scoring) : carrier.end;
+      if (Math.abs(carrierEnd - track.yard) > 0.5) {
+        track.move(carrierEnd, travelMs(carrierEnd - track.yard, 20));
+      }
+    }
+    const fumble = sequence.fumble;
+    if (fumble) {
+      const carrier = resolveName(fumble.fumbledBy, PLAY_ROLES.FUMBLER);
+      const forcer = fumble.forcedBy ? resolveName(fumble.forcedBy, PLAY_ROLES.FORCER) : null;
+      track.beat(`${carrier} fumbled${forcer ? `, forced by ${forcer}` : ''}.`, {
+        kind: 'turnover', role: PLAY_ROLES.FUMBLER, name: carrier, alert: 'Fumble',
+      });
+      track.move(recoveryAt, READ_MS, { apex: 0.35 });
+      const recoverer = resolveName(fumble.recoveredBy, PLAY_ROLES.RECOVERER);
+      track.beat(`Recovered by ${recoverer} at the ${spotOf(recoveryAt)}.`, {
+        kind: changesPossession ? 'turnover' : 'recovery', role: PLAY_ROLES.RECOVERER, name: recoverer, alert: 'Recovered',
+      });
+      const returnEnd = finishYard(geometry.lateral.finish, changesPossession ? -dir : dir, scoring);
+      if (Math.abs(returnEnd - track.yard) > 0.5) {
+        track.move(returnEnd, travelMs(returnEnd - track.yard, 24), { tone: changesPossession ? TONE.turnover : null });
+      } else track.wait(READ_MS);
+    }
+    endingBeat(track, {
+      scoring, flag: null,
+      gained: fumble ? fumble.returnYards : geometry.lateral.yards,
+      tacklers: sequence.tacklers.map((name) => resolveName(name, PLAY_ROLES.TACKLER)),
+      spot: spotOf(geometry.lateral.finish),
+      carrier: resolveName(fumble?.recoveredBy ?? carriers.at(-1).name, fumble ? PLAY_ROLES.RECOVERER : PLAY_ROLES.RECEIVER),
+      scoreText: 'Touchdown.', role: fumble ? PLAY_ROLES.RECOVERER : PLAY_ROLES.RECEIVER,
+    });
+    if (!changesPossession) downsBeat(track, play);
+    track.wait(OUTCOME_MS);
+    return track.build({ geometry, narrative, bespoke: true, hold: holdFor(geometry, play) });
+  }
 
   // Anything the first pass doesn't choreograph — turnovers, penalties,
   // anything the narrative parser wasn't confident about — still animates and
@@ -428,12 +524,7 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   if (!narrative.confident && !bespokeKick && !officialInterception) return generic();
 
   if (bespokePass) {
-    track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
-    track.wait(PRESNAP_MS);
-    track.beat(`${named(who.passer)} drops back.`, { role: PLAY_ROLES.PASSER, name: named(who.passer) });
-    // Drifting back off the line is what makes the throw read as a throw: the
-    // ball has to visibly leave a pocket rather than start moving downfield.
-    track.move(start - 3 * dir, DROPBACK_MS);
+    snap({ passer: named(who.passer), passing: true });
 
     const depth = passDepth(who.receiver);
     const air = estimateAirYards(depth, yards);
@@ -483,10 +574,7 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   }
 
   if (type === 'pass' && flag === 'incomplete') {
-    track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
-    track.wait(PRESNAP_MS);
-    track.beat(`${named(who.passer)} drops back.`, { role: PLAY_ROLES.PASSER, name: named(who.passer) });
-    track.move(start - 3 * dir, DROPBACK_MS);
+    snap({ passer: named(who.passer), passing: true });
     // No end spot exists on an incompletion — the ball came back to the line of
     // scrimmage. The target is where the strip already throws it: the sticks,
     // or a default when the down and distance aren't reported.
@@ -504,10 +592,7 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   }
 
   if (flag === 'sack') {
-    track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
-    track.wait(PRESNAP_MS);
-    track.beat(`${named(who.passer)} drops back.`, { role: PLAY_ROLES.PASSER, name: named(who.passer) });
-    track.move(start - 2 * dir, DROPBACK_MS);
+    snap({ passer: named(who.passer), passing: true });
     track.beat(`${named(who.sacker)} breaks through.`, { kind: 'pressure', role: PLAY_ROLES.SACKER, name: named(who.sacker) });
     track.move(end, travelMs(end - track.yard, 30), { tone: TONE.loss });
     track.beat(
@@ -617,12 +702,11 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
     const lane = String(who.rusher?.detail ?? '');
     const carry = /^scrambles\b/.test(lane) ? `${carrier} ${lane}.`
       : lane ? `${carrier} takes it ${lane}.`
-      : `${carrier} takes the handoff.`;
-    track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
-    track.wait(SNAP_MS);
+      : `${carrier} runs.`;
+    snap({ passer: /^scrambles\b/.test(lane) ? carrier : null });
     track.beat(carry, { kind: 'release', role: PLAY_ROLES.RUSHER, name: carrier });
     const rushEnd = finishYard(end, dir, scoring);
-    track.move(rushEnd, travelMs(rushEnd - start, 30), { tone: (yards ?? 0) < 0 ? TONE.loss : null });
+    track.move(rushEnd, travelMs(rushEnd - track.yard, 30), { tone: (yards ?? 0) < 0 ? TONE.loss : null });
     endingBeat(track, {
       scoring, flag, gained: yards, tacklers: tacklerNames, spot: spotOf(end), carrier,
       scoreText: narrative.sentence, role: PLAY_ROLES.RUSHER,
@@ -690,10 +774,7 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
         ?? possessionTextToPercent(pick.returnTo, { homeTeam })
         ?? end;
 
-      track.beat(`${play.down} at the ${spotOf(start)}`, { kind: 'setup' });
-      track.wait(PRESNAP_MS);
-      track.beat(`${passerText} drops back.`, { role: PLAY_ROLES.PASSER, name: passer });
-      track.move(start - 3 * dir, DROPBACK_MS);
+      snap({ passer, passing: true });
       track.beat(
         `${passerText} throws${pick.depth ? ` ${pick.depth}` : ''}${target ? ` for ${target}` : ''}.`,
         { kind: 'release', role: PLAY_ROLES.PASSER, name: passer },

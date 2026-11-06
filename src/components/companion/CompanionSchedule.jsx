@@ -366,6 +366,8 @@ export default function CompanionSchedule({
       {!loadError && (
         <LoadingSwap
           loading={loading && !matchupsByWeek}
+          navigationScope={`schedule:${platform}:${selectedLeagueId}:${season}`}
+          resetKey={`${mode}:${week ?? ''}:${rosterId ?? ''}`}
           skeleton={<SkeletonRows count={8} height="3.25rem" />}
         >
           {mode === 'season' ? (

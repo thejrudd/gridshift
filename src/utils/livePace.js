@@ -212,9 +212,10 @@ export function buildPaceSeries({
     .map((event) => ({
       event,
       side: sideKeyOf?.(event) ?? null,
+      parts: (event.sideEvents ?? [event]).map((part) => ({ event: part, side: sideKeyOf?.(part) ?? null })),
       x: event.progress == null ? Number.NaN : Number(event.progress),
     }))
-    .filter((item) => item.side && Number.isFinite(item.x) && Number(item.event.pts))
+    .filter((item) => item.side && Number.isFinite(item.x) && item.parts.some((part) => part.side && Number(part.event.pts)))
     .sort((left, right) => left.x - right.x);
 
   if (!scored.length) return { points: [], marks: [] };
@@ -229,7 +230,7 @@ export function buildPaceSeries({
   const span = Math.min(1, Math.max(requestedSpan, observedSpan));
 
   const estimatedTotals = scored.reduce((result, item) => {
-    result[item.side] += Number(item.event.pts) || 0;
+    item.parts.forEach((part) => { if (part.side) result[part.side] += Number(part.event.pts) || 0; });
     return result;
   }, { a: 0, b: 0 });
   const estimateScale = {
@@ -300,26 +301,30 @@ export function buildPaceSeries({
       : eventsAtMoment;
     const currentByPlayer = new Map();
     const running = scoreEventsAtMoment.reduce((totalsAtMoment, candidate) => {
-      const pointsForPlay = (Number(candidate.event.pts) || 0) * estimateScale[candidate.side];
-      totalsAtMoment[candidate.side] += pointsForPlay;
+      candidate.parts.forEach((part) => {
+        if (part.side) totalsAtMoment[part.side] += (Number(part.event.pts) || 0) * estimateScale[part.side];
+      });
       return totalsAtMoment;
     }, { a: 0, b: 0 });
     eventsAtMoment.forEach((candidate) => {
-      const contributors = candidate.event.contributors?.length
-        ? candidate.event.contributors
-        : [{ playerId: candidate.event.playerId, pts: candidate.event.pts }];
-      contributors.forEach((contributor) => {
+      candidate.parts.forEach((part) => {
+        if (!part.side) return;
+        const contributors = part.event.contributors?.length
+          ? part.event.contributors
+          : [{ playerId: part.event.playerId, pts: part.event.pts }];
+        contributors.forEach((contributor) => {
         const playerId = contributor.playerId;
         if (playerId == null) return;
         // A grouped feed entry moves the side total once, but the replay's
         // per-starter context still needs each rostered player's own share.
         // Otherwise a QB/WR touchdown would make the receiver appear to own
         // the whole combined swing in the historical win-probability model.
-        const contribution = (Number(contributor.pts) || 0) * estimateScale[candidate.side];
+        const contribution = (Number(contributor.pts) || 0) * estimateScale[part.side];
         currentByPlayer.set(
           playerId,
           (currentByPlayer.get(playerId) ?? 0) + contribution,
         );
+      });
       });
     });
     const x = Math.min(span, item.x);

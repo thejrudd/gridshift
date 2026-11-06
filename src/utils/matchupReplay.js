@@ -98,10 +98,14 @@ export function filterScoringPlays(events = [], { side = 'all', bigOnly = false,
   return events.filter((event) => {
     const eventSide = sideOf(event);
     if (!eventSide) return false;
-    if (side !== 'all' && eventSide !== side) return false;
+    if (side !== 'all' && eventSide !== side && !event?.sides?.includes(side)) return false;
     if (!bigOnly) return true;
     const pts = Math.abs(finite(event?.pts) ?? 0);
-    return event?.kind === 'td' || pts >= bigPlayThreshold || (finite(event?.pts) ?? 0) < 0;
+    const sides = event?.sideGroups ?? [];
+    const netSwing = Math.abs(sides.reduce((total, part) => total + (part.side === 'mine' ? 1 : -1) * (finite(part.pts) ?? 0), 0));
+    return event?.kind === 'td' || pts >= bigPlayThreshold || (finite(event?.pts) ?? 0) < 0
+      || sides.some((part) => Math.abs(finite(part.pts) ?? 0) >= bigPlayThreshold || (finite(part.pts) ?? 0) < 0)
+      || (sides.length > 1 && netSwing >= bigPlayThreshold);
   });
 }
 

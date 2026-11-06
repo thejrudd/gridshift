@@ -29,9 +29,16 @@ After committing, do not run git push. The user pushes manually.
    confirm that there are none. Do not start the What's New tour gate until
    the user confirms the feature list or confirms that there are no new
    features.
-5. Run the required validation and, after that confirmation, the historical
+5. Review TO_DO.md against the proposed commit scope and CHANGELOG.md on every
+   commit. Update TO_DO.md in the same pass: remove work shipped in this
+   commit, reconcile implemented or deferred items, and ensure the earliest
+   versioned section still represents the next unshipped release.
+6. Show the user the upcoming features currently planned for the next release
+   and ask them to confirm they are still in scope or identify changes. Resolve
+   the plan and update TO_DO.md before the commit proceeds.
+7. Run the required validation and, after that confirmation, the historical
    What's New tour gate.
-6. Cross-check release metadata against the actual diff.
+8. Cross-check release metadata against the actual diff.
 
 ## Version-bump checklist
 
@@ -133,6 +140,10 @@ version. Never use Unreleased.
 
 ## TO_DO.md
 
+`TO_DO.md` is a user-owned local planning document and is intentionally excluded
+from Git. Keep the workspace copy available for roadmap reviews and commit
+preparation; do not publish or stage it.
+
 - Versioned sections are chronological, earliest first.
 - Backlog (Unversioned) remains last.
 - Add newly planned features to the appropriate upcoming version or backlog when
@@ -141,6 +152,10 @@ version. Never use Unreleased.
   CHANGELOG.md.
 - Before committing, cross-check TO_DO.md against CHANGELOG.md and remove
   shipped work.
+- Review and update TO_DO.md for every commit, including when the right update
+  is to record that the next-release plan remains unchanged. Confirm with the
+  user that upcoming features still belong in the next release before each
+  commit.
 - The earliest versioned section always represents the next unshipped version.
 
 ## README.md

@@ -7,7 +7,6 @@ import {
   getStatisticsScoresGames,
   getStatisticsScoresPreseason,
   getStatisticsScoresStatus,
-  getStatisticsScoresStory,
   getStatisticsScoresWeekExport,
 } from '../../src/api/statisticsScoresApi.js';
 
@@ -78,14 +77,6 @@ test('Statistics Scores browser API requests the bounded week export without pro
   assert.equal(request.url, '/api/statistics/scores/week-export?season=2026&week=4&detail=full_play_by_play&phase=regular');
   assert.deepEqual(request.options.headers, { Accept: 'application/json' });
   assert.equal(request.url.includes('source='), false);
-});
-
-test('Statistics Scores browser API requests StoryStats through the server boundary', async () => {
-  const request = await captureRequest(() => getStatisticsScoresStory(1393548, 'live'));
-
-  assert.equal(request.url, '/api/statistics/scores/game/1393548/story?phase=live');
-  assert.deepEqual(request.options.headers, { Accept: 'application/json' });
-  assert.equal(JSON.stringify(request).includes('server-key'), false);
 });
 
 test('Statistics Scores status keeps its existing URL when no override is supplied', async () => {

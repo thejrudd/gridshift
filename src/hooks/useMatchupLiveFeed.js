@@ -60,6 +60,7 @@ import {
   buildPlayEvents,
   buildStarterNameIndex,
   groupSharedPlayEvents,
+  groupMatchupPlayMoments,
   mergePlayEvents,
   parseGlanceProgress,
   sortLiveFeedEvents,
@@ -408,7 +409,7 @@ export default function useMatchupLiveFeed({
   const rewindAtRef = useRef(0);
   const processedUpdateRef = useRef(null);
   const playsFetchedRef = useRef(new Map());
-  const liveSnapshotInFlightContextsRef = useRef(new Set());
+  const liveSnapshotInFlightContextsRef = useRef(new Map());
   const playFetchInFlightContextsRef = useRef(new Set());
   const playsRetryTimerRef = useRef(null);
   // Play request contexts whose feed has been complete at least once.
@@ -418,6 +419,8 @@ export default function useMatchupLiveFeed({
   const liveSnapshotRequestRef = useRef(0);
   const liveSnapshotContextRef = useRef(null);
   const autoSessionAttemptedRef = useRef(new Set());
+  const statusContextRef = useRef(null);
+  const trackingContextRef = useRef(null);
 
   const resetReconciliation = useCallback(() => {
     reconciliationRef.current = createReconciliationState();
@@ -432,6 +435,7 @@ export default function useMatchupLiveFeed({
       snapshotRef.current = new Map();
       playsFetchedRef.current = new Map();
       resetReconciliation();
+      setFinalReconciliation(current => ({ ...current, status: 'idle', requestedAt: null, completedAt: null, attempts: 0 }));
       setFeedEvents([]);
       setPlaysState({ key: null, byGame: NO_PLAYS });
       setWinProbHistory([]);
@@ -447,7 +451,11 @@ export default function useMatchupLiveFeed({
     setStatusError('');
     setSessionLoading(false);
     const leagueId = selectedLeagueId;
-    if (leagueId) setLiveStatus(null);
+    const statusContext = JSON.stringify([leagueId, sessionWeek]);
+    if (statusContextRef.current !== statusContext) {
+      statusContextRef.current = statusContext;
+      if (leagueId) setLiveStatus(null);
+    }
     getLiveStatus({ leagueId })
       .then(async (payload) => {
         if (cancelled) return;
@@ -481,7 +489,10 @@ export default function useMatchupLiveFeed({
         }
       })
       .catch((error) => {
-        if (!cancelled) setStatusError(error?.message ?? 'Could not reach the live scoring server.');
+        if (!cancelled) {
+          setStatusError(error?.message ?? 'Could not reach the live scoring server.');
+          setLiveStatus(null);
+        }
       });
     return () => { cancelled = true; };
   }, [selectedLeagueId, sessionWeek]);
@@ -522,6 +533,11 @@ export default function useMatchupLiveFeed({
   // The week's game list and box scores go too: until the new week's games
   // arrive, the old list would send the play fetch after another week's games.
   useEffect(() => {
+    const trackingContext = JSON.stringify([selectedLeagueId, season, week, matchupId, sandboxMode]);
+    // Activity reconnects effects on tab return. Keep this same feed intact
+    // while revalidating; only a genuinely different feed starts from empty.
+    if (trackingContextRef.current === trackingContext) return;
+    trackingContextRef.current = trackingContext;
     snapshotRef.current = new Map();
     playsFetchedRef.current = new Map();
     resetReconciliation();
@@ -529,7 +545,7 @@ export default function useMatchupLiveFeed({
     setPlaysState({ key: null, byGame: NO_PLAYS });
     setLiveGamesState({ key: null, games: NO_GAMES });
     setStatsByGame({});
-  }, [week, matchupId, sandboxMode, resetReconciliation]);
+  }, [selectedLeagueId, season, week, matchupId, sandboxMode, resetReconciliation]);
 
   // The followed matchup's two rows (Sleeper matchup rows share a matchup_id).
   const currentMatchup = useMemo(() => {
@@ -581,9 +597,9 @@ export default function useMatchupLiveFeed({
     const requestFeedKey = feedKey;
     const requestWeekKey = weekKey;
     if (liveSnapshotInFlightContextsRef.current.has(requestContext)) return;
-    liveSnapshotInFlightContextsRef.current.add(requestContext);
     const requestId = liveSnapshotRequestRef.current + 1;
     liveSnapshotRequestRef.current = requestId;
+    liveSnapshotInFlightContextsRef.current.set(requestContext, requestId);
     const isCurrentRequest = () => (
       requestId === liveSnapshotRequestRef.current
       && requestContext === liveSnapshotContextRef.current
@@ -623,17 +639,26 @@ export default function useMatchupLiveFeed({
           // Keep the last good Sleeper matchup payload.
         }
       }
-      setLastUpdatedAt(new Date());
+      if (isCurrentRequest()) setLastUpdatedAt(new Date());
     } catch (error) {
       if (isCurrentRequest()) setLiveError(error?.message ?? 'Could not load live scoring data.');
     } finally {
-      liveSnapshotInFlightContextsRef.current.delete(requestContext);
+      if (liveSnapshotInFlightContextsRef.current.get(requestContext) === requestId) {
+        liveSnapshotInFlightContextsRef.current.delete(requestContext);
+      }
       if (!quiet && isCurrentRequest()) setLoadingLive(false);
     }
   }, [feedKey, weekKey, liveSnapshotContextKey, liveSource, liveStatus?.session?.enabled, loadMatchups, matchupTeams, sandboxActive, sandboxReplay, selectedLeagueId, season, week]);
 
   useEffect(() => {
+    const inFlightContexts = liveSnapshotInFlightContextsRef.current;
     void fetchLiveSnapshot();
+    return () => {
+      // Ignore a suspended chain after its current request settles. A resumed
+      // pane can start a fresh request without waiting for that old chain.
+      liveSnapshotRequestRef.current += 1;
+      inFlightContexts.clear();
+    };
   }, [fetchLiveSnapshot, liveSnapshotRefreshVersion]);
 
   useEffect(() => {
@@ -974,27 +999,39 @@ export default function useMatchupLiveFeed({
   );
 
   useEffect(() => {
-    setFinalReconciliation({ key: finalReconciliationKey, status: 'idle', requestedAt: null, completedAt: null, attempts: 0 });
+    setFinalReconciliation(current => current.key === finalReconciliationKey ? current
+      : { key: finalReconciliationKey, status: 'idle', requestedAt: null, completedAt: null, attempts: 0 });
   }, [finalReconciliationKey]);
 
+  useEffect(() => {
+    if (!allStartersOfficiallySettled || !finalReconciliationKey) return;
+    setFinalReconciliation(current => (
+      current.key === finalReconciliationKey && current.status === 'idle'
+        ? { ...current, status: 'pending', requestedAt: Date.now(), completedAt: null, attempts: current.attempts + 1 }
+        : current
+    ));
+  }, [allStartersOfficiallySettled, finalReconciliationKey, finalReconciliation.status]);
+
+  const finalMatchupId = currentMatchup?.matchupId ?? null;
+  const finalMatchupLoader = sandbox ? sandbox.base.loadMatchups : getLiveMatchups;
   useEffect(() => {
     if (
       !allStartersOfficiallySettled
       || !finalReconciliationKey
       || !selectedLeagueId
-      || !currentMatchup
+      || finalMatchupId == null
       || finalReconciliation.key !== finalReconciliationKey
-      || finalReconciliation.status !== 'idle'
+      || finalReconciliation.status !== 'pending'
     ) return undefined;
     let cancelled = false;
-    const requestedAt = Date.now();
-    const attempts = finalReconciliation.attempts + 1;
-    setFinalReconciliation({ key: finalReconciliationKey, status: 'pending', requestedAt, completedAt: null, attempts });
+    const { requestedAt, attempts } = finalReconciliation;
     const requestWeekKey = weekKey;
-    (sandbox ? sandbox.base.loadMatchups(selectedLeagueId, week) : getLiveMatchups(selectedLeagueId, week))
+    // Start from pending so entering that state cannot cancel its own request.
+    // Activity reconnects this effect if an in-flight confirmation was hidden.
+    finalMatchupLoader(selectedLeagueId, week)
       .then((rows) => {
         if (cancelled) return;
-        const reconciled = hasReconciledMatchup(rows, currentMatchup.matchupId);
+        const reconciled = hasReconciledMatchup(rows, finalMatchupId);
         if (reconciled) setMatchupsState({ key: requestWeekKey, rows: rows ?? [] });
         setFinalReconciliation({ key: finalReconciliationKey, status: reconciled ? 'success' : 'incomplete', requestedAt, completedAt: Date.now(), attempts });
       })
@@ -1003,7 +1040,7 @@ export default function useMatchupLiveFeed({
         setFinalReconciliation({ key: finalReconciliationKey, status: 'error', requestedAt, completedAt: Date.now(), attempts });
       });
     return () => { cancelled = true; };
-  }, [allStartersOfficiallySettled, sandbox, currentMatchup, finalReconciliation.attempts, finalReconciliation.key, finalReconciliation.status, finalReconciliationKey, selectedLeagueId, week, weekKey]);
+  }, [allStartersOfficiallySettled, finalMatchupLoader, finalMatchupId, finalReconciliation, finalReconciliationKey, selectedLeagueId, week, weekKey]);
 
   useEffect(() => {
     if (
@@ -1408,9 +1445,12 @@ export default function useMatchupLiveFeed({
 
   // One entry per snap per side: rostered players on the same side of the
   // matchup (a quarterback and a defender on one play) share a row, a chart
-  // step and a dot. Opposing sides stay apart so each keeps its own movement.
+  // step and a dot. Opposing sides join the same moment with separate points.
   const sharedFeed = useMemo(
-    () => groupSharedPlayEvents(mergedFeed, (event) => playerSideKey.get(event.playerId) ?? null),
+    () => groupMatchupPlayMoments(groupSharedPlayEvents(
+      mergedFeed.filter((event) => isFantasyFeedEvent(event) && playerSideKey.has(event.playerId)),
+      (event) => playerSideKey.get(event.playerId) ?? null,
+    )),
     [mergedFeed, playerSideKey],
   );
 

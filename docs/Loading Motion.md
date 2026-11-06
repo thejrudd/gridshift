@@ -25,6 +25,10 @@ Sections](#rolling-out-to-other-sections).
   `revealTotalDuration`, `loadingMotionAttrs`).
 - `src/hooks/useLoadingReveal.js` — the timing gate. Owns *show after* and
   *minimum hold* and produces the phase a surface renders.
+- `src/components/companion/FantasyTabPanel.jsx` — lazy-on-first-visit React
+  Activity boundary; retains visited panes and suspends hidden effects.
+- `src/context/FantasyTabVisibility.js` — visibility activation generation used
+  to suppress CSS replay without replacing retained rows.
 - `src/components/ui/LoadingSwap.jsx` — `LoadingSwap` (skeleton → content),
   `RevealList` (entrance with no skeleton), `SkeletonRows` (default placeholder
   body).
@@ -147,6 +151,48 @@ Rules that matter:
 so a surface that passes the shipped value stays on the token and follows any
 future retune automatically.
 
+## Fantasy Tab Returns
+
+Fantasy list surfaces opt in with `LoadingSwap.navigationScope` (surface,
+platform, league, and season). The component remembers the last presented
+`resetKey` for each scope in memory until browser refresh. A remount of that
+same selection omits the entrance classes; a new scope or changed selection
+still enters. History is recorded only when content is shown, so an interrupted
+first load does not consume the entrance. Other consumers keep the default
+behavior unless they explicitly opt in. This history stores presentation flags;
+the Fantasy shell separately retains visited panes through `FantasyTabPanel`.
+
+Each pane renders for the first time only when visited. A React `Activity`
+boundary then preserves its DOM, component state, and memoized derivations while
+hidden, and disconnects its effects, timers, and subscriptions. Hidden route
+props are frozen at the last active render; on return the shell restores that
+tab's normalized route snapshot. Rankings retains its existing route-snapshot
+authority. All panes and tab-route snapshots reset on platform/league/season
+changes. Retained panes also survive navigation outside Fantasy while the
+connected scope remains unchanged. This costs memory proportional to visited
+panes, without starting hidden-tab polling.
+
+A visibility activation generation disables old entrance classes before the
+retained DOM is restored. An interrupted first-load skeleton handoff is dropped
+when returning to already-presented content. Rankings route-filter effects keep
+equal arrays unchanged so reconnecting effects does not rebuild the same list.
+Real data/filter changes still update rows; retained UI is not a stale-data
+freeze.
+
+Rosters, Rankings, Schedule, Injuries, Heatmap, and Defenses use this rule.
+Schedule keys its mode, week, and roster; existing roster/stat/mode keys remain
+on the other surfaces. Heatmap keeps its fade entrance for sticky descendants.
+Scoring is already static apart from per-control loading indicators.
+
+Populated Defenses rows remain visible while shared stats refresh or enhance.
+Injuries uses the available current NFL snapshot to render its Sleeper report
+while optional designations load. It retains up to eight successful designation
+snapshots for tab returns; restored details must match the platform, league,
+season, week, and exact candidate teams, and failed revalidation clears them. ADP Rankings restores the last successful
+season snapshot while requesting a fresh one on each visit. A failed
+revalidation still follows its existing unavailable behavior. None of these
+presentation rules bypasses a missing-data state or changes server requests.
+
 ## Rollout Status
 
 ### Wired
@@ -158,7 +204,7 @@ future retune automatically.
 | Injuries | `src/components/companion/CompanionInjuries.jsx` | Full skeleton → reveal, replacing the "Loading injury report…" empty state. |
 | Defenses | `src/components/companion/CompanionDefense.jsx` | Full skeleton → reveal, and restructured to be structure-first: the table frame and its sort headers now render during loading instead of being replaced by a centered message. |
 | Heatmap | `src/components/companion/CompanionHeatmap.jsx` | Skeleton → reveal on the **`fade`** entrance, not `lift`. See [Known Limits](#known-limits). |
-| Matchups | `src/components/companion/CompanionMatchup.jsx` | Structure-first skeleton (`MatchupSkeleton`) replacing the old centred "Preparing matchup…" sentence, the masthead reveal below, and `RevealList` on the head-to-head starter rows. All keyed by league/season/week/opponent so every week change replays them. After kickoff the live layer (replay bar, chart, Lineup / Scoring plays tabs, plays list) joins the same beat; see Known Limits. |
+| Matchups | `src/components/companion/CompanionMatchup.jsx` | Structure-first skeleton (`MatchupSkeleton`) replacing the old centred "Preparing matchup…" sentence, the masthead reveal below, and `RevealList` on the head-to-head starter rows. All keyed by league/season/week/opponent so every week/opponent change replays them; returning to the same matchup tab stays static. After kickoff the live layer (replay bar, chart, Lineup / Scoring plays tabs, plays list) joins the same beat; see Known Limits. |
 | All lazy Fantasy routes | `src/components/ui/SectionSkeleton.jsx` | The Suspense fallback holds itself invisible for *show after* and then fades up, so a chunk that resolves inside that window paints no placeholder at all. This is show-after implemented in pure CSS, because a Suspense fallback cannot be delayed from outside. |
 | Every existing `.gs-skeleton` | `src/index.css` | All placeholders app-wide now read the texture tokens. This is the one part of the change that is not Fantasy-scoped — the primitive is shared. |
 | Statistics Schedule drill-in | `src/components/statistics/schedule/NflMatchupModal.jsx` | Coalesced reveal: the header opens at once, and the body holds a static `.gs-section-skeleton` stand-in until the ESPN game summary, ESPN team stats, and league unit ranks have all settled, then mounts and enters as one beat. Capped at 2.5s (`REVEAL_MAX_WAIT_MS`); a source still loading after the cap keeps its in-place skeleton. Latched per game, so live polling never replays it. First cross-section use of the pattern. |
@@ -184,7 +230,9 @@ list stagger, because it is one composed graphic and not a list of rows. Adding
   rank markers follow.
 
 The masthead is keyed on league/season/week/opponent, so the whole gesture
-replays on every navigation rather than only on first mount.
+replays on first arrival and week/opponent changes. Returning to the same
+matchup tab does not replay it; its compatible snapshot stays visible while
+the return-to-tab refresh reconciles fresh data.
 
 While the matchup is preparing, `MatchupSkeleton` stands in: the same masthead
 score grid, the same win-probability strip, and nine head-to-head row shapes on
@@ -218,7 +266,7 @@ the shipped markup.
   `MatchupSkeleton` for the live hook's first answer (capped at 2.5s), then the
   replay bar and tabs fade and the scoring plays stagger,
   only while `.is-revealing` is on the page frame (800ms after page load, a
-  week or matchup change, or a return to Matchups). It is a continuously
+  week or matchup change). Returning to the same matchup stays static. It is a continuously
   updating feed, so rows that mount after that window appear without motion,
   and the inactive Lineup / Scoring plays panel is hidden without
   `display: none` so a tab switch never replays the rows. The chart is the

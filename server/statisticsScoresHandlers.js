@@ -190,7 +190,6 @@ export function getStatisticsScoresConfigStatus(env = process.env, { source, gat
     capabilities: gatewayStatus.capabilities,
     cadence: gatewayStatus.cadence,
     rateLimit: gatewayStatus.rateLimit,
-    storyStats: gatewayStatus.storyStats,
   };
 }
 

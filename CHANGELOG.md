@@ -1129,6 +1129,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Draft outcome insights** - Draft Results now evaluates historical picks against the season that followed the draft, with aligned insight columns, positional outcome grades, outcome-strength sorting, and an explanation control for the grading scale.
 - **Companion Defense** - Defense rankings now provide clearer filters, sortable stat and fantasy-point views, mobile drilldowns, matchup context, and team-level scoring details.
+- **More stable player projections** - Small-sample projections now blend toward a positional baseline, reducing early-sample volatility while preserving each league's scoring rules.
 - **Companion Live remains Coming Soon** - Live scoring infrastructure is present for development but is excluded from the v8.1 What's New tour and remains unavailable until its release gate is met.
 
 ---
@@ -1172,8 +1173,8 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **League workspace** - Reorganized Fantasy navigation and added a dedicated League area for Standings, History, and Activity across linked Sleeper seasons.
 - **League Standings** - Added finalized-week tables, divisions, playoff seeding, and evidence-backed winners and consolation brackets.
-- **League History** - Added linked-season record books with lifetime standings, champions, rivalries, scoring records, win streaks, trades, and waiver additions.
-- **League Activity** - Added a completed-event ledger for trades, waivers, free agents, draft capital, and commissioner changes, with filters and contextual empty states.
+- **League History** - Added linked-season record books with lifetime standings, champions, rivalries, scoring records (including highest score in a loss, lowest score in a win, lowest team score, and highest combined matchup score), win streaks, trades, and waiver additions. Record tiles for highest score, biggest blowout, and narrowest win open their source Fantasy Matchup, including across linked historical seasons. Player records include highest starter and bench scores, most points left on the bench, and the largest share of a team score from one starter.
+- **League Activity** - Added a completed-event ledger for trades, waivers, free agents, draft capital, and commissioner changes, with filters, contextual empty states, player headshots and NFL team styling, Sleeper team avatars, transaction glyphs, and collapsed large move groups.
 - **Fantasy matchup navigation** - Added all-league cycling, direct matchup selection, deep links, and keyboard-friendly controls.
 - **Draft Blueprint** - Made Draft Blueprint the default Draft Results view with team pick counts, position construction, first-round selections, and Pick List drilldown.
 - **Responsive Display settings** - Added persistent Compact, Comfortable, and Large display presets, semantic type and density scaling, and intentional readable, data, and workbench frames for wide screens.
@@ -1472,6 +1473,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Play values** - Scoring plays now match the official fantasy scoring far more closely. Penalty yards no longer count toward a player (a flag after the play keeps the full gain; a foul during the play credits yards to its spot); touchdowns followed by a two-point try keep the touchdown; players with Jr./Sr./II names and starters sharing an initial and surname are matched; fumbles, passes defended, quarterback hits, split sacks and tackles for loss are credited as the stat lines show them; team defenses score special-teams return yards and coverage tackles; and game bonuses such as 20 carries or 100 yards land on the play that reaches them.
 - **Win chance on every play** - Every scoring play shows its change in your win chance, with a decimal below 1%.
 - **Regression coverage** - Added coverage for the server archive, play pricing, penalties, and the scoring play breakdown.
+- **Live-week validation** - Checked completed-week play totals against Sleeper for every starter; remaining gaps settled through reconciliation.
 
 ## v9.3.4 - Mobile Matchups Polish
 *2026-10-24*
@@ -1505,3 +1507,16 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-10-28*
 
 - **Player game-log arrows** - The More Stats arrows scroll the game log in either direction instead of opening the game behind them. On desktop, the left arrow sits beside the frozen identity columns.
+
+## v9.3.8 - Laterals & Faster Tab Returns
+*2026-11-06*
+
+- **Laterals** - On a completed pass followed by laterals, only the original receiver gets the catch, each carrier gets the yards they gained, and only the last carrier gets the touchdown or first down. A fumble after a lateral is charged to the player who lost it, and play-by-play replays show each carrier's run.
+- **Interceptions and return tackles** - An intercepted pass also counts as a pass attempt and an incompletion. An offensive player who tackles the returner after an interception or lost fumble earns that tackle.
+- **Shared plays in Matchups** - A play that scores for both teams appears once in the replay, chart, and scoring plays, with each team's points.
+- **Live stat corrections** - During games, Matchups and the Heatmap check scores against Sleeper's latest stat lines again, so plays Sleeper never credits drop out and stats it adds without a play still count.
+- **Faster Fantasy tab returns** - Going back to a Fantasy tab shows the same page right away while it refreshes, with no loading placeholder or repeated entrance. Changing league, season, week, or matchup still starts fresh.
+- **Heatmap matchup filters** - Cap Outliers and Unrostered adjust future matchup ratings without changing past scores.
+- **Game Story** - Game Story is now always written from the game's own play-by-play.
+- **Standings and Rosters layout** - Standings use flat tables, Rosters switches between Players and Draft Picks with tabs, and phone Rosters and Matchups rows give long names more room.
+- **Setup guide** - The README is shorter, with Docker and data setup moved to a self-hosting guide.

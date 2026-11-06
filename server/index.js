@@ -15,8 +15,6 @@ import { createStatisticsScoresRouter } from './statisticsScoresHandlers.js';
 import { createPlayerSeasonRouter } from './playerSeasonHandlers.js';
 import { createTeamSeasonRouter } from './teamSeasonHandlers.js';
 import { createNflTeamStatsRouter } from './nflTeamStatsHandlers.js';
-import { createStoryStatsRouter, createStoryStatsService } from './storyStatsHandlers.js';
-import { createStoryStatsScheduler } from './storyStatsScheduler.js';
 import { createDraftSyncRouter } from './draftSyncHandlers.js';
 import { createPredictionsSyncRouter } from './predictionsSyncHandlers.js';
 import { createTradeProposalRouter, createTradeShareApiRouter, createTradeShareRouter } from './tradeProposalHandlers.js';
@@ -40,15 +38,6 @@ if (livePlaysArchiveConfig.enabled) {
   }
 }
 const liveGameSnapshotStore = createLiveGameSnapshotStore({ gateway: balldontlieGateway, archive: livePlaysArchive });
-const storyStatsService = createStoryStatsService({
-  storyStatsGateway: balldontlieGateway,
-  dailyLimit: Number(process.env.GRIDSHIFT_STORY_STATS_DAILY_LIMIT ?? 10),
-});
-const storyStatsScheduler = createStoryStatsScheduler({
-  gateway: balldontlieGateway,
-  service: storyStatsService,
-});
-
 // ESPN player payload cache. A store that cannot open (unwritable volume) must
 // not take the API down; the browser falls back to ESPN directly without it.
 const playerDataConfig = getPlayerDataConfig();
@@ -80,7 +69,6 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     live: getLiveConfigStatus(),
     balldontlie: balldontlieGateway.getStatus(),
-    storyStatsAutomation: storyStatsScheduler.getStatus(),
     playerData: playerDataService ? playerDataService.getStatus() : { enabled: false },
   });
 });
@@ -105,11 +93,6 @@ app.use('/api/statistics/teams', createTeamSeasonRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
 }));
-app.use('/api/statistics/scores', createStoryStatsRouter({
-  storyStatsGateway: balldontlieGateway,
-  service: storyStatsService,
-  allowUpstream: String(process.env.NODE_ENV ?? '').trim().toLowerCase() !== 'production',
-}));
 app.use('/api/fantasy', createFantasyAdpRouter({ gateway: balldontlieGateway }));
 app.use('/api/fantasy', createFantasyProjectionsRouter({ gateway: balldontlieGateway }));
 app.use('/api/fantasy', createPlayerDesignationsRouter({ gateway: balldontlieGateway }));
@@ -119,5 +102,4 @@ if (playerDataService) {
 
 app.listen(port, host, () => {
   console.log(`GridShift API listening on ${host}:${port}`);
-  storyStatsScheduler.start();
 });

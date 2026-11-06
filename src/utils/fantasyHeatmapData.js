@@ -72,6 +72,7 @@ function rankAscendingValues(values) {
 export function buildHeatmapMatchupRatings({
   offenseTable,
   positionTable = null,
+  allowedTable = null,
   scheduleMap,
   teams,
   positions,
@@ -80,7 +81,8 @@ export function buildHeatmapMatchupRatings({
   recentGameCount = 4,
 } = {}) {
   const scoringTable = positionTable ?? offenseTable;
-  if (!scoringTable || Object.keys(scoringTable).length === 0 || !scheduleMap) return {};
+  const opponentTable = allowedTable ?? scoringTable;
+  if (!scoringTable || !opponentTable || Object.keys(opponentTable).length === 0 || !scheduleMap) return {};
 
   const offenseValuesByPosition = new Map();
   const allowedValuesByPosition = new Map();
@@ -113,7 +115,7 @@ export function buildHeatmapMatchupRatings({
           hasOpponentForAllGames = false;
           break;
         }
-        allowedTotal += scoringTable[opponent]?.[position]?.[week] ?? 0;
+        allowedTotal += opponentTable[opponent]?.[position]?.[week] ?? 0;
       }
 
       if (!hasOpponentForAllGames) continue;
@@ -250,6 +252,66 @@ export function getHeatmapPlayerGameTeam(wEntry, player, playerWeeks = []) {
     team = enhanced?.team?.toUpperCase() ?? player?.team?.toUpperCase() ?? null;
   }
   return team;
+}
+
+/**
+ * Build separate matchup inputs without changing the historical Heatmap table.
+ * The positional threshold uses recorded player-games from finalized games,
+ * including zeroes, across the season. Roster status is current and applies
+ * retrospectively to scoring only; the opponent table always includes all players.
+ */
+export function buildFilteredHeatmapMatchupTables({
+  weeklyStats,
+  players,
+  scheduleMap,
+  getPosition,
+  getValue,
+  getTeam = getHeatmapPlayerGameTeam,
+  capOutliers = false,
+  rosteredPlayerIds = null,
+} = {}) {
+  const rows = [];
+  const valuesByPosition = new Map();
+  for (const [playerId, playerWeeks] of Object.entries(weeklyStats ?? {})) {
+    const player = players?.[playerId];
+    if (!player || !Array.isArray(playerWeeks)) continue;
+    const position = getPosition?.(player);
+    if (!position) continue;
+    for (const entry of playerWeeks) {
+      const team = getTeam(entry, player, playerWeeks);
+      if (!team || !isFinalScheduleGame(scheduleMap?.[entry.week]?.[team])) continue;
+      const value = getValue?.(entry, player);
+      if (!Number.isFinite(value)) continue;
+      rows.push({ playerId: String(playerId), team, position, week: entry.week, value });
+      if (capOutliers) {
+        if (!valuesByPosition.has(position)) valuesByPosition.set(position, []);
+        valuesByPosition.get(position).push(value);
+      }
+    }
+  }
+
+  const caps = new Map();
+  for (const [position, values] of valuesByPosition) {
+    if (values.length < 2) continue;
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+    caps.set(position, mean + 2 * Math.sqrt(variance));
+  }
+
+  const scoringTable = {};
+  const allowedTable = {};
+  const add = (table, row, value) => {
+    table[row.team] ??= {};
+    table[row.team][row.position] ??= {};
+    table[row.team][row.position][row.week] = (table[row.team][row.position][row.week] ?? 0) + value;
+  };
+  for (const row of rows) {
+    const cap = caps.get(row.position);
+    const value = cap == null ? row.value : Math.min(row.value, cap);
+    add(allowedTable, row, value);
+    if (!rosteredPlayerIds?.has(row.playerId)) add(scoringTable, row, value);
+  }
+  return { scoringTable, allowedTable };
 }
 
 /**

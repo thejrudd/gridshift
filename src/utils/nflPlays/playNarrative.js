@@ -347,13 +347,17 @@ export function parseFumbleCredit(rawText) {
   // the kicker who opens the description — unless that sentence is a
   // completed pass, where it is the receiver.
   const before = text.slice(0, fumble.index);
+  // A lateral transfers possession to another offensive player, even when
+  // the original pass receiver still opens the preceding sentence.
+  const lateral = [...before.matchAll(new RegExp(`\\blateral to (${ABBREV})\\b`, 'gi'))].at(-1);
   const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV})`, 'g'))];
   const sentence = before.slice(sentenceStarts.at(-1)?.index ?? 0);
   const receiver = /\bsacked\b/i.test(sentence)
     ? null
     : new RegExp(`\\bpass\\b[^.]*?\\bto (${ABBREV})`, 'i').exec(sentence)?.[1] ?? null;
   return {
-    fumbledBy: receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text),
+    fumbledBy: (lateral && lateral.index > (sentenceStarts.at(-1)?.index ?? 0) ? lateral[1] : null)
+      ?? receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text),
     forcedBy: fumble[1]?.trim() || null,
     recoveredByTeam: recovery ? canonicalTeam(recovery[1]) : null,
   };
@@ -366,16 +370,65 @@ export function parseFumble(rawText) {
   const tail = text.slice(lost.index + lost[0].length);
   const returned = new RegExp(`\\bto ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)`, 'i').exec(tail);
   return {
-    // The carrier is the first name in the description, once the formation note
-    // that sometimes opens it is out of the way. Scanning the whole string
-    // instead picked up a tackler out of the parenthetical before "FUMBLES".
-    fumbledBy: firstAbbreviatedName(text),
+    // Use the same carrier resolution as fantasy scoring, including laterals.
+    fumbledBy: parseFumbleCredit(text)?.fumbledBy ?? firstAbbreviatedName(text),
     forcedBy: lost[1]?.trim() || null,
     recoveredByTeam: lost[2],
     recoveredBy: lost[3],
     at: lost[4],
     returnTo: returned?.[1] ?? null,
     returnYards: returned ? Number(returned[2] ?? 0) : 0,
+  };
+}
+
+/** A fully described completion and lateral chain. Unknown clauses fail closed. */
+export function parsePassLaterals(rawText) {
+  const text = authoritativeText(rawText).trim();
+  if (!/\blateral to\b/i.test(text) || /\bPENALTY\b|\bNo Play\b/i.test(text)) return null;
+  const stop = `(?:\\s*\\((?:${ABBREV})(?:[;,]\\s*${ABBREV})*\\))?`;
+  const gain = '(?:(-?\\d+) yards?|no gain)';
+  const completion = new RegExp(`^(?:\\([^)]*\\)\\s*)?(${ABBREV}) pass(?: (short|deep) (left|middle|right))? to (${ABBREV}) to ${SPOT_TEXT} for ${gain}${stop}\\.\\s*`, 'i').exec(text);
+  if (!completion) return null;
+  const carriers = [{ name: completion[4], to: completion[5], yards: Number(completion[6] ?? 0) }];
+  const lateralPattern = new RegExp(`^Lateral to (${ABBREV}) to ${SPOT_TEXT} for ${gain}${stop}(,? TOUCHDOWN)?\\.\\s*`, 'i');
+  let tail = text.slice(completion[0].length);
+  let touchdown = false;
+  while (/^Lateral to\b/i.test(tail)) {
+    const lateral = lateralPattern.exec(tail);
+    if (!lateral || touchdown) return null;
+    carriers.push({ name: lateral[1], to: lateral[2], yards: Number(lateral[3] ?? 0) });
+    touchdown = Boolean(lateral[4]);
+    tail = tail.slice(lateral[0].length);
+  }
+  if (carriers.length < 2) return null;
+  let fumble = null;
+  let tacklers = parseTacklers(text);
+  if (tail) {
+    if (touchdown) return null;
+    const recovery = new RegExp(`^FUMBLES${FUMBLE_FORCE},?\\s*RECOVERED by ([A-Z]{2,3})-(${ABBREV}) at ${SPOT_TEXT}\\.\\s*`, 'i').exec(tail);
+    if (!recovery) return null;
+    const returnText = tail.slice(recovery[0].length);
+    const returned = returnText
+      ? new RegExp(`^(${ABBREV}) to ${SPOT_TEXT} for ${gain}${stop}(,? TOUCHDOWN)?\\.\\s*$`, 'i').exec(returnText)
+      : null;
+    if (returnText && (!returned || returned[1] !== recovery[3])) return null;
+    fumble = {
+      fumbledBy: carriers.at(-1).name,
+      forcedBy: recovery[1] ?? null,
+      recoveredByTeam: canonicalTeam(recovery[2]),
+      recoveredBy: recovery[3],
+      at: recovery[4],
+      returnTo: returned?.[2] ?? recovery[4],
+      returnYards: Number(returned?.[3] ?? 0),
+    };
+    touchdown = Boolean(returned?.[4]);
+    // The pre-fumble tackle and forced-fumble attribution do not stop the return.
+    tacklers = returned ? parseTacklers(returnText) : [];
+  }
+  return {
+    passer: completion[1],
+    depth: completion[2] ? `${completion[2]} ${completion[3]}` : null,
+    carriers, fumble, touchdown, tacklers,
   };
 }
 

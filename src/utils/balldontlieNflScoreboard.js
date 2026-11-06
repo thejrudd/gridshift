@@ -289,7 +289,6 @@ export function normalizeBdlScoreboardSeason(payload, {
     ? capabilities.stats === true
       || capabilities.teamStats === true
       || capabilities.plays === true
-      || capabilities.storyStats === true
     : true;
   const playByPlayAvailable = capabilities ? capabilities.plays === true : null;
   const sourceGames = getRawGames(payload)

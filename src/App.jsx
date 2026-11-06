@@ -1,3 +1,4 @@
+import FantasyTabPanel from './components/companion/FantasyTabPanel.jsx';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef, useTransition } from 'react';
 import { loadScheduleData } from './utils/scheduleParser';
 import { loadSeasonSchedule } from './utils/seasonSchedule';
@@ -707,9 +708,14 @@ function AppInner() {
   const statisticsScheduleFilter = appRoute.statisticsScheduleFilter;
   const predictionsTeamId = appRoute.predictionsTeamId;
   const companionView = appRoute.companionView;
-  const [matchupsVisited, setMatchupsVisited] = useState(
-    () => activeTab === 'fantasy' && companionView === 'matchups',
-  );
+  const fantasyPanelScope = `${platform ?? ''}:${selectedLeagueId ?? ''}:${season ?? ''}`;
+  const fantasyViewSnapshotsRef = useRef({ scope: fantasyPanelScope, routes: {} });
+  useLayoutEffect(() => {
+    if (fantasyViewSnapshotsRef.current.scope !== fantasyPanelScope) {
+      fantasyViewSnapshotsRef.current = { scope: fantasyPanelScope, routes: {} };
+    }
+    if (activeTab === 'fantasy') fantasyViewSnapshotsRef.current.routes[companionView] = appRoute;
+  }, [activeTab, appRoute, companionView, fantasyPanelScope]);
 
   // Warm the route chunk while the Fantasy shell is idle. This removes the
   // lazy-import wait before MatchupSkeleton can paint without eagerly running
@@ -739,11 +745,6 @@ function AppInner() {
     };
   }, [activeTab, hasLeague]);
 
-  useEffect(() => {
-    if (activeTab === 'fantasy' && companionView === 'matchups') {
-      setMatchupsVisited(true);
-    }
-  }, [activeTab, companionView]);
 
   // The live-replay dev sandbox supplies its own fixture league to Fantasy
   // Matchups, so it renders without a connected one. Dev-only; compiled out of
@@ -1018,8 +1019,10 @@ function AppInner() {
       applyRoute(rankingsFilterSnapshotRef.current);
       return;
     }
-    applyRoute({ activeTab: 'fantasy', companionView: view });
-  }, [applyRoute, rankingsFilterContextKey]);
+    const snapshots = fantasyViewSnapshotsRef.current;
+    applyRoute((snapshots.scope === fantasyPanelScope && snapshots.routes[view])
+      || { activeTab: 'fantasy', companionView: view });
+  }, [applyRoute, fantasyPanelScope, rankingsFilterContextKey]);
 
   const updateRankingsRoute = useCallback((patch) => {
     const identity = rankingsFilterIdentityRef.current;
@@ -2583,9 +2586,9 @@ function AppInner() {
             </Suspense>
           )}
 
-          {activeTab === 'fantasy' && (hasLeague || liveSandboxRoute) && (
+          {(hasLeague || liveSandboxRoute) && (
             <>
-              {companionView === 'rosters' && (
+              <FantasyTabPanel key={`${fantasyPanelScope}:rosters`} active={activeTab === 'fantasy' && companionView === 'rosters'}>
                 <Suspense fallback={<SectionLoading label="Loading Rosters" />}>
                   <CompanionLeague
                     routeState={leagueRouteState}
@@ -2613,8 +2616,8 @@ function AppInner() {
                     tradeDisabledTitle={tradeDisabledTitle}
                   />
                 </Suspense>
-              )}
-              {companionView === 'rankings'  && (
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:rankings`} active={activeTab === 'fantasy' && companionView === 'rankings'}>
                 <Suspense fallback={<SectionLoading label="Loading Rankings" />}>
                   <CompanionRankings
                     positionFilter={rankingsPosition}
@@ -2634,15 +2637,11 @@ function AppInner() {
                     }}
                   />
                 </Suspense>
-              )}
-              {matchupsVisited && (
-                <div
-                  hidden={companionView !== 'matchups'}
-                  aria-hidden={companionView !== 'matchups'}
-                >
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:matchups`} active={activeTab === 'fantasy' && companionView === 'matchups'}>
                   <Suspense fallback={<SectionLoading label="Loading Matchup" />}>
                     <CompanionMatchup
-                      isActive={companionView === 'matchups'}
+                      isActive={activeTab === 'fantasy' && companionView === 'matchups'}
                       onOpenHistoricalMatchup={openHistoricalMatchup}
                       initialWeekRequest={matchupInitRequest}
                       seasonSchedule={hydratedSeasonSchedule}
@@ -2672,9 +2671,8 @@ function AppInner() {
                       }}
                     />
                   </Suspense>
-                </div>
-              )}
-              {companionView === 'schedule' && (
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:schedule`} active={activeTab === 'fantasy' && companionView === 'schedule'}>
                 <Suspense fallback={<SectionLoading label="Loading Schedule" />}>
                   <CompanionSchedule
                     key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`}
@@ -2701,8 +2699,8 @@ function AppInner() {
                     })}
                   />
                 </Suspense>
-              )}
-              {companionView === 'injuries' && (
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:injuries`} active={activeTab === 'fantasy' && companionView === 'injuries'}>
                 <Suspense fallback={<SectionLoading label="Loading Injuries" />}>
                   <CompanionInjuries
                     key={`${selectedLeagueId ?? 'none'}:${season ?? 'none'}`}
@@ -2713,8 +2711,8 @@ function AppInner() {
                     }, { replace: true })}
                   />
                 </Suspense>
-              )}
-              {companionView === 'heatmap'   && (
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:heatmap`} active={activeTab === 'fantasy' && companionView === 'heatmap'}>
                 <Suspense fallback={<SectionLoading label="Loading Heatmap" />}>
                   <CompanionHeatmap
                     routeState={heatmapRouteState}
@@ -2728,8 +2726,8 @@ function AppInner() {
                     }}
                   />
                 </Suspense>
-              )}
-              {companionView === 'defenses'   && (
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:defenses`} active={activeTab === 'fantasy' && companionView === 'defenses'}>
                 <Suspense fallback={<SectionLoading label="Loading Defense" />}>
                   <CompanionDefense
                     routeState={defenseRouteState}
@@ -2759,12 +2757,12 @@ function AppInner() {
                     }, { replace: true })}
                   />
                 </Suspense>
-              )}
-              {companionView === 'scoring'   && (
+              </FantasyTabPanel>
+              <FantasyTabPanel key={`${fantasyPanelScope}:scoring`} active={activeTab === 'fantasy' && companionView === 'scoring'}>
                 <Suspense fallback={<SectionLoading label="Loading Scoring" />}>
                   <CompanionScoring />
                 </Suspense>
-              )}
+              </FantasyTabPanel>
             </>
           )}
 

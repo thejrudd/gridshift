@@ -21287,7 +21287,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 /* Live layer arrival, on the shared loading tokens (docs/Loading Motion.md).
    Only while .is-revealing is on the page frame: page load, a week or matchup
-   change, or a return to Matchups. The replay bar and tabs fade (both are
+   change. Returning to the same matchup stays static. The replay bar and tabs fade (both are
    sticky, so no transform); the chart wipes in left to right, the masthead's
    gesture, a beat behind the masthead. */
 .companion-matchup.is-revealing .matchup-replay,
@@ -21306,6 +21306,11 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 .matchup-live-chart svg {
   animation: gridshift-reveal-wipe-left var(--gs-load-duration) var(--gs-load-ease) backwards;
   animation-delay: calc(2 * var(--gs-load-stagger));
+}
+
+/* display:none on the retained route restarts CSS animations when restored. */
+.companion-matchup[data-matchup-entrance="static"] .matchup-live-chart svg {
+  animation: none;
 }
 
 .matchup-live-chart__placeholder {
@@ -21699,6 +21704,31 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   letter-spacing: 0.04em;
 }
 
+.matchup-play--shared {
+  height: auto;
+  min-height: 80px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.matchup-play__sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: var(--type-meta);
+  color: var(--color-label);
+}
+
+.matchup-play__sides b {
+  color: var(--color-label-secondary);
+  font-family: var(--matchup-display);
+  text-transform: uppercase;
+}
+
+.matchup-play__sides strong { font-variant-numeric: tabular-nums; }
+.matchup-play__sides strong.is-negative { color: var(--color-accent-red); }
+.matchup-play__sides .is-muted { opacity: 0.8; }
+
 .matchup-play.is-negative .matchup-play__points { color: var(--color-accent-red); }
 
 /* On touch the points are their own tap target (the full row height) for the
@@ -21711,7 +21741,8 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
     padding-left: 12px;
   }
 
-  .matchup-play__points-value {
+  .matchup-play__points-value,
+  .matchup-play--shared .matchup-play__points small {
     text-decoration: underline dotted;
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;

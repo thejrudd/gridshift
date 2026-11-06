@@ -28,7 +28,7 @@ function buildRowPointsBreakdown(event, scoringSettings) {
       name: contributor.playerName,
       ...buildPlayPointsBreakdown({ ...contributor, play: event.play }, scoringSettings),
     }));
-  return { rows: [], sections, total: Number(event.pts) || 0 };
+  return { rows: [], sections, total: event.sideGroups?.length > 1 ? null : Number(event.pts) || 0 };
 }
 
 function signed(value, digits = 2) {
@@ -179,6 +179,7 @@ export default function MatchupScoringPlays({
           const selected = selectedPlayId === event.id;
           const after = isAfter(event);
           const negative = Number(event.pts) < 0;
+          const sharedSides = event.sideGroups?.length > 1;
           const meta = [window?.label, event.glance?.clock, event.runningTotal != null && Number.isFinite(Number(event.runningTotal)) ? `${Number(event.runningTotal).toFixed(1)} total` : null]
             .filter(Boolean)
             .join(' · ');
@@ -186,11 +187,11 @@ export default function MatchupScoringPlays({
             <li key={event.id}>
               <button
                 type="button"
-                className={`matchup-play${selected ? ' is-selected' : ''}${after ? ' is-after' : ''}${negative ? ' is-negative' : ''}${event.kind === 'td' ? ' is-td' : ''}`}
-                style={{ '--matchup-play-side': sideColors[event.side] }}
+                className={`matchup-play${sharedSides ? ' matchup-play--shared' : ''}${selected ? ' is-selected' : ''}${after ? ' is-after' : ''}${negative && !sharedSides ? ' is-negative' : ''}${event.kind === 'td' ? ' is-td' : ''}`}
+                style={{ '--matchup-play-side': sharedSides ? 'var(--color-signature)' : sideColors[event.side] }}
                 data-play-id={event.id}
                 aria-pressed={selected}
-                aria-label={`${event.playerName}, ${event.description ?? ''}, ${signed(event.pts)} points${after ? ', after this moment' : ''}. Replay from this play.`}
+                aria-label={sharedSides ? `${event.description ?? ''}, ${event.sideGroups.map((part) => `${part.side === 'mine' ? 'Yours' : 'Theirs'}: ${part.playerName}, ${signed(part.pts)} points`).join(', ')}${after ? ', after this moment' : ''}. Replay from this play.` : `${event.playerName}, ${event.description ?? ''}, ${signed(event.pts)} points${after ? ', after this moment' : ''}. Replay from this play.`}
                 aria-describedby={pointsEvent?.id === event.id ? POINTS_CARD_ID : undefined}
                 onPointerDown={(pointer) => { pressPointerRef.current = pointer.pointerType; }}
                 onClick={(click) => {
@@ -210,15 +211,20 @@ export default function MatchupScoringPlays({
               >
                 <span className="matchup-play__main">
                   <span className="matchup-play__who">
-                    <span className="matchup-play__name">{event.playerName}</span>
+                    {!sharedSides && <span className="matchup-play__name">{event.playerName}</span>}
                     <span className="matchup-play__desc">{event.description}</span>
                     {event.status === 'pending' && <span className="matchup-play__tag">Pending</span>}
                     {event.source === 'stat-update' && <span className="matchup-play__tag">Stat update</span>}
                   </span>
+                  {sharedSides && <span className="matchup-play__sides">{event.sideGroups.map((part) => (
+                    <span key={part.side} className={side !== 'all' && side !== part.side ? 'is-muted' : ''}>
+                      <b>{part.side === 'mine' ? 'Yours' : 'Theirs'}</b> {part.playerName} <strong className={Number(part.pts) < 0 ? 'is-negative' : ''}>{signed(part.pts)}</strong>
+                    </span>
+                  ))}</span>}
                   <span className="matchup-play__meta">{meta}</span>
                 </span>
                 <span className="matchup-play__points">
-                  <span className="matchup-play__points-value">{signed(event.pts)}</span>
+                  {!sharedSides && <span className="matchup-play__points-value">{signed(event.pts)}</span>}
                   {Number.isFinite(Number(event.swingMine)) && (
                     <small>{formatSwing(Number(event.swingMine))}</small>
                   )}

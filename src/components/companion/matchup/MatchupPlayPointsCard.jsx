@@ -70,7 +70,7 @@ export default function MatchupPlayPointsCard({ id, breakdown, anchor, point = n
     >
       <div className="matchup-play-points-card__top">
         <span className="matchup-play-points-card__title">Where the points came from</span>
-        <strong className="matchup-play-points-card__total tabular-nums">{formatSigned(breakdown.total)}</strong>
+        {breakdown.total != null && <strong className="matchup-play-points-card__total tabular-nums">{formatSigned(breakdown.total)}</strong>}
       </div>
       {breakdown.sections?.length
         ? breakdown.sections.map((section) => (

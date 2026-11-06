@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 import { normalizeBdlScorePlay } from '../../src/utils/balldontlieNflScoreboard.js';
 import { classifyPlay, getPlayTrajectory, isNonSnapPlay, isTurnoverOnDowns } from '../../src/utils/nflPlays/fieldGeometry.js';
+import { getYardageProgress } from '../../src/utils/nflPlays/playRecapFraming.js';
 import {
   ballAt,
   beatsThrough,
@@ -34,6 +35,87 @@ function findPlay(predicate) {
   });
   return found;
 }
+
+test('reported formations distinguish the snap from an assumed quarterback dropback', () => {
+  const found = findPlay((play) => play.typeSlug === 'pass-reception');
+  const official = found.play.rawText.replace(/^(?:\s*\([^)]*\))*/, '');
+  for (const team of [found.context.homeTeam, found.context.awayTeam]) {
+    const releases = {};
+    for (const [label, depth] of [['Shotgun', 5], ['Pistol', 3], ['Under Center', 0.5]]) {
+      const line = getPlayTimeline({ ...found.play, team, rawText: `(12:34) (No Huddle, ${label}) ${official}` }, found.context);
+      const snap = line.beats.find((beat) => beat.kind === 'snap');
+      const snapSegment = line.segments.find((segment) => segment.start === snap.at);
+      assert.match(snap.text.toLowerCase(), new RegExp(label.toLowerCase()));
+      assert.equal(snapSegment.from.yard, line.geometry.start);
+      assert.equal(snapSegment.to.yard, line.geometry.start - depth * line.geometry.dir);
+      assert.ok(!line.beats.some((beat) => /drops back/.test(beat.text)));
+      assert.ok(!/\d/.test(snap.text), 'illustrative snap depth must not be spoken as measured yardage');
+      const release = line.beats.find((beat) => beat.kind === 'release');
+      releases[label] = ballAt(line.segments, release.at).yard;
+      if (label === 'Under Center') {
+        assert.ok(release.at > snapSegment.start + snapSegment.ms, 'the exchange precedes pass preparation');
+      } else {
+        assert.equal(release.at, snapSegment.start + snapSegment.ms, 'a shotgun or pistol snap has no automatic extra dropback');
+      }
+    }
+    assert.notEqual(releases.Shotgun, releases.Pistol);
+  }
+});
+
+test('missing or ambiguous formation evidence keeps a neutral snap at the line', () => {
+  const found = findPlay((play) => play.typeSlug === 'pass-reception');
+  const official = found.play.rawText.replace(/^(?:\s*\([^)]*\))*/, '');
+  for (const rawText of [official, `(No Huddle) ${official}`, `${official} Shotgun`, `(Shotgun, Pistol) ${official}`]) {
+    const line = getPlayTimeline({ ...found.play, rawText }, found.context);
+    assert.match(line.beats.find((beat) => beat.kind === 'snap').text, /takes the snap\.$/);
+    const release = line.beats.find((beat) => beat.kind === 'release');
+    assert.equal(ballAt(line.segments, release.at).yard, line.geometry.start);
+    assert.ok(!line.beats.some((beat) => /under center|drops back/i.test(beat.text)));
+  }
+});
+
+test('formation-aware snaps precede completions, incompletions, sacks, picks, runs and scrambles', () => {
+  const predicates = [
+    (play) => play.typeSlug === 'pass-reception',
+    (play) => classifyPlay(play).flag === 'incomplete',
+    (play) => classifyPlay(play).flag === 'sack',
+    (play) => classifyPlay(play).flag === 'int',
+    (play) => classifyPlay(play).type === 'rush' && !classifyPlay(play).flag && !/scrambles/.test(play.rawText),
+    (play) => /scrambles/.test(play.rawText) && classifyPlay(play).flag !== 'penalty',
+  ];
+  for (const predicate of predicates) {
+    const found = findPlay(predicate);
+    assert.ok(found, 'each play family must have a captured example');
+    const official = found.play.rawText.replace(/^(?:\s*\([^)]*\))*/, '');
+    for (const formation of ['Shotgun', 'Pistol', 'Under Center']) {
+      const line = getPlayTimeline({ ...found.play, rawText: `(${formation}) ${official}` }, found.context);
+      const snap = line.beats.find((beat) => beat.kind === 'snap');
+      assert.ok(snap, `missing snap on ${found.play.typeSlug}`);
+      const action = line.beats.find((beat) => beat.kind === 'release' || beat.kind === 'pressure');
+      assert.ok(action.at > snap.at);
+      assert.ok(line.bespoke);
+      for (let index = 1; index < line.beats.length; index += 1) {
+        assert.ok(line.beats[index].at - line.beats[index - 1].at >= 1000, 'new beats retain reading time');
+      }
+      assert.equal(ballAt(line.segments, 0).yard, line.geometry.start);
+      const touchdownAt = getTouchdownMoment(line);
+      if (touchdownAt != null) assert.ok(touchdownAt >= action.at, 'the snap cannot trigger a touchdown');
+    }
+  }
+});
+
+test('a backward snap does not count loss yardage before the tackle', () => {
+  const found = findPlay((play) => classifyPlay(play).type === 'rush' && !classifyPlay(play).flag && play.statYardage < 0);
+  assert.ok(found);
+  const official = found.play.rawText.replace(/^(?:\s*\([^)]*\))*/, '');
+  const line = getPlayTimeline({ ...found.play, rawText: `(Shotgun) ${official}` }, found.context);
+  const stop = line.beats.find((beat) => beat.kind === 'stop');
+  for (const elapsed of [0, 1500, stop.at - 1, stop.at, line.duration]) {
+    const fired = new Set(beatsThrough(line.beats, elapsed).map((beat) => beat.kind));
+    const covered = getYardageProgress(line.geometry, ballAt(line.segments, elapsed).yard, { fired });
+    assert.equal(covered, elapsed < stop.at ? 0 : 1);
+  }
+});
 
 test('every beat fires within the timeline it belongs to, in order', () => {
   let checked = 0;

@@ -1,219 +1,54 @@
 # GridShift
 
-An interactive web app for the 2026 NFL season — with full Sleeper fantasy league integration. Pick game-by-game outcomes for all 32 teams, view projected standings, generate playoff seeding, create a shareable infographic, prep for your fantasy draft, and analyze your roster with week-by-week scoring breakdowns and projections — all in the browser.
+**Your NFL season and Sleeper fantasy league, in one place.**
 
-![React](https://img.shields.io/badge/React-19-blue) ![Vite](https://img.shields.io/badge/Vite-7-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8) ![PWA](https://img.shields.io/badge/PWA-installable-green)
+Plan the season, follow your matchups, prepare for your draft, and explore the numbers behind every game. GridShift is free, open source, ad-free, and self-hostable.
 
-## Features
+[Get started](#get-started) · [Features](#what-you-can-do) · [Compatibility](#compatibility-and-data) · [Self-hosting guide](docs/Self-Hosting.md) · [Roadmap](#roadmap)
 
-### Season Planning
+## What you can do
 
-- Predictions — Game picks, constraints, standings, playoff seeding, share-card exports, and portable shared snapshots.
-- Statistics — Schedules, standings, team/player profiles, game logs, honors, and scoring breakdowns.
-- Statistics Scores (Beta) — Provider-backed current-season regular and preseason scoreboards with live clocks, Latest Play, a game dashboard with pregame matchup previews and player-level Team Stats, plain-language play-by-play, and animated drive replay; broader historical archive coverage continues to expand.
+- **Follow your fantasy league.** Connect a Sleeper league to explore rosters, scoring, weekly matchups, schedules, league history, and trade tools.
+- **See the story behind a matchup.** Compare projections and game context. Fantasy Live (Alpha) adds scoring plays, a replay bar, and win chance for enabled leagues with the required data access.
+- **Prepare for draft day.** Use the Draft Assistant (Beta) for rankings, a draft board, and team blueprints; explore prospects and comparisons in Scout (Beta).
+- **Plan the NFL season.** Pick game outcomes, project standings and playoff seeds, and share your predictions.
+- **Explore football data.** Browse schedules, standings, player and team profiles, game logs, and scores. Statistics Scores (Beta) includes additional game detail when the required data is available.
+- **Make it yours.** Choose a favorite-team theme, dark mode, and display size; install the app as a PWA or export and restore predictions.
 
-### Fantasy & League
+## Get started
 
-- Sleeper integration — League connection, custom scoring, rosters, and season navigation.
-- Fantasy Live (Alpha) — Live scoring inside Matchups for enabled Sleeper leagues: a replay bar, win chance and lead chart, scoring plays, and player hover cards.
-- Matchups — Cycle through every weekly league matchup with projections, ranks, weather, game context, and scoring details.
-- Schedule (Beta) — Season-long fantasy pairings by week or team, with byes, rematches, and a jump into any week's matchup.
-- Fantasy Scoring Blueprint — League-rule summaries, position strengths, detailed scoring references, and itemized real-game examples.
-- League analysis — Player stats, fantasy points allowed, team defense, heatmaps, and roster/draft capital.
-- League archive — Finalized standings, linked-season activity, lifetime leaderboards, champions, rivalries, and core records for Sleeper leagues.
-- Trade tools — Roster-and-pick proposals, guided upgrades, and searchable multi-season trade history.
-
-### Draft & Scouting
-
-- Draft Assistant (Beta) — War Room rankings, Draft Board, live timing, team Draft Blueprints, chronological Pick Lists, and optional server-proxied preseason ADP when configured.
-- Scout (Beta) — 2026 prospects, filters, draft status, combine metrics, and comparisons.
-
-### Sharing & App Experience
-
-- Responsive display — Choose Compact, Comfortable, or Large sizing while retaining native browser zoom and operating-system scaling.
-
-- Export/import — Save and restore predictions as JSON.
-- Themes and display — Favorite-team theming, dark mode, responsive layouts, and installable PWA.
-
-## Getting Started
-
-## License and privacy
-
-GridShift is open source under the [MIT License](LICENSE). Read the [Privacy Policy](PRIVACY.md) for how browser storage, connected fantasy services, and optional hosted features handle data. The app also includes an in-product Privacy & Attributions screen with its data-source and third-party software notices.
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) 20+
-
-### Development
+To run GridShift locally, install [Node.js](https://nodejs.org/) 20.19+ or 22.12+ (excluding Node 21), and Git, then run:
 
 ```bash
+git clone https://github.com/thejrudd/gridshift.git
+cd gridshift
 npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+Open [http://localhost:5173](http://localhost:5173). The development command starts the app and its local API sidecar. Some features use external data sources and need an internet connection.
 
-### Build
+For a production build, run `npm run build`; the output is written to `dist/`. For Docker, optional data providers, and server configuration, see the [self-hosting guide](docs/Self-Hosting.md). The included Compose file is configured for a Cloudflare tunnel and requires deployment secrets.
 
-```bash
-npm run build
-```
+## Compatibility and data
 
-Output is written to `dist/`.
+GridShift connects to Sleeper; support varies by feature and league format. Auction drafts are not yet supported by Draft Assistant, and extra matchups against the league median are not yet included in weekly results, standings, or playoff seeding. FAAB transfers are recognized in trade and history flows, but FAAB does not have a numeric trade value.
 
-## Docker Deployment
-
-```bash
-docker compose up -d --build
-```
-
-The app will be available on port 80 by default. To use a different port:
-
-```bash
-PORT=8080 docker compose up -d --build
-```
-
-Direct client routes are already configured for SPA-safe refreshes in both places that matter for `v6.2` routing:
-- `nginx.conf` uses `try_files ... /index.html` for direct browser loads
-- `vite-plugin-pwa` uses `navigateFallback: '/index.html'` for navigations inside the installed PWA
-
-To validate that setup after a production build:
-
-```bash
-npm run validate:routing
-```
-
-## Live Scoring Configuration
-
-GridShift's public client can stay open source while paid live-data access remains server-only. Real secrets belong in the deployment environment or a local `.env` file copied from `.env.example`; never commit `.env` or paste paid API keys into client code.
-
-Server-only variables:
-
-| Variable | Purpose |
-|---|---|
-| `GRIDSHIFT_SESSION_SECRET` | Signs/encrypts server-managed session values in production. |
-| `GRIDSHIFT_BDL_API_KEY` | BALLDONTLIE API key for server-side NFL live data. Never prefix this with `VITE_`. |
-| `GRIDSHIFT_STORY_STATS_API_KEY` | Optional external StoryStats API key for the Statistics Scores **Game Story** section. StoryStats is not bundled with GridShift; keep this credential server-only and never prefix it with `VITE_`. |
-| `GRIDSHIFT_STORY_STATS_DAILY_LIMIT` | Optional per-process StoryStats request guard. Defaults to `10` requests per API key per UTC day. |
-| `GRIDSHIFT_STORY_STATS_AUTOMATION_ENABLED` | Enables production-only automatic primetime story warming. Development remains a manual Game Story test surface. |
-| `GRIDSHIFT_BDL_TIER` | BALLDONTLIE capability profile: `free`, `all-star`, `goat`, or `trial`. Unknown values fail conservatively. |
-| `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN` | Actual account limit. Set this explicitly because a GOAT trial has GOAT endpoint access but only a 5 RPM limit. |
-| `GRIDSHIFT_BDL_INTERNAL_MAX_REQ_PER_MIN` | Optional operating ceiling. When blank, the shared gateway reserves 25% of the effective limit; paid GOAT therefore operates at 450 of 600 RPM. |
-| `GRIDSHIFT_BDL_CACHE_MAX_ENTRIES` | Maximum entries in the shared, bounded BALLDONTLIE response cache. |
-| `GRIDSHIFT_TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops used when resolving client IPs for public-route protection. Leave `0` when Node is reached directly. |
-| `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` | Comma-separated Sleeper league IDs allowed to use paid live scoring on this instance. |
-| `GRIDSHIFT_LIVE_ACCESS_CODE` | Optional second gate for allowlisted league members; when blank, allowlisted leagues start Live automatically. |
-| `GRIDSHIFT_LIVE_COOKIE_SECRET` | Optional live-scoring cookie secret; falls back to `GRIDSHIFT_SESSION_SECRET` when blank. |
-| `GRIDSHIFT_LIVE_CACHE_TTL_MS` | Server cache duration for upstream live-data responses. |
-| `GRIDSHIFT_LIVE_FINAL_TTL_MS` | Server retention tail for finalized live games before hot cache cleanup. |
-| `GRIDSHIFT_LIVE_ARCHIVE_ENABLED` | Advertises archive mode in current server status. A persistence/archive writer is still planned. |
-| `GRIDSHIFT_LIVE_MAX_REQ_PER_MIN` | Per-league/client guardrail for incoming Fantasy Live proxy requests. This is not an account-wide BALLDONTLIE quota. |
-| `GRIDSHIFT_COOKIE_SECURE` | Set `true` for HTTPS production cookies; use `false` only for local HTTP testing. |
-| `GRIDSHIFT_DRAFT_SYNC_ENABLED` | Enables optional device-to-device Draft War Room/Board sync. Defaults to `false`. |
-| `GRIDSHIFT_DRAFT_SYNC_DATA_DIR` | Persistent directory for the Draft Sync SQLite file. Mount this directory to a durable Docker volume when enabled. |
-| `GRIDSHIFT_DRAFT_SYNC_PAIRING_TTL_MS` | Lifetime of a one-time pairing code. Defaults to 10 minutes. |
-| `GRIDSHIFT_DRAFT_SYNC_MAX_PAYLOAD_BYTES` | Maximum synchronized Draft JSON payload size. Defaults to 64 KiB. |
-
-Hosted owners can enable paid live scoring for selected Sleeper leagues by setting these variables on the server and keeping `GRIDSHIFT_LIVE_ALLOWED_LEAGUE_IDS` narrow. Self-hosters should supply their own BALLDONTLIE key and league allowlist. The optional Statistics Scores **Game Story** section also requires a separate external StoryStats API key in `GRIDSHIFT_STORY_STATS_API_KEY`; without that key, the rest of GridShift continues to work but Game Story remains unavailable. GridShift fixes StoryStats requests to the `stats` audience and `editorial` tone, so those values do not need to be configured. A paid GOAT account uses `GRIDSHIFT_BDL_TIER=goat` with `GRIDSHIFT_BDL_EFFECTIVE_MAX_REQ_PER_MIN=600`; keep the effective limit at `5` for a GOAT trial or any unverified account. Variables prefixed with `VITE_` are public because Vite embeds them in the browser bundle, so paid keys and access codes must always use `GRIDSHIFT_` server variables.
-
-Draft Sync is an optional capability of the existing API sidecar, not a required database service. When enabled, the sidecar stores a small SQLite database under `GRIDSHIFT_DRAFT_SYNC_DATA_DIR`; the Docker Compose example mounts `/data` as a persistent volume. A volume restart preserves sync state, but deleting the volume removes it. Hosters should include that volume in their normal backup process; Draft Sync does not provide off-site backups automatically.
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| UI framework | React 19 |
-| Build tool | Vite 7 |
-| Styling | Tailwind CSS 3 + CSS custom properties |
-| Bento grid | react-grid-layout |
-| Share-card capture | Browser-native screenshot view |
-| Fantasy data | Sleeper API (client-side) |
-| Player data | ESPN public APIs (server cache with direct browser fallback) |
-| Live data | Optional BALLDONTLIE NFL API via server-side GridShift API |
-| PWA | vite-plugin-pwa + Workbox |
-| Production serving | nginx (Docker) + optional Node API sidecar |
-
-## What's New in v9.3.7
-
-- **Player game-log arrows** — Use the arrows to scroll More Stats without opening a game.
-
-For the full version history, see [CHANGELOG.md](CHANGELOG.md).
+BALLDONTLIE is optional. Core predictions and many Sleeper league tools work without its key, while Fantasy Live and some statistics and play-by-play features require appropriate data access. Without it, some player and team dashboard tabs can incorrectly report that there are no finished games. Availability depends on data coverage and account capabilities. See the [feature availability matrix](docs/Self-Hosting.md#self-hosting-without-balldontlie) for details.
 
 ## Roadmap
 
-- **v9.5 — Scoring and Fantasy Live dashboard overhaul**
+- **v9.4 — Search quality and performance** — Improve typo and phrase matching in Search, then profile Companion, Heatmap, and Draft to optimize measured bottlenecks while preserving existing data and provider contracts.
+- **v9.5 and later — Additive features** — The release order is still provisional. Planned user-facing work includes:
+  - **Extra matchup against the league median** — Automatically add each team's second regular-season win, loss, or tie to weekly results, standings, and playoff seeding when Sleeper's league records show the feature is enabled.
+  - **More Global Search answers** — Answer live NFL score and game-status questions, show the connected league's live matchup, and find league-history records and activity. Load linked-season history only when a history query needs it.
+- Bug fixes continue alongside every release.
 
-## Project Structure
+## Privacy, license, and more
 
-```
-src/
-├── App.jsx                        # Main app shell — sidebar, tab bar, routing
-├── components/
-│   ├── Sidebar.jsx                # Desktop sidebar: brand, nav, progress, dark mode toggle
-│   ├── NavBar.jsx                 # Mobile sticky top nav bar
-│   ├── BottomTabBar.jsx           # Mobile top-level Fantasy / League / NFL navigation
-│   ├── SeasonSubNav.jsx           # Season sub-view tabs (Predictions / Standings / Playoffs)
-│   ├── StatisticsSubNav.jsx       # Statistics sub-view tabs (Stats / Schedule / Standings)
-│   ├── CompanionSubNav.jsx        # Fantasy sub-view tabs
-│   ├── LeagueSubNav.jsx           # League Standings / History / Activity tabs
-│   ├── HorizontalScrollCue.jsx    # Shared touch cue + clickable desktop rail controls
-│   ├── ActionSheet.jsx            # iOS-style bottom sheet for overflow menu
-│   ├── FavoriteTeamPicker.jsx     # Full-screen team color theme picker
-│   ├── companion/
-│   │   ├── CompanionConnect.jsx   # Sleeper connect + league selection flow
-│   │   ├── CompanionLeague.jsx    # Canonical Rosters + nested Draft Picks view
-│   │   ├── CompanionRoster.jsx    # Legacy compatibility wrapper for Rosters
-│   │   ├── CompanionRankings.jsx  # League rankings, free agents, and weekly projections
-│   │   ├── CompanionMatchup.jsx   # All weekly matchups: projections, cycling, breakdowns
-│   │   ├── CompanionSchedule.jsx  # Season-long fantasy pairings by week or team (Beta)
-│   │   ├── CompanionStandings.jsx # Finalized-week and historical fantasy standings/brackets
-│   │   ├── CompanionHistory.jsx   # Lifetime league record book and rivalries
-│   │   ├── CompanionActivity.jsx  # Selected-season filtered transaction ledger
-│   │   ├── CompanionHeatmap.jsx   # Heatmap: pts allowed/scored per team/week with drilldowns
-│   │   ├── CompanionDefense.jsx   # Defense rankings by stats/fantasy points allowed
-│   │   ├── CompanionScoring.jsx   # Scoring settings viewer (synced from league)
-│   │   └── PlayerMatchupBreakdown.jsx  # Per-player stat → fantasy point breakdown modal
-│   ├── PlayerBrowser.jsx          # Team/roster browser with position filter and search
-│   ├── PlayerProfile.jsx          # Player profile page with hero card, stats, and game log
-│   ├── PlayerStatTable.jsx        # Accordion stat table with standard/advanced toggle
-│   ├── StatisticsSchedule.jsx     # NFL schedule browser by week/team/special slate
-│   ├── StatisticsStandings.jsx    # NFL standings by division and conference
-│   ├── StatisticsGame.jsx         # Game-level box score route for final games
-│   ├── predictions/
-│   │   └── PredictionsRedesign.jsx # Record-first predictions, advanced team picks, standings, playoffs
-│   ├── TeamList.jsx               # Division cards with team rows and tooltips
-│   ├── TeamDetail.jsx             # Modal for editing team predictions
-│   ├── StandingsTable.jsx         # Division standings view
-│   ├── PlayoffSeeding.jsx         # Playoff bracket view
-│   ├── RecordSetter.jsx           # Win-loss-tie record controls
-│   ├── GameResultToggle.jsx       # Individual game outcome toggle
-│   ├── DivisionMatrix.jsx         # Head-to-head results grid
-│   ├── ExportPreview.jsx          # Export modal with section toggles and layout controls
-│   ├── ShareableImage.jsx         # Interactive bento-grid infographic with 11 sections
-│   └── Guide.jsx                  # Getting-started guide modal
-├── context/
-│   ├── PredictionContext.jsx      # Prediction state and localStorage sync
-│   ├── ThemeContext.jsx           # Dark mode + favorite team theming state
-│   └── SleeperContext.jsx         # Fantasy platform state: league lineage, rosters, stats, scoring
-├── api/
-│   ├── sleeperApi.js              # Sleeper API fetches: users, leagues, rosters, stats
-│   └── weatherApi.js              # Open-Meteo archive weather for game-day conditions
-├── data/
-│   ├── teamColors.js              # Official color palettes for all 32 teams (light + dark)
-│   ├── honors.json                # Static Pro Bowl / All-Pro records by player and season
-│   └── stadiums.js                # All 32 NFL stadiums: indoor flag, coordinates, week dates
-└── utils/
-    ├── playerApi.js               # ESPN API fetches: roster, stats, game log, bio
-    ├── playerCache.js             # localStorage cache with per-key TTLs
-    ├── playerMetrics.js           # Stat row definitions, headline metrics, career highlights
-    ├── projectionEngine.js        # PPG averages, positional ranks, opponent strength, projections
-    ├── scoringEngine.js           # Fantasy point calculation and DEFAULT_SCORING config
-    ├── leagueHistory.js           # Sleeper season snapshots, history, standings, activity, blueprints
-    ├── scheduleParser.js          # Team/division queries, strength of schedule
-    ├── statisticsStandings.js     # Schedule-result standings model
-    ├── validation.js              # Constraint checking and balance validation
-    ├── exportImport.js            # JSON export/import
-    ├── exportStats.js             # Highlight stat computations for the infographic
-    └── layoutUtils.js             # Bento grid layout constants, sizing, and RGL helpers
-```
+GridShift is available under the [MIT License](LICENSE). See the [Privacy Policy](PRIVACY.md) for browser storage, connected services, and optional hosted features.
+
+- [Self-hosting and configuration](docs/Self-Hosting.md)
+- [Changelog](CHANGELOG.md)
+- [Project principles, technology, and structure](docs/Project%20Reference.md)
+- [Report an issue](https://github.com/thejrudd/gridshift/issues)

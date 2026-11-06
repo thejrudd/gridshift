@@ -312,9 +312,9 @@ export function DrivePlayback({
       : [];
   const fantasyTicker = tickerContributors.length
     ? (() => {
-      const totalYards = Math.abs(Number(geometry?.gained) || 0);
-      const covered = getYardageProgress(geometry, ball.yard);
+      const totalYards = geometry?.lateral ? 1 : Math.abs(Number(geometry?.gained) || 0);
       const firedKinds = new Set(displayedBeats.map((beat) => beat.kind));
+      const covered = getYardageProgress(geometry, ball.yard, { fired: firedKinds });
       const total = tickerContributors.reduce((sum, contributor) => {
         const partial = buildPartialPlayStats(contributor.stats, {
           yardsSoFar: totalYards * covered,
@@ -565,7 +565,7 @@ export function DrivePlayback({
             <ScoreBurst
               key={`${active}-burst`}
               left={Math.min(88, Math.max(12, x(scoreBeat.marker)))}
-              color={geometry.flag === 'int' || geometry.flag === 'fumble' ? defenseColor : barColor}
+              color={(geometry.lateral ? geometry.lateral.changesPossession : geometry.flag === 'int' || geometry.flag === 'fumble') ? defenseColor : barColor}
             />
           )}
 

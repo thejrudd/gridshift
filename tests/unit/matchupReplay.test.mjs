@@ -76,6 +76,13 @@ describe('Matchups replay game state', () => {
 });
 
 describe('Matchups scoring plays filter', () => {
+  it('keeps a shared play in both side filters and evaluates each side for big plays', () => {
+    const shared = { side: 'mine', sides: ['mine', 'opp'], pts: 2, sideGroups: [{ side: 'mine', pts: 2 }, { side: 'opp', pts: -3.9 }] };
+    for (const side of ['all', 'mine', 'opp']) {
+      assert.deepEqual(filterScoringPlays([shared], { side, sideOf: (event) => event.side }), [shared]);
+    }
+    assert.deepEqual(filterScoringPlays([shared], { bigOnly: true, bigPlayThreshold: 6, sideOf: (event) => event.side }), [shared]);
+  });
   const sideOf = (event) => (event.playerId === '10' ? 'mine' : 'opp');
   const plays = [
     { playerId: '10', pts: 1.2 },

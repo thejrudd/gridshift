@@ -38,13 +38,24 @@ export function buildPlayPointsBreakdown(event, scoringSettings) {
   const total = round2(event?.pts);
   const adjustment = round2(event?.adjustment);
   const ownPoints = Number.isFinite(Number(event?.rawPts)) ? round2(event.rawPts) : round2(total - adjustment);
-  const { rows } = buildFantasyScoringBreakdown(pricedStats(event, scoringSettings), scoringSettings, event?.position ?? null, {
-    authoritativeTotal: ownPoints,
+  const scoringPosition = event?.offPositionDefense ? null : event?.position ?? null;
+  const stats = pricedStats(event, scoringSettings);
+  const defensiveStats = {};
+  if (event?.returnTackle) {
+    for (const key of ['idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast']) {
+      if (stats[key] != null) { defensiveStats[key] = stats[key]; delete stats[key]; }
+    }
+  }
+  const defensive = event?.returnTackle
+    ? buildFantasyScoringBreakdown(defensiveStats, scoringSettings, null, { preferRawStats: true })
+    : { rows: [], total: 0 };
+  const { rows } = buildFantasyScoringBreakdown(stats, scoringSettings, scoringPosition, {
+    authoritativeTotal: round2(ownPoints - defensive.total),
     preferRawStats: true,
     fallbackTotalLabel: 'Points',
     adjustmentLabel: 'Rounding',
   });
-  const out = rows.map(({ key, label, statVal, pts }) => ({ key, label, statVal, pts }));
+  const out = [...rows, ...defensive.rows].map(({ key, label, statVal, pts }) => ({ key, label, statVal, pts }));
   // The official correction, by stat where reconciliation traced it to this
   // play ("Official Rec Yards +2"), and one line for whatever no stat explains.
   let unexplained = adjustment;

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   buildHeatmapMatchupRatings,
+  buildFilteredHeatmapMatchupTables,
   getCachedOffenseAllowedTable,
   getHeatmapCompletedGameCount,
   sortHeatmapRowsByMatchupRank,
@@ -33,6 +34,78 @@ describe('Fantasy Heatmap game averages', () => {
       )),
       1,
     );
+  });
+});
+
+describe('Fantasy Heatmap filtered matchup inputs', () => {
+  it('caps positional player-game outliers and uses current roster status only for scoring', () => {
+    const players = { peak: { position: 'WR' }, future: { position: 'WR' } };
+    const weeklyStats = {
+      peak: [{ team: 'A', week: 1, points: 100 }],
+      future: [{ team: 'A', week: 2, points: 500 }],
+    };
+    for (let i = 0; i < 9; i++) {
+      players[`zero${i}`] = { position: 'WR' };
+      weeklyStats[`zero${i}`] = [{ team: 'B', week: 1, points: 0 }];
+    }
+    const scheduleMap = {
+      1: { A: { opp: 'B', completed: true }, B: { opp: 'A', completed: true } },
+      2: { A: { opp: 'B' }, B: { opp: 'A' } },
+    };
+    const { scoringTable, allowedTable } = buildFilteredHeatmapMatchupTables({
+      weeklyStats, players, scheduleMap,
+      getPosition: player => player.position,
+      getValue: entry => entry.points,
+      capOutliers: true,
+      rosteredPlayerIds: new Set(['peak']),
+    });
+    assert.equal(allowedTable.A.WR[1], 70);
+    assert.equal(scoringTable.A, undefined);
+    assert.equal(allowedTable.A.WR[2], undefined);
+    const ratings = buildHeatmapMatchupRatings({
+      positionTable: scoringTable, allowedTable, scheduleMap,
+      teams: ['A', 'B'], positions: ['WR'], weeks: [1, 2],
+    });
+    assert.equal(ratings[2].A.WR.teamAverage, 0);
+    assert.equal(ratings[2].A.WR.opponentPointsAllowedAverage, 70);
+  });
+
+  it('leaves values uncapped when disabled and applies cap independently per position', () => {
+    const weeklyStats = { a: [{ team: 'A', week: 1, points: -2 }], b: [{ team: 'A', week: 1, points: 99 }] };
+    const players = { a: { position: 'WR' }, b: { position: 'TE' } };
+    const options = {
+      weeklyStats, players, scheduleMap: { 1: { A: { completed: true } } },
+      getPosition: player => player.position,
+      getValue: entry => entry.points,
+    };
+    for (const capOutliers of [false, true]) {
+      const { scoringTable } = buildFilteredHeatmapMatchupTables({ ...options, capOutliers });
+      assert.equal(scoringTable.A.WR[1], -2);
+      assert.equal(scoringTable.A.TE[1], 99);
+    }
+  });
+
+  it('uses the caller team resolver for historical rows without an explicit team', () => {
+    const players = { a: { position: 'LB', team: 'B' } };
+    const weeklyStats = { a: [
+      { week: 1, points: 5 },
+      { week: 2, team: 'A', _teamSource: 'espn', points: 7 },
+    ] };
+    const scheduleMap = {
+      1: { A: { completed: true }, B: { completed: true } },
+      2: { A: { completed: true }, B: { completed: true } },
+    };
+    const { scoringTable, allowedTable } = buildFilteredHeatmapMatchupTables({
+      weeklyStats, players, scheduleMap,
+      getPosition: player => player.position,
+      getValue: entry => entry.points,
+      getTeam: (entry, player) => (entry.team || player.team)?.toUpperCase(),
+      capOutliers: true,
+    });
+    assert.equal(scoringTable.B.LB[1], 5);
+    assert.equal(allowedTable.B.LB[1], 5);
+    assert.equal(scoringTable.A.LB[2], 7);
+    assert.equal(scoringTable.A.LB[1], undefined);
   });
 });
 

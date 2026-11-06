@@ -41,6 +41,319 @@ test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page, responsiveFixtureOverrides());
 });
 
+test('Fantasy Matchups returns without a skeleton or entrance and still animates a new week', async ({ page }) => {
+  await page.goto('/fantasy/matchups');
+  const frame = page.locator('.companion-matchup');
+  const masthead = page.locator('.companion-matchup-masthead');
+  await expect(masthead).toBeVisible();
+  await expect(frame).toHaveAttribute('data-matchup-entrance', 'animate');
+  await expect(masthead).toHaveClass(/gridshift-reveal/);
+  const weekLabel = (await page.getByRole('button', { name: /^Choose matchup week\. Week \d+ selected\.$/ }).getAttribute('aria-label')) ?? '';
+  const currentWeek = Number(/Week (\d+)/.exec(weekLabel)?.[1]);
+  expect(currentWeek).toBeGreaterThan(2);
+
+  const fantasyTabs = page.getByRole('tablist', { name: 'Fantasy views' });
+  await fantasyTabs.getByRole('tab', { name: 'Rankings', exact: true }).click();
+  await expect(masthead).not.toBeVisible();
+  // Slow the return refresh so the retained content is checked while it is
+  // pending as well as after it settles. Other fixture routes stay intact.
+  await page.route(`**/matchups/${currentWeek}*`, async (route) => {
+    await new Promise(resolve => setTimeout(resolve, 700));
+    await route.fallback();
+  });
+  await page.evaluate(() => {
+    window.matchupReturnFrames = [];
+    window.matchupReturnObserver = new MutationObserver(() => {
+      window.matchupReturnFrames.push({
+        skeleton: [...document.querySelectorAll('[aria-label="Preparing matchup"]')].some(node => node.checkVisibility()),
+        animated: [...document.querySelectorAll('.companion-matchup-masthead.gridshift-reveal')].some(node => node.checkVisibility()),
+      });
+    });
+    window.matchupReturnObserver.observe(document.body, { subtree: true, childList: true, attributes: true });
+  });
+  await fantasyTabs.getByRole('tab', { name: 'Matchups', exact: true }).click();
+  await expect(masthead).toBeVisible();
+  await expect(frame).toHaveAttribute('data-matchup-entrance', 'static');
+  await expect(page.getByRole('button', { name: `Refresh Week ${currentWeek} matchup`, exact: true })).toBeEnabled();
+  await expect(masthead).not.toHaveClass(/gridshift-reveal/);
+  const frames = await page.evaluate(() => {
+    window.matchupReturnObserver.disconnect();
+    return window.matchupReturnFrames;
+  });
+  expect(frames.length).toBeGreaterThan(0);
+  expect(frames.some(frame => frame.skeleton || frame.animated)).toBe(false);
+
+  // Main-section navigation also retains visited Fantasy views.
+  await page.getByRole('button', { name: 'League', exact: true }).click();
+  await page.getByRole('button', { name: 'Fantasy', exact: true }).click();
+  await expect(masthead).toBeVisible();
+  await expect(frame).toHaveAttribute('data-matchup-entrance', 'static');
+  await expect(masthead).not.toHaveClass(/gridshift-reveal/);
+
+  await page.getByRole('button', { name: `Choose matchup week. Week ${currentWeek} selected.` }).click();
+  await page.getByRole('button', { name: 'Week 2', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Choose matchup week. Week 2 selected.' })).toBeVisible();
+  await expect(frame).toHaveAttribute('data-matchup-entrance', 'animate');
+  await expect(masthead).toHaveClass(/gridshift-reveal/);
+
+  await page.reload();
+  await expect(masthead).toBeVisible();
+  await expect(frame).toHaveAttribute('data-matchup-entrance', 'animate');
+});
+
+for (const [route, label] of [
+  ['rosters', 'Rosters'],
+  ['rankings', 'Rankings'],
+  ['schedule', 'Schedule Beta'],
+  ['injuries', 'Injuries Beta'],
+  ['heatmap', 'Heatmap'],
+  ['defenses', 'Defenses'],
+]) {
+  test(`Fantasy ${label} enters once and returns without replaying or flashing placeholders`, async ({ page }) => {
+    if (route === 'rankings') {
+      await page.addInitScript(() => {
+        window.fantasyIntervals = new Map();
+        const originalSet = window.setInterval;
+        const originalClear = window.clearInterval;
+        window.setInterval = (...args) => {
+          const id = originalSet(...args);
+          window.fantasyIntervals.set(id, new Error().stack);
+          return id;
+        };
+        window.clearInterval = (id) => {
+          window.fantasyIntervals.delete(id);
+          originalClear(id);
+        };
+      });
+    }
+    if (route === 'injuries') {
+      const fixtures = responsiveFixtureOverrides();
+      await installTradeFixtures(page, {
+        ...fixtures,
+        players: { ...fixtures.players, 101: { ...fixtures.players[101], injury_status: 'Out' } },
+      });
+    }
+    // Optional enrichment unavailable: the Sleeper report must remain usable.
+    await page.route('**/api/fantasy/player-designations**', route => route.fulfill({
+      status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Unavailable' }),
+    }));
+    await page.goto(`/fantasy/${route}`);
+    const content = page.locator('.gs-loadswap__content');
+    await expect(content).toBeVisible({ timeout: 15000 });
+    await expect(content).toHaveClass(/gridshift-reveal/);
+    await content.evaluate(node => { window.retainedFantasyContent = node; window.retainedFantasyRow = node.querySelector('.companion-player-row'); });
+    const rankingsTimers = () => page.evaluate(() => [...window.fantasyIntervals.values()].filter(stack => stack.includes('CompanionRankings.jsx')).length);
+    if (route === 'rankings') await expect.poll(rankingsTimers).toBe(1);
+    const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+    await tabs.getByRole('tab', { name: 'Scoring', exact: true }).click();
+    await expect(content).toBeHidden();
+    if (route === 'rankings') await expect.poll(rankingsTimers).toBe(0);
+    await page.evaluate(() => {
+      window.fantasyReturnFrames = [];
+      window.fantasyReturnObserver = new MutationObserver(() => {
+        window.fantasyReturnFrames.push({
+          animated: [...document.querySelectorAll('.gs-loadswap__content.gridshift-reveal')].some(node => node.checkVisibility()),
+          skeleton: [...document.querySelectorAll('.gs-loadswap__skeleton')].some(node => node.checkVisibility()),
+        });
+      });
+      window.fantasyReturnObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    });
+    await tabs.getByRole('tab', { name: label, exact: true }).click();
+    await expect(content).toBeVisible();
+    await expect(content).not.toHaveClass(/gridshift-reveal/);
+    expect(await content.evaluate(node => node === window.retainedFantasyContent)).toBe(true);
+    if (route === 'rankings') {
+      expect(await content.evaluate(node => node.querySelector('.companion-player-row') === window.retainedFantasyRow)).toBe(true);
+    }
+    if (route === 'rankings') await expect.poll(rankingsTimers).toBe(1);
+    const frames = await page.evaluate(() => {
+      window.fantasyReturnObserver.disconnect();
+      return window.fantasyReturnFrames;
+    });
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.filter(frame => frame.animated || frame.skeleton)).toEqual([]);
+    await page.reload();
+    await expect(content).toBeVisible({ timeout: 15000 });
+    await expect(content).toHaveClass(/gridshift-reveal/);
+  });
+}
+
+test('Fantasy Schedule still animates an explicit view change after a static tab return', async ({ page }) => {
+  await page.goto('/fantasy/schedule');
+  const content = page.locator('.gs-loadswap__content');
+  await expect(content).toBeVisible();
+  const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+  await tabs.getByRole('tab', { name: 'Scoring', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Schedule Beta', exact: true }).click();
+  await expect(content).not.toHaveClass(/gridshift-reveal/);
+  await page.getByRole('button', { name: 'All Teams', exact: true }).click();
+  await expect(content).toHaveClass(/gridshift-reveal/);
+});
+
+test('Fantasy retained Schedule restores its selected view across tab and sidebar navigation', async ({ page }) => {
+  await page.goto('/fantasy/schedule');
+  const content = page.locator('.gs-loadswap__content').filter({ visible: true });
+  await expect(content).toBeVisible();
+  await page.getByRole('button', { name: 'All Teams', exact: true }).click();
+  await expect(page).toHaveURL(/mode=league/);
+  const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+  await tabs.getByRole('tab', { name: 'Rankings', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Schedule Beta', exact: true }).click();
+  await expect(page).toHaveURL(/mode=league/);
+  await expect(content).not.toHaveClass(/gridshift-reveal/);
+  await page.getByRole('button', { name: 'League', exact: true }).click();
+  await page.getByRole('button', { name: 'Fantasy', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Schedule Beta', exact: true }).click();
+  await expect(page).toHaveURL(/mode=league/);
+  await expect(page.getByRole('button', { name: 'All Teams', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('Fantasy retained tabs reset their DOM when switching leagues', async ({ page }) => {
+  const fixtures = responsiveFixtureOverrides();
+  await page.route('**/v1/league/league-half-ppr-preview/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    const payload = path.endsWith('/users') ? fixtures.leagueUsers
+      : path.endsWith('/rosters') ? fixtures.rosters
+      : path.includes('/matchups/') ? matchupsForWeek(Number(path.split('/').at(-1)))
+      : [];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  await page.goto('/fantasy/rankings');
+  const content = page.locator('.gs-loadswap__content').filter({ visible: true });
+  await expect(content).toBeVisible();
+  await content.evaluate(node => { window.previousLeagueContent = node; });
+  if (page.viewportSize().width < 1024) {
+    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Switch League', exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: 'Switch league', exact: true }).click();
+  }
+  const updateNotice = page.getByRole('button', { name: 'Dismiss update notice', exact: true });
+  if (await updateNotice.isVisible()) await updateNotice.click();
+  await page.getByRole('button', { name: 'View GridShift Half PPR Preview League', exact: true }).click();
+  const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+  await tabs.getByRole('tab', { name: 'Rankings', exact: true }).click();
+  await expect(content).toBeVisible();
+  expect(await content.evaluate(node => node !== window.previousLeagueContent)).toBe(true);
+  await expect(content).toHaveClass(/gridshift-reveal/);
+});
+
+test('Fantasy final-score confirmation resumes after hiding a pending request', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-09-08T12:00:00.000Z') });
+  const games = [['BUF', 'MIA'], ['KC', 'LAC'], ['DET', 'CHI'], ['DAL', 'CIN'], ['SF', 'BAL']].map(([away, home], index) => ({
+    id: `retained-final-${index}`, date: '2026-09-07T10:00:00.000Z', week: { number: 1 },
+    competitions: [{ status: { type: { completed: true } }, competitors: [
+      { homeAway: 'away', team: { abbreviation: away, id: `${index * 2 + 1}` }, score: '24' },
+      { homeAway: 'home', team: { abbreviation: home, id: `${index * 2 + 2}` }, score: '17' },
+    ] }],
+  }));
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ events: games }),
+  }));
+  let freshRequests = 0;
+  let releaseConfirmation;
+  const confirmationGate = new Promise(resolve => { releaseConfirmation = resolve; });
+  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1*`, async route => {
+    const fresh = new URL(route.request().url()).searchParams.has('_gridshift');
+    if (fresh) freshRequests += 1;
+    if (fresh && freshRequests > 1) await confirmationGate;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(matchupsForWeek(1)) });
+  });
+  await page.goto('/fantasy/matchups?week=1&liveSandbox=off');
+  try {
+    await expect.poll(() => freshRequests).toBeGreaterThan(1);
+    const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+    await tabs.getByRole('tab', { name: 'Scoring', exact: true }).click();
+    const beforeResume = freshRequests;
+    await tabs.getByRole('tab', { name: 'Matchups', exact: true }).click();
+    await expect.poll(() => freshRequests).toBeGreaterThan(beforeResume);
+  } finally {
+    releaseConfirmation();
+  }
+  await expect(page.locator('.companion-matchup-masthead')).toContainText('Final score locked', { timeout: 15000 });
+});
+
+test('Fantasy Injuries preserves optional details during return refresh and clears them on failure', async ({ page }) => {
+  await installTradeFixtures(page, { players: {
+    ...players,
+    101: { ...players[101], injury_status: 'Out' },
+    102: { ...players[102], team: 'BUF' },
+  } });
+  let requests = 0;
+  let finishRefresh;
+  let unavailable = false;
+  let holdRefresh = false;
+  const refreshGate = new Promise(resolve => { finishRefresh = resolve; });
+  await page.route('**/api/fantasy/player-designations**', async route => {
+    requests += 1;
+    if (holdRefresh) await refreshGate;
+    await route.fulfill({ status: unavailable ? 503 : 200, contentType: 'application/json', body: JSON.stringify(unavailable
+      ? { ok: false, error: 'Unavailable' }
+      : { ok: true, season: Number(TEST_SEASON), week: 7, data: [{
+        season: Number(TEST_SEASON), week: 7,
+        player: { id: 101, first_name: 'Pocket', last_name: 'Commander', position_abbreviation: 'QB' },
+        team: { abbreviation: 'BUF' }, game_status: 'Out', injury: 'Knee',
+        practice_reports: [{ date: '2026-10-09', status: 'Limited Participation' }],
+      }] }) });
+  });
+  await page.goto('/fantasy/injuries');
+  const optionalConcern = page.locator('.fantasy-injuries-practice-status');
+  await expect(optionalConcern).toBeVisible();
+  const initialRequests = requests;
+  holdRefresh = true;
+  const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+  await tabs.getByRole('tab', { name: 'Scoring', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Injuries Beta', exact: true }).click();
+  try {
+    await expect.poll(() => requests).toBeGreaterThan(initialRequests);
+    await expect(optionalConcern).toBeVisible();
+    await expect(page.locator('.gs-loadswap__content')).not.toHaveClass(/gridshift-reveal/);
+    await expect(page.locator('.gs-loadswap__skeleton')).toHaveCount(0);
+  } finally {
+    finishRefresh();
+  }
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+  unavailable = true;
+  await tabs.getByRole('tab', { name: 'Scoring', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Injuries Beta', exact: true }).click();
+  await expect.poll(() => requests).toBeGreaterThan(initialRequests + 1);
+  await expect(optionalConcern).toHaveCount(0);
+  await expect(page.getByTestId('fantasy-injury-player-101')).toBeVisible();
+});
+
+test('Fantasy ADP Rankings keeps rows during a delayed return revalidation', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-08-23T12:00:00-05:00') });
+  let requests = 0;
+  let finishRefresh;
+  const refreshGate = new Promise(resolve => { finishRefresh = resolve; });
+  await page.route('**/api/fantasy/adp*', async route => {
+    requests += 1;
+    if (requests > 1) await refreshGate;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      ok: true, season: 2026, data: [{
+        player: { first_name: 'Christopher', last_name: 'Pocket Commander-Supercalifragilistic', position_abbreviation: 'QB' },
+        team: { abbreviation: 'BUF' }, position: 'QB', average_draft_position: 42.5,
+      }],
+    }) });
+  });
+  await page.goto('/fantasy/rankings');
+  const content = page.locator('.gs-loadswap__content');
+  await expect(page.getByText('Christopher Pocket Commander-Supercalifragilistic', { exact: true })).toBeVisible();
+  const tabs = page.getByRole('tablist', { name: 'Fantasy views' });
+  await tabs.getByRole('tab', { name: 'Scoring', exact: true }).click();
+  await expect(content).toBeHidden();
+  await tabs.getByRole('tab', { name: 'Rankings', exact: true }).click();
+  try {
+    await expect.poll(() => requests).toBe(2);
+    await expect(page.getByText('Christopher Pocket Commander-Supercalifragilistic', { exact: true })).toBeVisible();
+    await expect(content).not.toHaveClass(/gridshift-reveal/);
+    await expect(page.locator('.gs-loadswap__skeleton')).toHaveCount(0);
+  } finally {
+    finishRefresh();
+  }
+  await expect(content).toBeVisible();
+});
+
 test('Fantasy Matchups cold load follows the live Sleeper leg instead of last_scored_leg', async ({ page }) => {
   const weekOneLeagueSnapshot = {
     ...league,
@@ -1022,6 +1335,88 @@ test('Heatmap mobile shows future weeks by default and averages finalized games 
   await expect(weekHeaders).toHaveCount(Number(heatmapLeague.settings.playoff_week_start));
   await expect(sanFranciscoRow.locator('td[data-heatmap-week="4"] div').first()).toHaveText('9.4');
   await expect(sanFranciscoRow.locator('td').last()).toHaveText('9.40');
+});
+
+test('Heatmap matchup filters keep historical scores and drilldowns consistent', async ({ page }) => {
+  const base = responsiveFixtureOverrides();
+  const fixturePlayers = {
+    ...players,
+    900: { ...players[104], player_id: '900', full_name: 'Waiver Receiver', first_name: 'Waiver', last_name: 'Receiver' },
+  };
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, { ...base, players: fixturePlayers });
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/*`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(week <= 3 ? {
+        104: { rec: 4, rec_yd: week === 1 ? 200 : 40, gp: 1, week },
+        900: { rec: 2, rec_yd: 30, gp: 1, week },
+      } : {}),
+    });
+  });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    const completed = week <= 3;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ events: week <= 4 ? [{
+        id: `matchup-filter-${week}`,
+        date: `2026-09-${13 + (week - 1) * 7}T18:00:00.000Z`,
+        week: { number: week },
+        competitions: [{
+          status: { type: { completed } },
+          competitors: [
+            { homeAway: 'away', team: { abbreviation: 'DAL', id: '6' }, score: completed ? '20' : '' },
+            { homeAway: 'home', team: { abbreviation: 'SF', id: '25' }, score: completed ? '17' : '' },
+          ],
+        }],
+      }] : [] }),
+    });
+  });
+
+  await page.goto('/fantasy/heatmap?pos=WR');
+  await dismissWhatsNew(page);
+  const row = page.locator('tbody tr').filter({ hasText: /^DAL/ });
+  const historical = row.locator('td[data-heatmap-column-week="1"]');
+  const upcoming = row.locator('td[data-heatmap-column-week="4"]');
+  await expect(historical).toContainText('29.0');
+  await expect(upcoming).toHaveAttribute('data-heatmap-future-opponent', 'true');
+  await upcoming.click();
+  const dialog = page.getByRole('dialog', { name: 'Heatmap drilldown' });
+  await expect(dialog.getByText(/DAL WR scored:/)).toBeVisible();
+  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await expect(dialog.getByText('Target Magnet')).toBeVisible();
+  await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
+  await page.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  const cap = page.getByRole('button', { name: 'Cap Outliers' });
+  const available = page.getByRole('button', { name: 'Unrostered', exact: true });
+  await cap.click();
+  await available.click();
+  await expect(cap).toHaveAttribute('aria-pressed', 'true');
+  await expect(available).toHaveAttribute('aria-pressed', 'true');
+  await expect(historical).toContainText('29.0');
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  await upcoming.click();
+  await expect(dialog.getByText(/DAL WR scored: 5.0 PPG/)).toBeVisible();
+  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await expect(dialog.getByText('Target Magnet')).toHaveCount(0);
+  await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
+  await page.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await page.getByRole('button', { name: 'Fantasy Pts Allowed' }).click();
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  const sanFrancisco = page.locator('tbody tr').filter({ hasText: /^SF/ });
+  await sanFrancisco.locator('td[data-heatmap-column-week="4"]').click();
+  await expect(dialog.getByText(/DAL WR scored: 5.0 PPG/)).toBeVisible();
+  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await expect(dialog.getByText('Grid rank reflects SF\'s matchup.')).toBeVisible();
+  await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
 });
 
 test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page }) => {

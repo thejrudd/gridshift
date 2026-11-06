@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSleeperBase, useSleeperStatsEnhancing } from '../../context/SleeperContext';
+import { useSleeperBase } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { STADIUMS } from '../../data/stadiums';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
@@ -259,6 +259,7 @@ export default function CompanionDefense({
 }) {
   const {
     hasLeague,
+    platform, selectedLeagueId,
     season,
     players,
     weeklyStats,
@@ -269,7 +270,6 @@ export default function CompanionDefense({
     activeScoringSettings,
     currentFantasyWeek,
   } = useSleeperBase();
-  const statsEnhancing = useSleeperStatsEnhancing();
   const { darkMode } = useTheme();
   const compactRows = useMediaQuery(COMPACT_ROW_QUERY);
   const mobileDrilldown = useMediaQuery(MOBILE_DRILLDOWN_QUERY);
@@ -399,7 +399,7 @@ export default function CompanionDefense({
   const statShortLabel = state.mode === 'fantasy'
     ? 'Fantasy'
     : getDefenseRankingStatOption(state.position, state.stat).shortLabel;
-  const loading = seasonStarted && (!players || !weeklyStats || !scheduleMap || statsLoading || statsEnhancing);
+  const loading = seasonStarted && (!players || !weeklyStats || !scheduleMap);
 
   const renderRow = (row, pinned = false) => (
     <CompanionPlayerRow
@@ -572,6 +572,7 @@ export default function CompanionDefense({
           </div>
           <LoadingSwap
             loading={loading}
+            navigationScope={`defenses:${platform}:${selectedLeagueId}:${season}`}
             resetKey={`${season}:${state.stat}:${state.mode}`}
             className="companion-defense-row-list"
             skeletonClassName="companion-defense-row-list"

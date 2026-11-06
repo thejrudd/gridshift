@@ -38,6 +38,16 @@ scoring engine when adding or changing a stat key:
   the player's position). Without this a solo/assisted IDP league priced every
   tackle at 0 and the play never reached the feed. The estimate is display
   only; Sleeper's line settles the exact total through reconciliation.
+- A starter explicitly named as a tackler on an interception return is matched
+  to the original offense, even at an offensive roster position. Live play
+  pricing and its points card score that explicit defensive action using the
+  league's tackle rates without changing position gating on general stat lines.
+- Intercepted passes count as an attempt and incompletion as well as an
+  interception. A player explicitly named as a tackler after the opposing
+  team's fumble recovery can also earn that tackle on their existing offensive
+  play event; price and display the defensive credit separately from their
+  position-specific offensive stats. Only the recovery-return tackle clause
+  qualifies, and a negated snap earns no tackle.
 - IDP credits follow the gamebook's own markers: the parenthetical after an
   incomplete pass names a pass defender (`idp_pd`), square brackets name a
   quarterback hit (`idp_qbhit`), and "(A, B)" is a shared stop like "(A; B)".
@@ -68,6 +78,13 @@ scoring engine when adding or changing a stat key:
   A fumble is charged to the ball carrier the gamebook names (`fum`, plus
   `fum_lost` when the other side recovered; `credit.fumble`), never inferred
   from the word "fumble".
+- For an identifiable completed pass followed by laterals, Fantasy Live's
+  matcher supplies carrier-specific receiving yardage to `buildPlayStatDelta`;
+  only the original receiver has a reception, and only the final carrier earns
+  a receiving touchdown or first down. On a lost fumble the recovery spot
+  determines the final carrier's share; provider yardage can be the return.
+  Unclear or penalty-adjusted splits fail closed
+  while retaining a separately identifiable fumble.
 - Team defenses score special teams through `buildTeamDefensePlayDelta()`'s
   `detail`: the receiving side's `def_kr_yd` / `def_pr_yd` and the kicking
   side's `def_st_tkl_solo` when one coverage tackler is named.
@@ -108,6 +125,8 @@ tests in addition to the focused Fantasy Live suite.
 | `src/utils/draftAssistant/index.js` | `computeDraftPositionalRanks` / `computeDraftOutcomes` | `calcPoints` must pass `player?.position` when calculating the matching season's positional finish |
 
 ## Companion Tab Components
+
+The shared `src/components/nflPlays/DrivePlayback.jsx` ticker scores partial and final stat lines with `contributor.position ?? fantasyPosition`. Its `getYardageProgress()` call passes fired beat kinds: formation-aware snaps earn no yardage, and a loss settles at the stop rather than during the backward snap. This changes animation timing only; league scoring rules and the authoritative final play value remain unchanged.
 
 | File | What to check |
 |---|---|
