@@ -13,6 +13,14 @@ const MOBILE_STATISTICS_VIEWPORTS = [
   { name: 'large phone', width: 430, height: 932 },
 ];
 
+// The app shell hydrates schedule results for every regular-season week that
+// has already kicked off (useSeasonScheduleResults → the same
+// /api/statistics/scores/espn-week route the ESPN source uses). Pinning the
+// clock before the 2026 regular season keeps that hydration silent, so the
+// "no provider requests" checks below measure only the Scores data source. The
+// developer fixture's week 7 "Now" marker does not depend on the clock.
+const BEFORE_REGULAR_SEASON = new Date('2026-08-20T16:00:00.000Z');
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     if (!localStorage.getItem('gridshift.statisticsNflPhase')) {
@@ -86,6 +94,7 @@ test('Statistics Scores switches among local fixture, ESPN, and BALLDONTLIE sour
     });
   });
 
+  await page.clock.install({ time: BEFORE_REGULAR_SEASON });
   await page.goto('/statistics/scores');
 
   const sourceControl = page.getByRole('group', { name: 'Data source' });
@@ -154,19 +163,22 @@ test('the developer fixture opens the fully populated comparison drilldown witho
     await route.fulfill({ status: 500, body: 'The local fixture must not request ESPN data.' });
   });
 
+  await page.clock.install({ time: BEFORE_REGULAR_SEASON });
   await page.goto('/statistics/scores');
 
   const sourceControl = page.getByRole('group', { name: 'Data source' });
   await expect(sourceControl.getByRole('button', { name: 'Fixture' })).toHaveAttribute('aria-pressed', 'true');
-  const scheduledScorebug = page.locator('.scores-scorebug[aria-disabled="true"]').first();
-  await expect(scheduledScorebug).toBeVisible();
-  await scheduledScorebug.click({ force: true });
-  await expect(page.getByRole('button', { name: 'Back to Scores' })).toHaveCount(0);
+  // Scheduled games open a pregame drilldown; only postponed, partial,
+  // offline, and unavailable games stay non-interactive (none are in week 7).
+  await expect(page.locator('.scores-scorebug.is-scheduled').first()).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(page.locator('.scores-scorebug[aria-disabled="true"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Open Lions at Vikings game details' }).click();
 
   await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Line Score' })).toBeVisible();
-  await expect(page.getByText('J. Goff · 238 YDS, 2 TD')).toBeVisible();
+  // Overview carries scoring (the former Scoring tab) and the leaders.
+  await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('region', { name: 'Scoring' })).toContainText('A. St. Brown 14-yard reception');
+  await expect(page.getByRole('region', { name: 'Leaders' }).getByRole('button', { name: /^Jared Goff .*238 yds · 2 TD/ })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Team Stats' }).click();
   await expect(page.getByRole('heading', { name: 'Offense' })).toBeVisible();
@@ -175,32 +187,41 @@ test('the developer fixture opens the fully populated comparison drilldown witho
   await page.getByRole('tab', { name: 'Players' }).click();
   await expect(page.getByRole('heading', { name: 'Player Statistics' })).toBeVisible();
   await expect(page.locator('.scores-player-stats')).toContainText('Jared Goff');
-  await expect(page.locator('.scores-player-table .scores-player-team-logo-slot img').first()).toHaveAttribute('src', /det\.png/);
-  await expect(page.locator('.scores-player-table thead th').nth(2)).toHaveAttribute('aria-sort', 'descending');
-  const passingRows = page.locator('.scores-player-table tbody > tr:not(.scores-player-detail-row)');
-  await page.getByRole('button', { name: 'Sort Passing by INT descending' }).click();
-  await expect(page.locator('.scores-player-table thead th').nth(4)).toHaveAttribute('aria-sort', 'descending');
-  await expect(passingRows.locator('.scores-player-row-name > strong')).toHaveText(['J.J. McCarthy', 'Jared Goff']);
-  await page.getByRole('button', { name: 'Sort Passing by INT ascending' }).click();
-  await expect(page.locator('.scores-player-table thead th').nth(4)).toHaveAttribute('aria-sort', 'ascending');
-  await expect(passingRows.locator('.scores-player-row-name > strong')).toHaveText(['Jared Goff', 'J.J. McCarthy']);
-  await page.getByRole('button', { name: 'Expand Jared Goff Lions Passing stats' }).click();
-  const passingQuarterRows = page.locator('.scores-player-table .scores-player-quarter-row > th:first-child');
-  await expect(passingQuarterRows.first()).toHaveText('Period');
-  await expect(passingQuarterRows.nth(1)).toHaveText('Q1');
-  await expect(passingQuarterRows.last()).toHaveText('Total');
+  // At 760px and below the player tables give way to priority cards (their
+  // sorting is covered by the mobile layout test), so table checks run wide.
+  const playerTablesShown = (page.viewportSize()?.width ?? 0) > 760;
+  if (playerTablesShown) {
+    await expect(page.locator('.scores-player-table .scores-player-team-logo-slot img').first()).toHaveAttribute('src', /det\.png/);
+    await expect(page.locator('.scores-player-table thead th').nth(2)).toHaveAttribute('aria-sort', 'descending');
+    const passingRows = page.locator('.scores-player-table tbody > tr:not(.scores-player-detail-row)');
+    await page.getByRole('button', { name: 'Sort Passing by INT descending' }).click();
+    await expect(page.locator('.scores-player-table thead th').nth(4)).toHaveAttribute('aria-sort', 'descending');
+    await expect(passingRows.locator('.scores-player-row-name > strong')).toHaveText(['J.J. McCarthy', 'Jared Goff']);
+    await page.getByRole('button', { name: 'Sort Passing by INT ascending' }).click();
+    await expect(page.locator('.scores-player-table thead th').nth(4)).toHaveAttribute('aria-sort', 'ascending');
+    await expect(passingRows.locator('.scores-player-row-name > strong')).toHaveText(['Jared Goff', 'J.J. McCarthy']);
+    await page.getByRole('button', { name: 'Expand Jared Goff Lions Passing stats' }).click();
+    const passingQuarterRows = page.locator('.scores-player-table .scores-player-quarter-row > th:first-child');
+    await expect(passingQuarterRows.first()).toHaveText('Period');
+    await expect(passingQuarterRows.nth(1)).toHaveText('Q1');
+    await expect(passingQuarterRows.last()).toHaveText('Total');
+  } else {
+    await expect(page.locator('.scores-player-cards')).toContainText('Jared Goff');
+  }
   await page.getByRole('tab', { name: 'Rushing' }).click();
   await expect(page.locator('.scores-player-stats')).toContainText('Jahmyr Gibbs');
-  const rushingRows = page.locator('.scores-player-table tbody > tr:not(.scores-player-detail-row)');
-  await page.getByRole('button', { name: 'Sort Rushing by AVG descending' }).click();
-  await expect(rushingRows.locator('.scores-player-row-name > strong')).toHaveText(['Jahmyr Gibbs', 'David Montgomery', 'Aaron Jones']);
-  await page.getByRole('button', { name: 'Sort Rushing by AVG ascending' }).click();
-  await expect(rushingRows.locator('.scores-player-row-name > strong')).toHaveText(['Aaron Jones', 'David Montgomery', 'Jahmyr Gibbs']);
-  await page.getByRole('button', { name: 'Expand Jahmyr Gibbs Lions Rushing stats' }).click();
-  await expect(page.locator('.scores-player-table .scores-player-quarter-row').first()).toBeVisible();
-
-  await page.getByRole('tab', { name: 'Scoring' }).click();
-  await expect(page.getByText('A. St. Brown 14-yard reception')).toBeVisible();
+  if (playerTablesShown) {
+    const rushingRows = page.locator('.scores-player-table tbody > tr:not(.scores-player-detail-row)');
+    await page.getByRole('button', { name: 'Sort Rushing by AVG descending' }).click();
+    await expect(rushingRows.locator('.scores-player-row-name > strong')).toHaveText(['Jahmyr Gibbs', 'David Montgomery', 'Aaron Jones']);
+    await page.getByRole('button', { name: 'Sort Rushing by AVG ascending' }).click();
+    await expect(rushingRows.locator('.scores-player-row-name > strong')).toHaveText(['Aaron Jones', 'David Montgomery', 'Jahmyr Gibbs']);
+    await page.getByRole('button', { name: 'Expand Jahmyr Gibbs Lions Rushing stats' }).click();
+    await expect(page.locator('.scores-player-table .scores-player-quarter-row').first()).toBeVisible();
+  } else {
+    await expect(page.locator('.scores-player-cards > article > header strong').first()).toBeVisible();
+    await expect(page.locator('.scores-player-cards')).toContainText('Jahmyr Gibbs');
+  }
 
   await page.getByRole('tab', { name: 'Play-by-Play' }).click();
   await expect(page.getByRole('heading', { name: 'Play Feed' })).toBeVisible();
@@ -225,7 +246,8 @@ test('canonical Scores links restore the selected week, matchup, drilldown tab, 
   await page.goto(sharedPath);
 
   await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'W7 Now' })).toHaveAttribute('aria-selected', 'true');
+  // The drilldown replaces the week rail; the restored week is checked on the
+  // board after Back to Scores and through the canonical URL.
   await expect(page.getByRole('tab', { name: 'Play-by-Play' })).toHaveAttribute('aria-selected', 'true');
   expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(sharedPath);
 
@@ -248,6 +270,7 @@ test('canonical Scores links restore the selected week, matchup, drilldown tab, 
 
   await page.getByRole('button', { name: 'Back to Scores' }).click();
   await expect(page.getByRole('button', { name: 'Back to Scores' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'W7 Now' })).toHaveAttribute('aria-selected', 'true');
   const scoresUrl = new URL(page.url());
   expect(scoresUrl.pathname).toBe('/statistics/scores');
   expect(scoresUrl.searchParams.get('season')).toBe('2026');
@@ -256,11 +279,13 @@ test('canonical Scores links restore the selected week, matchup, drilldown tab, 
   expect(scoresUrl.searchParams.get('tab')).toBeNull();
   expect(scoresUrl.searchParams.get('group')).toBeNull();
 
-  const weekEight = page.getByRole('tab', { name: /^W8/ });
-  await weekEight.scrollIntoViewIfNeeded();
-  await weekEight.click();
-  await expect(weekEight).toHaveAttribute('aria-selected', 'true');
-  expect(new URL(page.url()).searchParams.get('week')).toBe('8');
+  // The rail ends at the current week, so step back to an earlier one.
+  await expect(page.getByRole('tab', { name: /^W8/ })).toHaveCount(0);
+  const weekSix = page.getByRole('tab', { name: /^W6/ });
+  await weekSix.scrollIntoViewIfNeeded();
+  await weekSix.click();
+  await expect(weekSix).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(() => new URL(page.url()).searchParams.get('week')).toBe('6');
 });
 
 test('the local preseason fixture selects Preseason Week 1 on its first calendar day', async ({ page }) => {
@@ -279,19 +304,22 @@ test('the local preseason fixture selects Preseason Week 1 on its first calendar
   await expect(page.locator('.scores-scorebug').first()).toHaveAttribute('aria-disabled', 'true');
 });
 
-test('scheduled scorebugs use the browser timezone for upcoming kickoffs', async ({ page }) => {
-  await page.emulateTimezone('Pacific/Auckland');
-  await page.clock.install({ time: new Date('2026-08-13T17:00:00.000Z') });
-  await page.goto('/statistics/scores');
-  await page.evaluate(() => {
-    localStorage.setItem('gridshift.statisticsNflPhase', 'preseason');
-  });
-  await page.reload();
+test.describe('in a non-US browser timezone', () => {
+  test.use({ timezoneId: 'Pacific/Auckland' });
 
-  await expect(page.getByRole('tab', { name: 'P1 Now' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.scores-scorebug').first().locator('.scores-status')).toHaveText('Scheduled');
-  await expect(page.locator('.scores-scorebug').first().locator('.scores-scorebug-topline > span').nth(1))
-    .toContainText(/Fri, Aug 14, 11:00 AM (GMT\+12|NZST)/);
+  test('scheduled scorebugs use the browser timezone for upcoming kickoffs', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-08-13T17:00:00.000Z') });
+    await page.goto('/statistics/scores');
+    await page.evaluate(() => {
+      localStorage.setItem('gridshift.statisticsNflPhase', 'preseason');
+    });
+    await page.reload();
+
+    await expect(page.getByRole('tab', { name: 'P1 Now' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.scores-scorebug').first().locator('.scores-status')).toHaveText('Scheduled');
+    await expect(page.locator('.scores-scorebug').first().locator('.scores-scorebug-topline > span').nth(1))
+      .toContainText(/Fri, Aug 14, 11:00 AM (GMT\+12|NZST)/);
+  });
 });
 
 for (const viewport of MOBILE_STATISTICS_VIEWPORTS) {
@@ -307,18 +335,32 @@ for (const viewport of MOBILE_STATISTICS_VIEWPORTS) {
     await expect(page.getByRole('button', { name: 'Back to Scores' })).toBeVisible();
 
     for (const tab of ['Overview', 'Team Stats', 'Players', 'Play-by-Play']) {
-      await page.getByRole('tab', { name: tab, exact: true }).click();
-      const geometry = await page.locator('.statistics-scores-detail > .scores-detail-tabs-shell ~ *').evaluate((section) => {
-        const style = getComputedStyle(section);
-        return {
-          leftGutter: Number.parseFloat(style.paddingLeft),
-          rightGutter: Number.parseFloat(style.paddingRight),
-          documentWidth: document.documentElement.scrollWidth,
-          viewportWidth: document.documentElement.clientWidth,
-        };
-      });
-      expect(geometry.leftGutter, tab).toBeGreaterThanOrEqual(15);
-      expect(geometry.rightGutter, tab).toBeGreaterThanOrEqual(15);
+      const detailTab = page.getByRole('tab', { name: tab, exact: true });
+      await detailTab.click();
+      await expect(detailTab).toHaveAttribute('aria-selected', 'true');
+      // A tab panel can render several sections after the tab shell (e.g.
+      // Play-by-Play's current drive and play feed); every one keeps the gutter.
+      // Query and measure in one synchronous pass so an outgoing panel that
+      // React detaches mid-measurement cannot be read.
+      await expect(page.locator('.statistics-scores-detail > .scores-detail-tabs-shell ~ *').first()).toBeVisible();
+      const geometry = await page.evaluate(() => ({
+        gutters: [...document.querySelectorAll('.statistics-scores-detail > .scores-detail-tabs-shell ~ *')]
+          .map((section) => {
+            const style = getComputedStyle(section);
+            return {
+              name: section.className,
+              left: Number.parseFloat(style.paddingLeft),
+              right: Number.parseFloat(style.paddingRight),
+            };
+          }),
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      }));
+      expect(geometry.gutters.length, tab).toBeGreaterThan(0);
+      for (const gutter of geometry.gutters) {
+        expect(gutter.left, `${tab} ${gutter.name}`).toBeGreaterThanOrEqual(15);
+        expect(gutter.right, `${tab} ${gutter.name}`).toBeGreaterThanOrEqual(15);
+      }
       expect(geometry.documentWidth, tab).toBeLessThanOrEqual(geometry.viewportWidth + 1);
     }
 
@@ -358,28 +400,32 @@ for (const viewport of MOBILE_STATISTICS_VIEWPORTS) {
     expect(teamOptionGeometry.documentWidth).toBeLessThanOrEqual(teamOptionGeometry.viewportWidth + 1);
 
     await page.goto('/statistics/standings');
-    const scrollport = page.locator('.statistics-standings-table-scroll').first();
-    await expect(scrollport).toBeVisible();
-    const standingsGeometry = await scrollport.evaluate((element) => {
-      const table = element.querySelector('table');
-      const headers = [...table.querySelectorAll('thead th')];
-      const cells = [...table.querySelectorAll('tbody tr:first-child td')];
-      const portRect = element.getBoundingClientRect();
-      const finalCellRect = cells.at(-1).getBoundingClientRect();
+    // Standings is a div grid with ARIA table roles and no horizontal
+    // scrollport: on a phone every column must fit inside the table itself.
+    const standingsTable = page.getByRole('table', { name: 'Division standings' });
+    await expect(standingsTable).toBeVisible();
+    const standingsGeometry = await standingsTable.evaluate((element) => {
+      const headers = element.querySelectorAll('.statistics-standings-thead-row > [role="columnheader"]');
+      const cells = element.querySelector('.statistics-standings-row').querySelectorAll('[role="cell"]');
+      const tableRect = element.getBoundingClientRect();
+      const finalCellRect = cells[cells.length - 1].getBoundingClientRect();
       return {
         columnCount: headers.length,
         rowColumnCount: cells.length,
         scrollWidth: element.scrollWidth,
         clientWidth: element.clientWidth,
         finalCellRight: finalCellRect.right,
-        portRight: portRect.right,
+        tableRight: tableRect.right,
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
       };
     });
     expect(standingsGeometry.columnCount).toBe(7);
     expect(standingsGeometry.rowColumnCount).toBe(7);
     expect(standingsGeometry.scrollWidth).toBeLessThanOrEqual(standingsGeometry.clientWidth + 1);
-    expect(standingsGeometry.finalCellRight).toBeLessThanOrEqual(standingsGeometry.portRight + 1);
-    await expect(scrollport.locator('.statistics-standings-team-name')).toHaveCount(0);
+    expect(standingsGeometry.finalCellRight).toBeLessThanOrEqual(standingsGeometry.tableRight + 1);
+    expect(standingsGeometry.documentWidth).toBeLessThanOrEqual(standingsGeometry.viewportWidth + 1);
+    await expect(standingsTable.locator('.statistics-standings-team-name')).toHaveCount(0);
   });
 }
 

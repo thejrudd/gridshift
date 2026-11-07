@@ -13,7 +13,6 @@ const draftPicks = [
 
 test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page, {
-    installedVersion: '8.2.2',
     draftPicks,
     transactionsByRound: {
       0: [

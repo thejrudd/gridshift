@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   TEST_LEAGUE_ID,
   TEST_SEASON,
@@ -14,6 +15,10 @@ import {
   tradedPicks,
   weeklyStatsForWeek,
 } from '../fixtures/tradeFixtures.js';
+
+// Fixtures start on the current release so the What's New tour stays closed.
+// Pass `installedVersion` to test an upgrade from an older release.
+const APP_VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 
 export async function installTradeFixtures(page, overrides = {}) {
   const fixtureState = overrides.persistedSleeperState ?? persistedSleeperState();
@@ -41,7 +46,7 @@ export async function installTradeFixtures(page, overrides = {}) {
 
   const installedVersion = Object.prototype.hasOwnProperty.call(overrides, 'installedVersion')
     ? overrides.installedVersion
-    : '8.2.1';
+    : APP_VERSION;
   await page.addInitScript(({ state, version }) => {
     window.localStorage.setItem('sleeper_state_v1', JSON.stringify(state));
     window.localStorage.setItem('nfl-predictor-dark-mode', 'false');

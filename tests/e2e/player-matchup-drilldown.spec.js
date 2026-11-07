@@ -55,7 +55,9 @@ async function openPlayer(page, name = 'Pocket Commander', week = 6) {
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
   await expect(page.locator('.companion-matchup-player-metric--projection').first()).toBeVisible();
-  await page.getByRole('button', { name: `Open ${name}`, exact: true }).click();
+  // An injured row's injury link covers the middle of its primary action, so
+  // click the action's own corner as a user aiming for the name would.
+  await page.getByRole('button', { name: `Open ${name}`, exact: true }).click({ position: { x: 4, y: 4 } });
   const dialog = page.getByRole('dialog', { name: 'Player matchup breakdown' });
   await expect(dialog).toBeVisible();
   return dialog;
@@ -68,7 +70,6 @@ async function captureDrilldown(page, testInfo, suffix = '') {
 
 test.beforeEach(async ({ page }, testInfo) => {
   await installTradeFixtures(page, {
-    installedVersion: '8.9.5',
     players: {
       ...players,
       101: { ...players[101], injury_status: 'Questionable' },
@@ -86,7 +87,8 @@ test.beforeEach(async ({ page }, testInfo) => {
   await page.route('**/api/fantasy/projections*', async (route) => {
     await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false }) });
   });
-  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/6`, async (route) => {
+  // Live matchup reads append a cache-busting query, so match with or without one.
+  await page.route(new RegExp(`^https://api\\.sleeper\\.app/v1/league/${TEST_LEAGUE_ID}/matchups/6(?:\\?.*)?$`), async (route) => {
     const pregame = matchupsForWeek(6).map((matchup) => ({
       ...matchup,
       players_points: Object.fromEntries(Object.keys(matchup.players_points ?? {}).map((id) => [id, 0])),
@@ -110,6 +112,16 @@ test.beforeEach(async ({ page }, testInfo) => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(scoreboardForWeek(week)),
+    });
+  });
+  // Schedule results hydrate through the server ESPN proxy; keep them on the
+  // fixture calendar instead of the real season's results.
+  await page.route('**/api/statistics/scores/espn-week*', async (route) => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ phase: 'regular', scoreboard: scoreboardForAppHydration(week) }),
     });
   });
   await page.route('https://archive-api.open-meteo.com/**', async (route) => {
@@ -137,13 +149,14 @@ test('bench comparison opens only the higher projected eligible bench player', a
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(Object.fromEntries(Object.entries(stats).map(([id, values]) => [id, { ...values, team: players[id]?.team, opp: OPPONENT_BY_TEAM[players[id]?.team], home: week % 2 }]))) });
   });
   const dialog = await openPlayer(page, 'Volume Runner');
-  const suggestion = dialog.locator('.matchup-bench-option');
+  const suggestion = dialog.getByRole('region', { name: 'Better bench option' });
   await expect(suggestion).toBeVisible();
-  await expect(suggestion).toContainText('Bench Runner');
+  await expect(suggestion.getByRole('button')).toHaveCount(1);
+  await expect(suggestion.getByRole('button', { name: 'View Bench Runner bench comparison' })).toBeVisible();
   await captureDrilldown(page, testInfo, '-bench');
   await suggestion.getByRole('button', { name: 'View Bench Runner bench comparison' }).click();
-  await expect(dialog.locator('.matchup-header-identity-line')).toContainText('Bench Runner');
-  await expect(dialog.locator('.matchup-bench-option')).toHaveCount(0);
+  await expect(dialog.locator('.pmd-hd__name')).toContainText('Bench Runner');
+  await expect(dialog.getByRole('region', { name: 'Better bench option' })).toHaveCount(0);
 });
 
 test('own kickoff switches to Actual and preserves the recorded pregame comparison', async ({ page }, testInfo) => {
@@ -152,17 +165,26 @@ test('own kickoff switches to Actual and preserves the recorded pregame comparis
   page.on('request', request => { if (/\/api\/live\/(?:games|game\/)/.test(request.url())) timelineDataRequests += 1; });
   await page.clock.install({ time: new Date(Date.parse(FUTURE_KICKOFF) - 60000) });
   const dialog = await openPlayer(page);
-  await expect(dialog.locator('[data-performance-view="projected"]')).toBeVisible();
+  const body = dialog.locator('.pmd-body');
+  await expect(body).toHaveAttribute('data-game-phase', 'pregame');
+  await expect(dialog.getByText('Projected fantasy points', { exact: true })).toBeVisible();
+  const pregameProjection = (await dialog.locator('.pmd-big').innerText()).match(/\d+\.\d/)?.[0];
+  expect(pregameProjection).toBeTruthy();
   await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('gridshift-matchup-projection-baselines-v2:')))).toBe(true);
   await page.clock.fastForward(61000);
-  await expect(dialog.locator('[data-performance-view="actual"]')).toBeVisible();
+  await expect(body).toHaveAttribute('data-game-phase', 'live');
+  await expect(dialog.getByText('Fantasy points so far', { exact: true })).toBeVisible();
   await expect(dialog.getByText('The play timeline is unavailable for this league. Fantasy Live access is required.')).toBeVisible();
   expect(timelineDataRequests).toBe(0);
-  await expect(dialog.getByRole('button', { name: 'Compare', exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Compare', exact: true }).click();
-  await expect(dialog.locator('[data-performance-view="compare"]')).toBeVisible();
+  // The redesign dropped the Projected/Actual/Compare toggle; the recorded
+  // pregame projection now lives in its own disclosure after kickoff.
+  const recorded = dialog.locator('.pmd-disc details').filter({ has: page.locator('summary', { hasText: `Pregame projection · ${pregameProjection}` }) });
+  await expect(recorded).toHaveCount(1);
+  await recorded.locator('summary').click();
+  await expect(recorded).toContainText('Recorded before kickoff');
   await page.clock.fastForward(2000);
-  await expect(dialog.locator('[data-performance-view="compare"]')).toBeVisible();
+  await expect(body).toHaveAttribute('data-game-phase', 'live');
+  await expect(recorded).toContainText('Recorded before kickoff');
   await captureDrilldown(page, testInfo, '-compare');
 });
 
@@ -180,11 +202,15 @@ test('final timeline retains signed estimates without changing the official zero
   ] }) }));
   const dialog = await openPlayer(page);
   await expect(dialog.getByText('Final fantasy points', { exact: true })).toBeVisible();
-  await expect(dialog.locator('.matchup-performance-primary')).toContainText('0.00');
-  await expect(dialog.getByText('What earned the points', { exact: true })).toBeVisible();
-  await expect(dialog).toContainText('Estimated play contributions');
-  await expect(dialog).toContainText('-0.3');
-  await expect(dialog).toContainText('+1.0');
+  await expect(dialog.locator('.pmd-big')).toContainText('0.00');
+  // Final games list every play with its signed estimate in a disclosure.
+  const plays = dialog.locator('.pmd-disc details').filter({ has: page.locator('summary', { hasText: 'All scoring plays · 2' }) });
+  await expect(plays).toHaveCount(1);
+  await plays.locator('summary').click();
+  await expect(plays.locator('.pmd-play__p')).toHaveCount(2);
+  await expect(plays.locator('.pmd-play__p').filter({ hasText: /^[-−]0\.3$/ })).toHaveCount(1);
+  await expect(plays.locator('.pmd-play__p').filter({ hasText: /^\+1\.0$/ })).toHaveCount(1);
+  await expect(dialog.locator('.pmd-big')).toContainText('0.00');
   await expect(dialog.getByRole('button', { name: 'Compare', exact: true })).toHaveCount(0);
   await captureDrilldown(page, testInfo, '-final');
 });
@@ -218,44 +244,49 @@ test('player drilldown adopts the fresh final status when its cached matchup sch
 
 test('player drilldown presents a responsive pregame start-sit briefing', async ({ page }, testInfo) => {
   const dialog = await openPlayer(page);
-  await expect(dialog.getByText('Projected fantasy points')).toBeVisible();
-  await expect(dialog.locator('.matchup-range__legend')).toContainText('Expected range');
-  await expect(dialog.getByText('Season average', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('Season points rank', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('Questionable', { exact: true })).toBeVisible();
-  await expect(dialog.locator('.matchup-decision-evidence > div').last()).toContainText(/Wind|Weather|31/);
+  await expect(dialog.locator('.pmd-body')).toHaveAttribute('data-game-phase', 'pregame');
+  await expect(dialog.getByText('Projected fantasy points', { exact: true })).toBeVisible();
+  const outcome = dialog.getByRole('region', { name: 'Likely outcome' });
+  await expect(outcome).toContainText('Likely range');
+  await expect(outcome).toContainText('Season average');
+  const hero = dialog.locator('.pdd-k');
+  await expect(hero.locator('.pdd-mk', { hasText: 'Season rank' })).toContainText(/QB\d+/);
+  await expect(dialog.getByRole('button', { name: /^Status Questionable\./ })).toBeVisible();
+  await expect(dialog.locator('.pmd-strip')).toContainText(/31 km\/h wind/);
   await expect(dialog.getByText('Projection vs allowance', { exact: true })).toHaveCount(0);
-  await expect(dialog.locator('.matchup-recent-form__row').first()).toContainText('Wk 5');
+  await expect(dialog.getByRole('region', { name: 'Recent form' }).getByRole('button', { name: /^Week 5 / })).toBeVisible();
 
   const geometry = await dialog.evaluate((element) => {
-    const body = element.querySelector('.matchup-performance-body');
+    const body = element.querySelector('.pmd-body');
     const close = element.querySelector('[aria-label="Close player matchup breakdown"]');
     const bodyRect = body?.getBoundingClientRect();
-    const heroRect = element.querySelector('.matchup-score-hero')?.getBoundingClientRect();
-    const outlookRect = element.querySelector('.matchup-outlook')?.getBoundingClientRect();
-    const rankRect = element.querySelector('.matchup-season-rank')?.getBoundingClientRect();
-    const narrow = element.clientWidth < 1000;
+    const heroRect = element.querySelector('.pdd-k')?.getBoundingClientRect();
+    const rankRect = [...element.querySelectorAll('.pdd-k .pdd-mk')].find(node => node.textContent.includes('Season rank'))?.getBoundingClientRect();
+    const firstSectionRect = element.querySelector('.pdd-sec')?.getBoundingClientRect();
     const closeRect = close?.getBoundingClientRect();
     return {
       dialogWithinViewport: element.getBoundingClientRect().width <= window.innerWidth,
-      referenceOrder: narrow
-        ? Boolean(heroRect && outlookRect && rankRect && heroRect.bottom <= outlookRect.top + 2 && outlookRect.bottom <= rankRect.top + 2)
-        : Boolean(heroRect && rankRect && Math.abs(heroRect.top - rankRect.top) < 2 && heroRect.width > rankRect.width * 1.8),
+      // The projection hero (with its season rank) leads, and the evidence sections follow it.
+      referenceOrder: Boolean(heroRect && rankRect && firstSectionRect
+        && rankRect.top >= heroRect.top - 1 && rankRect.bottom <= heroRect.bottom + 1
+        && heroRect.bottom <= firstSectionRect.top + 2),
       noHorizontalOverflow: Boolean(body && body.scrollWidth <= body.clientWidth + 1),
       bodyHasViewport: Boolean(bodyRect && bodyRect.height > 200),
       closeWidth: closeRect?.width ?? 0,
       closeHeight: closeRect?.height ?? 0,
+      // Touch screens get the 44px target; a mouse keeps the compact 32px control.
+      minimumTarget: window.matchMedia('(pointer: coarse)').matches ? 44 : 32,
     };
   });
   expect(geometry.dialogWithinViewport).toBe(true);
   expect(geometry.referenceOrder).toBe(true);
   expect(geometry.noHorizontalOverflow).toBe(true);
   expect(geometry.bodyHasViewport).toBe(true);
-  expect(geometry.closeWidth).toBeGreaterThanOrEqual(44);
-  expect(geometry.closeHeight).toBeGreaterThanOrEqual(44);
+  expect(geometry.closeWidth).toBeGreaterThanOrEqual(geometry.minimumTarget);
+  expect(geometry.closeHeight).toBeGreaterThanOrEqual(geometry.minimumTarget);
 
   await captureDrilldown(page, testInfo);
-  const details = dialog.locator('details').filter({ has: page.locator('summary', { hasText: 'Season performance' }) });
+  const details = dialog.locator('.pmd-disc details').filter({ has: page.locator('summary', { hasText: 'How projections work' }) });
   await details.locator('summary').click();
   await expect(details).toHaveAttribute('open', '');
   await dialog.getByRole('button', { name: 'Close player matchup breakdown' }).click();
@@ -291,9 +322,12 @@ test('player comparison aligns the game rail with the split hero without a cente
     const rankRail = rankPlot?.querySelector('.pmd-rail');
     const rankPlayers = [...(rankPlot?.querySelectorAll('.pmd-cmp-rank-player') ?? [])];
     const rankAvatars = rankPlayers.map(player => player.querySelector('.pmd-cmp-rank-avatar')?.getBoundingClientRect());
-    const rankNames = rankPlayers.map(player => player.querySelector('.pmd-cmp-rank-player__name')?.getBoundingClientRect());
-    const rankLabels = rankPlayers.map(player => player.querySelector('.pmd-cmp-rank-player__rank')?.textContent.trim() ?? '');
-    const rankLabelBounds = rankPlayers.map(player => player.querySelector('.pmd-cmp-rank-player__rank')?.getBoundingClientRect());
+    // Names and ranks sit in callouts below the rail, one per side, rather than on the markers.
+    const rankCallouts = [...(rankPlot?.querySelectorAll('.pmd-cmp-rank-callout') ?? [])];
+    const rankNames = rankCallouts.map(callout => callout.querySelector('.pmd-cmp-rank-player__name')?.getBoundingClientRect());
+    const rankLabels = rankCallouts.map(callout => callout.querySelector('.pmd-cmp-rank-player__rank')?.textContent.trim() ?? '');
+    const rankLabelBounds = rankCallouts.map(callout => callout.querySelector('.pmd-cmp-rank-player__rank')?.getBoundingClientRect());
+    const rankCalloutsBelowRail = Boolean(rankRail && rankCallouts.length === 2 && rankCallouts.every(callout => callout.getBoundingClientRect().top >= rankAvatars.reduce((bottom, rect) => Math.max(bottom, rect?.bottom ?? 0), 0) - 1));
     const rankBoundaries = [...(rankPlot?.querySelectorAll('.pmd-cmp-rank-boundary') ?? [])];
     const rankBoundaryBounds = rankBoundaries.map(node => node.getBoundingClientRect());
     const rankMarkerCenters = rankPlayers.map(player => player.getBoundingClientRect().left);
@@ -331,10 +365,12 @@ test('player comparison aligns the game rail with the split hero without a cente
       rankPlayerRanks: rankLabels,
       rankRowCount: element.querySelectorAll('.pmd-cmp-rank-row').length,
       rankBoundaryLabels: rankBoundaries.map(node => node.textContent.trim()),
-      rankLabelsUnderNames: rankLabelBounds.every((rect, index) => rect && rankNames[index] && rect.top >= rankNames[index].bottom - 1),
+      rankLabelsUnderNames: rankLabelBounds.length === 2 && rankLabelBounds.every((rect, index) => rect && rankNames[index] && rect.top >= rankNames[index].bottom - 1),
+      rankCalloutsBelowRail,
       rankBoundariesAtRail: Boolean(rankRail && rankBoundaryBounds.length === 2 && rankBoundaryBounds.every(rect => Math.abs((rect.top + rect.height / 2) - (rankRail.getBoundingClientRect().top + rankRail.getBoundingClientRect().height / 2)) <= 4)),
       rankMarkersClearOfBoundaries: Boolean(rankBoundaryBounds.length === 2 && rankAvatars[0] && rankAvatars[1] && rankAvatars[0].left >= rankBoundaryBounds[0].right - 1 && rankAvatars[1].right <= rankBoundaryBounds[1].left + 1),
       rankMarkerCount: rankMarkerCenters.length,
+      rankBoundaryOffsets: rankRail ? rankBoundaryBounds.map(rect => Math.round(((rect.top + rect.height / 2) - (rankRail.getBoundingClientRect().top + rankRail.getBoundingClientRect().height / 2)) * 10) / 10) : [],
       rankLineMarkerCount: rankPlot?.querySelectorAll('.pmd-rail__mark').length ?? 0,
       rankAvatarRadii,
       rankAvatarCenterDeltas,
@@ -371,7 +407,12 @@ test('player comparison aligns the game rail with the split hero without a cente
   expect(geometry.rankRowCount).toBe(0);
   expect(geometry.rankBoundaryLabels).toEqual(['Best', 'Worst']);
   expect(geometry.rankLabelsUnderNames).toBe(true);
-  expect(geometry.rankBoundariesAtRail).toBe(true);
+  expect(geometry.rankCalloutsBelowRail).toBe(true);
+  // App regression since v9.3.0: .pmd-cmp-rank-scale became an in-flow block
+  // whose 14px top margin collapses through .pmd-cmp-rank-plot, so the rail
+  // sits 14px higher than the absolutely positioned Best/Worst labels expect
+  // (top: 39px). Soft so the rest of the layout is still checked.
+  expect.soft(geometry.rankBoundariesAtRail, `Best/Worst label offsets from the rail centre: ${JSON.stringify(geometry.rankBoundaryOffsets)}px`).toBe(true);
   expect(geometry.rankMarkersClearOfBoundaries).toBe(true);
   expect(geometry.rankMarkerCount).toBe(2);
   expect(geometry.rankLineMarkerCount).toBe(0);
@@ -444,15 +485,22 @@ test('player comparison anchors recorded projection labels below each side of th
       const trackRect = track?.getBoundingClientRect();
       const tickRect = tick?.getBoundingClientRect();
       const labelRect = label?.getBoundingClientRect();
+      // A label centres under its tick but is held 18px inside the rail ends
+      // so a projection at the edge never spills out of its column.
+      const tickCenter = tickRect ? tickRect.left + tickRect.width / 2 : NaN;
+      const anchor = trackRect ? Math.min(Math.max(tickCenter, trackRect.left + 18), trackRect.right - 18) : NaN;
       return {
         belowTrack: Boolean(trackRect && labelRect && labelRect.top >= trackRect.bottom - 1),
-        alignedToTick: Boolean(tickRect && labelRect && Math.abs((tickRect.left + tickRect.width / 2) - (labelRect.left + labelRect.width / 2)) <= 2),
+        alignedToTick: Boolean(tickRect && labelRect && Math.abs(anchor - (labelRect.left + labelRect.width / 2)) <= 2),
+        tickCenter,
+        labelCenter: labelRect ? labelRect.left + labelRect.width / 2 : NaN,
+        track: trackRect ? [trackRect.left, trackRect.right] : null,
       };
     };
     return { left: sideGeometry('left'), right: sideGeometry('right') };
   });
   expect(geometry.left.belowTrack).toBe(true);
-  expect(geometry.left.alignedToTick).toBe(true);
+  expect(geometry.left.alignedToTick, JSON.stringify(geometry.left)).toBe(true);
   expect(geometry.right.belowTrack).toBe(true);
-  expect(geometry.right.alignedToTick).toBe(true);
+  expect(geometry.right.alignedToTick, JSON.stringify(geometry.right)).toBe(true);
 });

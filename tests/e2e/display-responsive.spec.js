@@ -29,7 +29,7 @@ const REPRESENTATIVE_ROUTES = [
 
 test.beforeEach(async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-desktop', 'The file owns an explicit multi-viewport matrix.');
-  await installTradeFixtures(page, { installedVersion: '8.3.0' });
+  await installTradeFixtures(page);
 });
 
 test('display size defaults, applies live, and persists from the desktop sidebar', async ({ page }) => {
@@ -120,17 +120,21 @@ test('expanded desktop sidebar keeps every option and the version visible on sho
         await expect.poll(() => control.locator('.sidebar-footer-tooltip').evaluate((element) => getComputedStyle(element).opacity)).toBe('1');
         const tooltipGeometry = await control.locator('.sidebar-footer-tooltip').evaluate((element) => {
           const tooltipRect = element.getBoundingClientRect();
-          const sidebarRect = element.closest('.app-sidebar').getBoundingClientRect();
+          const controlRect = element.parentElement.getBoundingClientRect();
           return {
             position: getComputedStyle(element).position,
             left: tooltipRect.left,
             right: tooltipRect.right,
-            sidebarRight: sidebarRect.right,
+            controlRight: controlRect.right,
+            verticalOffset: Math.abs((tooltipRect.top + tooltipRect.bottom) / 2 - (controlRect.top + controlRect.bottom) / 2),
             viewportWidth: window.innerWidth,
           };
         });
+        // The expanded sidebar lays the footer icons out in one row, so each
+        // tooltip opens beside its own icon rather than past the sidebar edge.
         expect(tooltipGeometry.position).toBe('fixed');
-        expect(tooltipGeometry.left).toBeGreaterThanOrEqual(tooltipGeometry.sidebarRight);
+        expect(tooltipGeometry.left).toBeGreaterThanOrEqual(tooltipGeometry.controlRight);
+        expect(tooltipGeometry.verticalOffset).toBeLessThanOrEqual(1);
         expect(tooltipGeometry.right).toBeLessThanOrEqual(tooltipGeometry.viewportWidth);
       }
 
@@ -233,7 +237,7 @@ test('Advanced Mode Cancel discards game picks and returns to the team list', as
   const dismissUpdate = page.getByRole('button', { name: 'Dismiss update notice', exact: true });
   if (await dismissUpdate.count()) await dismissUpdate.click();
 
-  await page.getByRole('button', { name: 'Advanced Mode', exact: true }).click();
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
   const teamRow = page.locator('.predictions-advanced-team-row').first();
   await expect(teamRow).toBeVisible();
   await teamRow.click();
@@ -246,7 +250,7 @@ test('Advanced Mode Cancel discards game picks and returns to the team list', as
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
   await expect(page).toHaveURL(/\/predictions$/);
-  await expect(page.getByRole('heading', { name: 'Advanced Mode', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Advanced', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.predictions-team-page')).toHaveCount(0);
   await expect(page.locator('.predictions-advanced-team-row').first()).toContainText('No record yet');
 });
@@ -300,7 +304,8 @@ for (const preset of ['compact', 'large']) {
 test('wide routes honor readable, data, and workbench frames', async ({ page }) => {
   await page.setViewportSize({ width: 2560, height: 1440 });
   const checks = [
-    ['/fantasy/scoring', '.page-frame-readable', 1200],
+    ['/trade/inbox', '.page-frame-readable', 1200],
+    ['/fantasy/scoring', '.page-frame-workbench', 1920],
     ['/fantasy/rosters', '.page-frame-data', 1600],
     ['/fantasy/matchups', '.page-frame-workbench', 1920],
     ['/draft/war-room', '.draft-page', 1920],

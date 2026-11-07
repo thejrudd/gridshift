@@ -133,7 +133,6 @@ const PHONE_VIEWPORTS = [
 
 test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page, {
-    installedVersion: '8.6.0',
     players: injuryPlayers,
     drafts: preDraft,
   });
@@ -333,7 +332,6 @@ test('Board search keeps Gone status separate from the selected card metric', as
 
 test('War Room and Board hide positions the league cannot roster', async ({ page }, testInfo) => {
   await installTradeFixtures(page, {
-    installedVersion: '8.4.1',
     players: playersWithUnsupportedIdp,
     drafts: preDraft,
   });
@@ -535,7 +533,6 @@ async function installBoardState(page, {
   draftOverride = preDraft,
 } = {}) {
   await installTradeFixtures(page, {
-    installedVersion: '8.6.0',
     league: leagueOverride,
     leaguesBySeason: { [TEST_SEASON]: [leagueOverride] },
     persistedSleeperState: {
@@ -568,17 +565,21 @@ async function installBoardState(page, {
   });
 }
 
+// Desktop keeps Board view, card labels, and bye-conflict controls inline; the
+// phone Board tucks them behind the filter button.
 async function openBoardControls(page, mobile) {
-  // Board view, card labels, and bye-conflict controls are always visible on
-  // mobile. Retain the helper so each behavior test reads the same on both
-  // surfaces without reintroducing a redundant submenu.
-  void page;
-  void mobile;
+  if (!mobile) return;
+  const open = page.getByRole('button', { name: 'Open board filters' });
+  const close = page.getByRole('button', { name: 'Close board filters' });
+  await expect(open.or(close)).toBeVisible({ timeout: 20_000 });
+  if (await open.isVisible()) await open.click();
+  await expect(close).toBeVisible();
 }
 
 async function closeBoardControls(page, mobile) {
-  void page;
-  void mobile;
+  if (!mobile) return;
+  const close = page.getByRole('button', { name: 'Close board filters' });
+  if (await close.count()) await close.click();
 }
 
 async function setBoardCardMetric(page, mobile, metricId, buttonLabel) {
@@ -652,15 +653,14 @@ test('Bye metric and conflict highlighting stay independent across Board surface
   await expect(partnerCard.getByRole('button', { name: /Open Partner Quarterback.*Pocket Commander/ })).toBeVisible();
 
   if (mobile) {
-    await expect(page.getByRole('button', { name: 'View Available Players' })).toBeVisible();
-    await page.locator('.draft-board-mobile-available__summary').click();
-    await expect(page.getByRole('button', { name: 'Hide Available Players' })).toBeVisible();
+    await page.getByRole('button', { name: 'Open available players' }).click();
+    await expect(page.getByRole('button', { name: 'Close available players' })).toBeVisible();
   }
   await page.getByRole('button', { name: 'All Players', exact: true }).filter({ visible: true }).click();
   const philadelphiaAvailableCard = page.locator('.draft-board-available-list:visible .draft-board-card-shell[data-player-id="302"]').first();
   await expect(philadelphiaAvailableCard).not.toHaveClass(/is-bye-conflict/);
   await expect(philadelphiaAvailableCard.locator('.draft-bye-conflict-marker')).toHaveCount(0);
-  if (mobile) await page.locator('.draft-board-mobile-available__summary').click();
+  if (mobile) await page.getByRole('button', { name: 'Close available players' }).click();
 
   await openBoardControls(page, mobile);
   await setBoardCardMetric(page, mobile, 'sleeper', 'Rank');
@@ -738,6 +738,9 @@ test('a Board target drafted by another manager clears its roster conflict on re
   await expect(visibleBoardCard(page, '202')).toHaveClass(/is-positional-bye-conflict/);
 
   livePicks.push({ roster_id: 2, player_id: '202', round: 1, pick_no: 1 });
+  // Sleeper advances last_picked with every pick, which is what tells the
+  // Board to refetch picks instead of waiting for the next live poll.
+  liveDraft[0] = { ...liveDraft[0], last_picked: Date.now() };
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(visibleBoardCard(page, '101')).not.toHaveClass(/is-bye-conflict/, { timeout: 10_000 });
   const draftedCard = visibleBoardCard(page, '202');
@@ -778,6 +781,9 @@ test('desktop Board keeps card controls and drafting status inside one fixed car
   await expect(visibleBoardCard(page, '202').getByText('Drafted by Partner Team', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Bye', exact: true }).click();
 
+  // A drafted card keeps the dense single-row card contract: the owner label
+  // replaces the position line instead of adding a status row.
+  const heights = [];
   for (const viewport of [
     { width: 1280, height: 720 },
     { width: 1440, height: 600 },
@@ -786,34 +792,39 @@ test('desktop Board keeps card controls and drafting status inside one fixed car
     await page.setViewportSize(viewport);
     const layout = await visibleBoardCard(page, '202').evaluate((card) => {
       const row = card.querySelector('.draft-player-row--board-card');
-      const status = card.querySelector('.companion-player-row__status-slot');
-      const actions = card.querySelector('.companion-player-row__actions');
+      const owner = Array.from(card.querySelectorAll('*'))
+        .find((element) => element.childElementCount === 0 && element.textContent.trim() === 'Drafted by Partner Team');
+      const remove = card.querySelector('[aria-label="Remove Partner Quarterback from board"]');
       const cardRect = card.getBoundingClientRect();
-      const rowRect = row?.getBoundingClientRect();
-      const statusRect = status?.getBoundingClientRect();
-      const actionsRect = actions?.getBoundingClientRect();
+      const inside = (element) => {
+        const rect = element?.getBoundingClientRect();
+        return Boolean(rect && rect.left >= cardRect.left - 1 && rect.right <= cardRect.right + 1
+          && rect.top >= cardRect.top - 1 && rect.bottom <= cardRect.bottom + 1);
+      };
       return {
         cardHeight: cardRect.height,
-        rowHeight: rowRect?.height ?? 0,
+        rowHeight: row?.getBoundingClientRect().height ?? 0,
         cardWidth: cardRect.width,
         rowScrollWidth: row?.scrollWidth ?? 0,
         rowClientWidth: row?.clientWidth ?? 0,
-        statusInsideCard: Boolean(statusRect && statusRect.left >= cardRect.left - 1 && statusRect.right <= cardRect.right + 1),
-        statusBelowActions: Boolean(statusRect && actionsRect && statusRect.top >= actionsRect.bottom - 1),
+        ownerInsideCard: inside(owner),
+        removeInsideCard: inside(remove),
       };
     });
+    const undraftedHeight = await visibleBoardCard(page, '101').evaluate((card) => card.getBoundingClientRect().height);
     expect(layout.cardWidth).toBeGreaterThan(300);
-    expect(layout.cardHeight).toBe(94);
-    expect(layout.rowHeight).toBe(94);
+    expect(layout.rowHeight).toBe(layout.cardHeight);
+    expect(layout.cardHeight).toBe(undraftedHeight);
     expect(layout.rowScrollWidth).toBeLessThanOrEqual(layout.rowClientWidth + 2);
-    expect(layout.statusInsideCard).toBe(true);
-    expect(layout.statusBelowActions).toBe(true);
+    expect(layout.ownerInsideCard).toBe(true);
+    expect(layout.removeInsideCard).toBe(true);
+    heights.push(layout.cardHeight);
   }
+  expect(new Set(heights).size).toBe(1);
 });
 
 test('War Room stays available while a draft is in progress', async ({ page }, testInfo) => {
   await installTradeFixtures(page, {
-    installedVersion: '8.4.1',
     players,
     drafts: [{ ...preDraft[0], status: 'drafting' }],
   });
@@ -829,7 +840,6 @@ test('War Room stays available while a draft is in progress', async ({ page }, t
 
 test('War Room closes once a draft is complete', async ({ page }) => {
   await installTradeFixtures(page, {
-    installedVersion: '8.4.1',
     players,
     drafts: [{ ...preDraft[0], status: 'complete' }],
   });
