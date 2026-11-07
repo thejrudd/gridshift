@@ -118,6 +118,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - BALLDONTLIE, CFBD/CollegeFootballData, and similar paid credentials are secrets. Keep requests server-side and never expose keys in the client bundle.
 - BALLDONTLIE (BDL) is optional. Any feature that adds or extends a BDL dependency must also be designed and tested for a server with no BDL API key and for an unreachable provider: fall back to Sleeper or GridShift data, or show a plain unavailable message. Keep provider names out of fallback copy, and add no-key coverage alongside the feature's tests (for the player drilldown, the harness's `?bdl=0` mode in tests/drilldown/player-drilldown.spec.js).
 - Never auto-commit, bump versions, push, deploy, or perform external writes unless the user explicitly requests that action.
+- Name every branch for what it is for (for example `live-stat-refresh-fix` or `v9.3-scores-dashboard`). Never put an AI or tool name in a branch name (`claude/`, `codex/`) or leave a generated suffix; rename such a branch before committing to it.
 - Read docs/Release Workflow.md before committing, preparing a release, changing release metadata, or generating release notes.
 - Before running the What's New tour gate for a commit, present the genuinely new user-facing capabilities in the proposed commit scope (or say there are none) and wait for the user's confirmation.
 
