@@ -2,6 +2,16 @@ import { expect, test } from '@playwright/test';
 import { installTradeFixtures } from './tradeTestHarness.js';
 import { TEST_USER_ID } from '../fixtures/tradeFixtures.js';
 
+// Phones reach the sync action through the header menu; wider screens show it
+// in the sidebar.
+async function openSyncAction(page, name) {
+  const action = page.getByRole('button', { name, exact: true });
+  const menu = page.getByRole('button', { name: 'Open menu' });
+  await expect(action.or(menu).first()).toBeVisible();
+  if (!(await action.isVisible()) && (await menu.isVisible())) await menu.click();
+  await action.click();
+}
+
 async function dismissWhatsNewIfPresent(page) {
   const dismiss = page.getByRole('button', { name: 'Dismiss' });
   try {
@@ -56,7 +66,7 @@ test('Draft Sync offers generate, cancel, and pair flows from one dialog', async
 
   await dismissWhatsNewIfPresent(page);
 
-  await page.getByRole('button', { name: 'Draft Sync', exact: true }).click();
+  await openSyncAction(page, 'Draft Sync');
   const dialog = page.getByRole('dialog', { name: 'Device Sync' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Generate pairing code' })).toBeVisible();
@@ -94,7 +104,7 @@ test('Draft Sync replaces the pairing code with Paired when the other device cla
 
   await dismissWhatsNewIfPresent(page);
 
-  await page.getByRole('button', { name: 'Draft Sync', exact: true }).click();
+  await openSyncAction(page, 'Draft Sync');
   const dialog = page.getByRole('dialog', { name: 'Device Sync' });
   await dialog.getByRole('button', { name: 'Generate pairing code' }).click();
   await expect(dialog.getByText('Paired', { exact: true }).last()).toBeVisible();
@@ -255,7 +265,7 @@ test('Predictions Sync code generator replaces the initial shared state without 
 
   await page.goto('/predictions');
   await dismissWhatsNewIfPresent(page);
-  await page.getByRole('button', { name: 'Device Sync', exact: true }).click();
+  await openSyncAction(page, 'Device Sync');
   const dialog = page.getByRole('dialog', { name: 'Device Sync' });
   await dialog.getByRole('button', { name: 'Generate pairing code' }).click();
 

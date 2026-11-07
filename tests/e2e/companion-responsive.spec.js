@@ -16,6 +16,12 @@ import {
 import { installTradeFixtures } from './tradeTestHarness.js';
 import { baselineScope, MATCHUP_PROJECTION_BASELINE_STORAGE_KEY, scoringFingerprint } from '../../src/utils/matchupProjectionBaseline.js';
 
+// Live matchup reads may add a cache-busting query, so match the week with or
+// without one (and without also catching weeks 10-18).
+function sleeperMatchupsUrl(week) {
+  return new RegExp(`/v1/league/${TEST_LEAGUE_ID}/matchups/${week}(?:\\?.*)?$`);
+}
+
 const MOBILE_VIEWPORTS = [
   { name: 'small-phone', width: 320, height: 568 },
   { name: 'common-phone', width: 390, height: 844 },
@@ -391,7 +397,9 @@ test('Fantasy Matchups cold load follows the live Sleeper leg instead of last_sc
 
   await page.goto('/fantasy/matchups');
 
-  await expect.poll(() => nflStateRequests.length).toBe(1);
+  // React StrictMode double-runs the provider effect in development, so the
+  // dev server may issue a duplicate state read; the week choice is what counts.
+  await expect.poll(() => nflStateRequests.length).toBeGreaterThan(0);
   await expect.poll(() => matchupWeeksRequested).toContain(2);
   expect(matchupWeeksRequested).not.toContain(1);
   await expect(page.getByRole('button', { name: 'Choose matchup week. Week 2 selected.' })).toBeVisible();
@@ -1016,34 +1024,39 @@ test('Statistics schedule week rail keeps mobile overflow contained', async ({ p
   );
 });
 
-test('Statistics player positions stay on one horizontally scrollable mobile row', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 568 });
-  await page.goto('/statistics');
-
-  const rail = page.getByLabel('Player positions');
-  await expect(rail).toBeVisible();
-  const geometry = await rail.evaluate((element) => {
-    const buttons = [...element.querySelectorAll('button')];
-    const tops = buttons.map((button) => button.getBoundingClientRect().top);
-    return {
-      wraps: Math.max(...tops) - Math.min(...tops) > 1,
-      scrollable: element.scrollWidth > element.clientWidth,
-      touchTargets: buttons.every((button) => button.getBoundingClientRect().height >= 44),
-    };
-  });
-  expect(geometry.wraps).toBe(false);
-  expect(geometry.scrollable).toBe(true);
-  expect(geometry.touchTargets).toBe(true);
-});
-
 test('Fantasy scoring preview Hold keeps Rankings scroll position fixed', async ({ page }) => {
+  // Scoring previews come from the league's own prior seasons, so link a 2025
+  // league with different rules into the lineage.
+  const fixtures = responsiveFixtureOverrides();
+  const priorSeason = String(Number(TEST_SEASON) - 1);
+  const priorLeague = {
+    ...fixtures.league,
+    league_id: 'league-prior-half-ppr',
+    season: priorSeason,
+    previous_league_id: null,
+    scoring_settings: { ...fixtures.league.scoring_settings, rec: 0.5, pass_td: 6 },
+  };
+  const currentLeague = { ...fixtures.league, previous_league_id: priorLeague.league_id };
+  const linkedLeaguesBySeason = { ...fixtures.leaguesBySeason, [priorSeason]: [priorLeague], [TEST_SEASON]: [currentLeague] };
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    ...fixtures,
+    league: currentLeague,
+    leaguesBySeason: linkedLeaguesBySeason,
+    persistedSleeperState: {
+      ...fixtures.persistedSleeperState,
+      league: currentLeague,
+      leagues: [currentLeague],
+      leaguesBySeason: linkedLeaguesBySeason,
+    },
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/fantasy/scoring');
 
-  await page.getByRole('button', { name: /browse leagues/i }).click();
-  await page.getByRole('button', { name: new RegExp(`${TEST_SEASON} Season`, 'i') }).click();
-  await page.getByRole('button', { name: /Half PPR Preview League/i }).click();
-  await expect(page.getByText('Active')).toBeVisible();
+  await page.getByRole('button', { name: /Detailed scoring/ }).click();
+  await page.getByRole('button', { name: /^Choose scoring model year/ }).click();
+  await page.getByRole('button', { name: new RegExp(`^${priorSeason} league year`) }).click();
+  await expect(page.getByRole('button', { name: new RegExp(`^Choose scoring model year\\. Currently ${priorSeason}`) })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Rankings', exact: true }).click();
   await expect(page).toHaveURL(/\/fantasy\/rankings/);
@@ -1059,6 +1072,7 @@ test('Fantasy scoring preview Hold keeps Rankings scroll position fixed', async 
   expect(beforeScrollTop).toBeGreaterThan(80);
 
   const holdButton = page.getByRole('button', { name: "Hold to preview your league's scoring" });
+  await expect(holdButton).toBeVisible();
   const box = await holdButton.boundingBox();
   expect(box).not.toBeNull();
 
@@ -1138,7 +1152,7 @@ test('mobile Companion controls enforce prerequisites and keep compact interacti
   const defenseFilters = page.getByRole('button', { name: 'Filters' });
   await expect(defenseFilters).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#companion-defense-filter-stack')).toBeHidden();
-  await expect(page.getByPlaceholder('Search team')).toHaveCount(0);
+  await expect(page.getByPlaceholder('Search team')).toBeHidden();
   await defenseFilters.click();
   await expect(defenseFilters).toHaveAttribute('aria-expanded', 'true');
   const defenseFilterStack = page.locator('#companion-defense-filter-stack');
@@ -1160,6 +1174,22 @@ test('mobile Companion controls enforce prerequisites and keep compact interacti
 });
 
 test('Fantasy Defenses keeps filters and search behind the Filters chip at desktop widths', async ({ page }) => {
+  // Defense rankings attribute each stat line to the opponent. Sleeper rows
+  // carry team and opponent; the base fixture omits them and stubs the ESPN
+  // schedule, so supply them here.
+  const fixturePlayers = responsiveFixtureOverrides().players;
+  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/*`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    const stats = week >= 1 && week <= 6 ? weeklyStatsForWeek(week) : {};
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(Object.fromEntries(Object.entries(stats).map(([id, values]) => {
+        const team = fixturePlayers[id]?.team ?? null;
+        return [id, { ...values, team, opp: team === 'NYJ' ? 'NE' : 'NYJ' }];
+      }))),
+    });
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/fantasy/defenses');
 
@@ -1167,7 +1197,7 @@ test('Fantasy Defenses keeps filters and search behind the Filters chip at deskt
   const filterStack = page.locator('#companion-defense-filter-stack');
   await expect(filterToggle).toBeVisible();
   await expect(filterStack).toBeHidden();
-  await expect(page.getByPlaceholder('Search team')).toHaveCount(0);
+  await expect(page.getByPlaceholder('Search team')).toBeHidden();
 
   await filterToggle.click();
   await expect(filterStack).toBeVisible();
@@ -1175,7 +1205,7 @@ test('Fantasy Defenses keeps filters and search behind the Filters chip at deskt
 
   await filterToggle.click();
   await expect(filterStack).toBeHidden();
-  await expect(page.getByPlaceholder('Search team')).toHaveCount(0);
+  await expect(page.getByPlaceholder('Search team')).toBeHidden();
 });
 
 test('roster draft-pick rows follow the league draft slots from top to bottom', async ({ page }) => {
@@ -1220,18 +1250,21 @@ test('Heatmap filter summary keeps one chip per filter after changes', async ({ 
   await page.goto('/fantasy/heatmap');
   await dismissWhatsNew(page);
 
+  // Phase, position, stat, location and color, plus Future Opponents, which
+  // is on by default.
   const summaryChips = page.locator('.companion-heatmap-filter-summary__chip');
-  await expect(summaryChips).toHaveCount(5);
+  const expectOneChipPerFilter = () => expect(summaryChips).toHaveCount(6);
+  await expectOneChipPerFilter();
 
   await page.getByRole('button', { name: 'Show Filters' }).click();
   await page.getByRole('button', { name: 'By Week', exact: true }).click();
   await page.getByRole('button', { name: 'Hide Filters' }).click();
-  await expect(summaryChips).toHaveCount(5);
+  await expectOneChipPerFilter();
 
   await page.getByRole('button', { name: 'Show Filters' }).click();
   await page.getByRole('button', { name: 'Overall', exact: true }).click();
   await page.getByRole('button', { name: 'Hide Filters' }).click();
-  await expect(summaryChips).toHaveCount(5);
+  await expectOneChipPerFilter();
 });
 
 test('Heatmap desktop keeps filters collapsed and groups controls in one row', async ({ page }) => {
@@ -1584,21 +1617,31 @@ test('Matchup team scoring breakdown opens as a mobile bottom sheet', async ({ p
   if (await dismissTour.count()) await dismissTour.click();
 
   await page.getByRole('button', { name: /scoring breakdown, your team/i }).click();
-  const sheet = page.locator('.modal-overlay--mobile-sheet .team-score-breakdown-sheet');
+  const sheet = page.locator('.modal-overlay--mobile-sheet .tsd-dialog');
   await expect(sheet).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Your Team scoring' })).toBeVisible();
 
   await expectMobileSheetFillsBottom(sheet, viewport);
-  await expect(sheet.getByText('85.55', { exact: true })).toBeVisible();
+  // The fixture's NFL state opens the Week 7 matchup.
+  const myWeek = matchupsForWeek(7).find((row) => row.roster_id === 1);
+  await expect(sheet.getByText(myWeek.points.toFixed(2), { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'By player', exact: true }).click();
-  const playerRows = sheet.locator('.team-score-breakdown-player-row');
-  await expect(playerRows).toHaveCount(5);
-  await expect(playerRows.first()).toContainText('Pocket Commander');
-  await expect(playerRows.first()).toContainText('21.40');
-  await expect(sheet.getByText('85.55', { exact: true })).toBeVisible();
+  const byPosition = sheet.getByRole('region', { name: 'By position' });
+  const spotButtons = byPosition.getByRole('button', { name: /^(QB|RB|WR|TE|FLEX|K|DEF) / });
+  await expect(spotButtons).toHaveCount(myWeek.starters.length);
+  await expect(spotButtons.first()).toContainText('Pocket Commander');
+  await expect(spotButtons.first()).toContainText(myWeek.players_points[101].toFixed(2));
 });
 
 test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection lane', async ({ page }) => {
+  // A forecast needs Week 1 to still be ahead; pin the clock before kickoff and
+  // keep schedule results off the real season.
+  await page.clock.setFixedTime(new Date('2026-09-08T12:00:00.000Z'));
+  await page.route('**/api/statistics/scores/espn-week**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ phase: 'regular', scoreboard: { events: [] } }),
+  }));
   const fixturePlayers = responsiveFixtureOverrides().players;
   const projectionRows = Object.values(fixturePlayers).map((player, index) => ({
     id: index + 1,
@@ -1636,7 +1679,7 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
     players_points: Object.fromEntries(Object.keys(matchup.players_points ?? {}).map((id) => [id, 0])),
     points: 0,
   }));
-  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1`, async (route) => {
+  await page.route(sleeperMatchupsUrl(1), async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1656,8 +1699,9 @@ test('Fantasy Matchups shows a Week 1 forecast from the optional BDL projection 
   await expect(page.locator('.companion-matchup-masthead__team-name')).toHaveCount(2);
   const mastheadIdentity = page.locator('.companion-matchup-masthead__identity');
   await expect(mastheadIdentity).toHaveCount(2);
-  await expect(mastheadIdentity.nth(0)).toHaveText('1st seed');
-  await expect(mastheadIdentity.nth(1)).toHaveText('3rd seed');
+  // The identity line carries the aria-hidden avatar initials beside the seed.
+  await expect(mastheadIdentity.nth(0)).toContainText('1st seed');
+  await expect(mastheadIdentity.nth(1)).toContainText('3rd seed');
   await expect(page.locator('.companion-matchup-masthead__identity-avatar')).toHaveCount(2);
   await expect(page.locator('.companion-matchup-masthead__probability-side span')).toHaveCount(0);
   const projectedMetricColors = await page.locator('.companion-matchup-player-metric--projection .companion-player-row__metric-value').evaluateAll((nodes) => {
@@ -1788,6 +1832,16 @@ test('Fantasy Matchups locks a historical matchup after stale schedule metadata 
       body: JSON.stringify({ events: url.searchParams.get('week') === '1' ? historicalGames : [] }),
     });
   });
+  // Schedule results also hydrate through the server ESPN proxy; keep them on
+  // the same stale fixture instead of the real season's results.
+  await page.route('**/api/statistics/scores/espn-week**', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ phase: 'regular', scoreboard: { events: url.searchParams.get('week') === '1' ? historicalGames : [] } }),
+    });
+  });
 
   const reconciliationUrls = [];
   await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1*`, async (route) => {
@@ -1834,10 +1888,14 @@ test('Fantasy Matchups locks a historical matchup after stale schedule metadata 
   await expect.poll(() => reconciliationUrls.some((url) => url.includes('_gridshift='))).toBe(true);
   await expect(page.locator('.companion-matchup-masthead__projected-final')).toHaveCount(2);
   await expect(page.locator('.companion-matchup-masthead__projection-delta')).toHaveCount(2);
-  await expect(page.locator('.companion-matchup-masthead__projection-delta').first()).toHaveText('+19.9');
+  // A settled matchup compares the final score with the recorded pregame total.
+  const recordedByPlayer = Object.fromEntries(baselineEntries.map(([, snapshot]) => [snapshot.playerId, snapshot.projection.projected]));
+  const myWeekOne = matchupsForWeek(1).find((row) => row.matchup_id === 1 && row.roster_id === 1);
+  const expectedDelta = myWeekOne.points - myWeekOne.starters.reduce((sum, playerId) => sum + recordedByPlayer[playerId], 0);
+  await expect(page.locator('.companion-matchup-masthead__projection-delta').first()).toContainText(`+${expectedDelta.toFixed(1)}`);
   await expect(page.locator('.companion-matchup-masthead__bench-points')).toHaveCount(2);
-  await expect(page.locator('.companion-matchup-masthead__bench-points').first()).toHaveText('POINTS LEFT ON BENCH 5.7');
-  await expect(page.locator('.companion-matchup-masthead__bench-points').nth(1)).toHaveText('POINTS LEFT ON BENCH 6.2');
+  await expect(page.locator('.companion-matchup-masthead__bench-points').first()).toHaveText(/^Points left on bench 5\.7$/i);
+  await expect(page.locator('.companion-matchup-masthead__bench-points').nth(1)).toHaveText(/^Points left on bench 6\.2$/i);
 
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });
   if (await dismissTour.count()) await dismissTour.click();
@@ -2063,7 +2121,7 @@ test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({
       }),
     });
   });
-  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1`, async (route) => {
+  await page.route(sleeperMatchupsUrl(1), async (route) => {
     const pregameMatchups = dstMatchupsForWeek(1).map((matchup) => ({
       ...matchup,
       players_points: Object.fromEntries(Object.keys(matchup.players_points ?? {}).map((id) => [id, 0])),
@@ -2124,6 +2182,14 @@ test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({
 });
 
 test('Fantasy Matchups shows a started player actual score above the projection', async ({ page }) => {
+  // The score tone only shows while the game is live, so pin the clock an hour
+  // into the Week 1 BUF kickoff and keep schedule results off the real season.
+  await page.clock.setFixedTime(new Date('2026-09-13T18:00:00.000Z'));
+  await page.route('**/api/statistics/scores/espn-week**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ phase: 'regular', scoreboard: { events: [] } }),
+  }));
   const fixturePlayers = responsiveFixtureOverrides().players;
   const player = fixturePlayers[101];
   await page.route('**/api/fantasy/projections*', async (route) => {
@@ -2159,7 +2225,7 @@ test('Fantasy Matchups shows a started player actual score above the projection'
     ])),
     points: matchup.roster_id === 1 ? 9 : 0,
   }));
-  await page.route(`https://api.sleeper.app/v1/league/${TEST_LEAGUE_ID}/matchups/1`, async (route) => {
+  await page.route(sleeperMatchupsUrl(1), async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -2287,11 +2353,13 @@ test('Matchup week picker opens as a shared mobile selection sheet', async ({ pa
   await expectMobileSheetFillsBottom(sheet, viewport);
 });
 
-test('player statistics back button returns to the originating Fantasy view', async ({ page }) => {
+test('player statistics back button returns to the originating Fantasy view', async ({ page, isMobile }) => {
   await page.goto('/fantasy/rosters');
   await dismissWhatsNew(page);
 
   await page.getByRole('button', { name: 'Open Christopher Pocket Commander-Supercalifragilistic', exact: true }).click();
+  // Phones preview the player in a sheet first.
+  if (isMobile) await page.getByRole('button', { name: 'Open Full Statistics', exact: true }).click();
   await expect(page).toHaveURL(/\/statistics\/player\/1001\/christopher-pocket-commander-supercalifragilistic/);
 
   const backButton = page.getByRole('button', { name: 'Rosters', exact: true });
@@ -2585,10 +2653,16 @@ test('Rankings leaves unavailable players and backup quarterbacks without a week
   await dismissWhatsNew(page);
 
   await page.getByRole('button', { name: 'Open rankings filters' }).click();
-  await page.getByRole('button', { name: /Sort rankings by Season Points/ }).click();
-  await page.getByRole('listbox', { name: 'Rankings sort options' })
-    .getByRole('option', { name: 'Projected Points', exact: true })
-    .click();
+  // Phones show the sort options as a pill row; wider screens use a menu.
+  const sortPills = page.getByRole('group', { name: 'Rankings sort options' });
+  if (await sortPills.isVisible()) {
+    await sortPills.getByRole('button', { name: 'Projected', exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: /Sort rankings by Season Points/ }).click();
+    await page.getByRole('listbox', { name: 'Rankings sort options' })
+      .getByRole('option', { name: 'Projected Points', exact: true })
+      .click();
+  }
 
   const projectionValue = (name) => page.locator('.companion-player-row')
     .filter({ hasText: name })

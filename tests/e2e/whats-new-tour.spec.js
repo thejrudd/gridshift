@@ -55,10 +55,11 @@ function materializeExpectedCopy(copy, replacements) {
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
-  await installTradeFixtures(
-    page,
-    [HISTORICAL_TOUR_TEST, HISTORICAL_WAR_ROOM_TEST].some((title) => testInfo.title.includes(title)) ? historicalTourOverrides() : {},
-  );
+  await installTradeFixtures(page, {
+    // Replays every tour entry from the oldest supported upgrade baseline.
+    installedVersion: '8.2.1',
+    ...([HISTORICAL_TOUR_TEST, HISTORICAL_WAR_ROOM_TEST].some((title) => testInfo.title.includes(title)) ? historicalTourOverrides() : {}),
+  });
 });
 
 test('full upgrade history replays every tour step', async ({ page, isMobile }) => {

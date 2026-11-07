@@ -10,6 +10,8 @@ import { getPageShareMetadata, renderPageShareMetadataHtml } from './src/utils/p
 const { version } = JSON.parse(readFileSync('./package.json', 'utf8'))
 const appVersion = process.env.GRIDSHIFT_APP_VERSION_OVERRIDE ?? version
 const iconVersion = encodeURIComponent(appVersion)
+// Matches scripts/dev.mjs so an isolated dev server proxies to its own API sidecar.
+const apiProxyTarget = `http://127.0.0.1:${process.env.GRIDSHIFT_API_PORT ?? process.env.ESPN_API_PORT ?? 3001}`
 const versionedIconPath = (fileName) => `/icons/${fileName}?v=${iconVersion}`
 const shareData = JSON.parse(readFileSync('./public/nfl-data-2026.json', 'utf8'))
 const shareSeason = shareData.season ?? 2026
@@ -142,57 +144,57 @@ export default defineConfig(({ command }) => ({
         rewrite: (path) => path.replace(/^\/ktc-proxy/, ''),
       },
       '/api/espn': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/live': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/statistics/scores': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/statistics/players': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/statistics/teams': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/fantasy': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/players': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/draft-sync': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/predictions-sync': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/api/trade-proposals': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       '/trade/share': {
-        target: 'http://127.0.0.1:3001',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
