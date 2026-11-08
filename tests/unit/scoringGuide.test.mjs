@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_SCORING } from '../../src/utils/scoringEngine.js';
 import { getCompanionPlayerImageUrl } from '../../src/utils/companionAssetVisuals.js';
-import { SCORING_GAME_EXAMPLE_OPTIONS, SCORING_GAME_EXAMPLES, filterScoringGroups, getPositionStrengthRanking, getPreviousLeagueHistoryOptions, getScoringGameExample, getScoringGameExampleCandidates, getScoringPositionOptions, getScoringProfile, getScoringRuleMeta, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId } from '../../src/utils/scoringGuide.js';
+import { SCORING_GAME_EXAMPLE_OPTIONS, SCORING_GAME_EXAMPLES, filterScoringGroups, getPositionStrengthRanking, getPreviousLeagueHistoryOptions, getScoringGameExample, getScoringGameExampleCandidates, getScoringPositionOptions, getScoringProductionSeason, getScoringProfile, getScoringRuleMeta, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId } from '../../src/utils/scoringGuide.js';
 
 const GROUPS = [{ label: 'Rules', stats: [
   { key: 'pass_td' }, { key: 'bonus_rec_te' }, { key: 'idp_tkl' }, { key: 'fgm' }, { key: 'def_td' }, { key: 'kr_yd' },
@@ -266,6 +266,14 @@ describe('scoring guide helpers', () => {
       { position: 'QB', top8: 14, nineTo16: null, seventeenTo32: null, playerCount: 2, rank: 1 },
       { position: 'RB', top8: 12, nineTo16: null, seventeenTo32: null, playerCount: 3, rank: 2 },
     ]);
+  });
+
+  it('switches position strength to the league season after four recorded games', () => {
+    assert.equal(getScoringProductionSeason('2026', null), '2025');
+    assert.equal(getScoringProductionSeason('2026', {}), '2025');
+    assert.equal(getScoringProductionSeason('2026', { a: { gp: 3 }, b: { gp: 2 } }), '2025');
+    assert.equal(getScoringProductionSeason('2026', { a: { gp: 4 }, b: { gp: 1 } }), '2026');
+    assert.equal(getScoringProductionSeason('', { a: { gp: 9 } }), null);
   });
 
   it('marks values that differ from the app scoring baseline', () => {
