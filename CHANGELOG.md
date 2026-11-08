@@ -1529,3 +1529,4 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **International games** - Games at a neutral site, such as an international game in Madrid, show where they're played, use that stadium's roof, and no longer show the home team's weather.
 - **Fumbles in play-by-play** - A fumble by a player whose abbreviated name matches a teammate's is charged to the right player, a run that ends in a lost fumble keeps its yards instead of the defense's return, and a catch or run that ends in a fumble gets the yards the official stats credit.
 - **Live totals and first downs** - A play whose carries and yards Sleeper has already counted is no longer held out as pending when Sleeper credits a first down differently, so live totals no longer run ahead of Sleeper.
+- **Position strength uses this season** - The scoring guide's Position strength switches from last season's results to this season's once four games have been played.

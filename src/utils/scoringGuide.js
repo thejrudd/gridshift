@@ -137,6 +137,30 @@ export function isScoringRuleRosterEligible(key, rosterPositions) {
   return [...getScoringRuleMeta(key).roles].some((role) => eligiblePositions.has(role));
 }
 
+export const CURRENT_SEASON_PRODUCTION_MIN_GAMES = 4;
+
+/** Most games any player has recorded in a season's aggregated stats. */
+export function getRecordedGameCount(seasonStats) {
+  let most = 0;
+  for (const stats of Object.values(seasonStats ?? {})) {
+    const gamesPlayed = Number(stats?.gp ?? 0);
+    if (Number.isFinite(gamesPlayed) && gamesPlayed > most) most = gamesPlayed;
+  }
+  return most;
+}
+
+/**
+ * Production year behind position strength: the league's own season once it
+ * has recorded enough games, otherwise the prior season.
+ */
+export function getScoringProductionSeason(leagueSeason, currentSeasonStats) {
+  const seasonNumber = Number(String(leagueSeason ?? '').trim());
+  if (!String(leagueSeason ?? '').trim() || !Number.isFinite(seasonNumber)) return null;
+  return getRecordedGameCount(currentSeasonStats) >= CURRENT_SEASON_PRODUCTION_MIN_GAMES
+    ? String(seasonNumber)
+    : String(seasonNumber - 1);
+}
+
 /**
  * Compares each position's depth bands using the supplied season's production
  * and scoring. PPG keeps partial-season players comparable.
