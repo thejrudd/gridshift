@@ -49,9 +49,43 @@ elif [ ! -f "$DIR/.env" ] && [ -f "$DIR/.env.example" ]; then
   echo "Created blank .env from .env.example. Add server-only values before enabling paid live data."
 fi
 
-echo "Rebuilding and starting container..."
 cd "$DIR"
-docker compose up -d --build
+
+# The web build peaks at about 1 GB of RAM (the offline-cache step after the
+# bundle needs roughly 640 MB of Node heap). On a small VPS with no swap that
+# exhausts memory and the kernel freezes or kills SSH and Docker itself.
+MEM_KB="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+SWAP_KB="$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+if [ "${MEM_KB:-0}" -gt 0 ] && [ $(( MEM_KB + SWAP_KB )) -lt 2500000 ]; then
+  echo "Warning: this server has $(( MEM_KB / 1024 )) MB RAM and $(( SWAP_KB / 1024 )) MB swap." >&2
+  echo "The build needs about 1 GB free. If the update stalls, add 2 GB of swap once:" >&2
+  echo "  sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile" >&2
+  echo "  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab" >&2
+fi
+
+# Build one image at a time. `docker compose up --build` builds both images in
+# parallel, stacking two npm installs on top of the web build.
+# A failed build leaves the previous images tagged, so restart those instead
+# of leaving the site down.
+echo "Building API image..."
+if ! docker compose build gridshift-api; then
+  echo "API build failed; restarting the previous version." >&2
+  docker compose up -d
+  exit 1
+fi
+echo "Building web image..."
+if ! docker compose build gridshift; then
+  echo "Web build failed; restarting the previous version." >&2
+  docker compose up -d
+  exit 1
+fi
+
+echo "Starting containers..."
+docker compose up -d
+
+# Each update leaves the previous images untagged; remove them so they don't
+# slowly fill the disk.
+docker image prune -f >/dev/null || true
 
 echo "Done! App is running."
 docker compose ps
