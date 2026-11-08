@@ -58,7 +58,10 @@ export const DEFAULT_SCORING = {
   fum_rec: 0.0,        // offensive fumble recovery
   fum_ret_td: 6.0,
   st_td: 6.0,
-  ret_td: 6.0,         // kick/punt return TD
+  // GridShift-only and never in a Sleeper stat line: Sleeper pays a return TD
+  // through `st_td`, ESPN through `kr_td` / `pr_td`. A nonzero default here
+  // scored phantom points in every Sleeper league, which never lists it.
+  ret_td: 0.0,
   team_win: 0.0,       // ESPN-only NFL team result bonus
   team_loss: 0.0,      // ESPN-only NFL team result penalty
   team_tie: 0.0,       // ESPN-only NFL team result bonus/penalty
@@ -70,6 +73,8 @@ export const DEFAULT_SCORING = {
   kr_yd: 0.0,          // kick return yards
   pr_yd: 0.0,          // punt return yards
   st_tkl_solo: 0.0,    // special teams solo tackle
+  st_ff: 0.0,          // special teams forced fumble (any position)
+  st_fum_rec: 0.0,     // special teams fumble recovery (any position)
   blk_kick_ret_yd: 0.0,
   fg_ret_yd: 0.0,      // missed FG return yards
   fum_ret_yd: 0.0,     // fumble return yards (player)
@@ -141,6 +146,8 @@ export const DEFAULT_SCORING = {
   fgm_40_49: 0.0,
   fgm_50_59: 0.0,
   fgm_60p: 0.0,
+  fgm_50p: 0.0,           // Sleeper: any 50+ yard make
+  fgmiss_50p: 0.0,        // Sleeper: any 50+ yard miss
   fgmiss: 0.0,
   fgmiss_0_19: 0.0,
   fgmiss_20_29: 0.0,
@@ -166,6 +173,9 @@ export const DEFAULT_SCORING = {
   def_forced_punts: 0.0,
   def_pass_def: 0.0,
   def_st_tkl_solo: 0.0,
+  def_st_td: 0.0,         // D/ST special-teams TD (return or blocked kick)
+  def_st_ff: 0.0,         // D/ST forced fumble on a kick
+  def_st_fum_rec: 0.0,    // D/ST fumble recovery on a kick
   def_kr_yd: 0.0,
   def_pr_yd: 0.0,
   sack: 0.0,              // team DST sack (distinct from idp_sack)
@@ -461,6 +471,8 @@ export const STAT_TO_SCORING_KEY = {
   kr_yd: 'kr_yd',
   pr_yd: 'pr_yd',
   st_tkl_solo: 'st_tkl_solo',
+  st_ff: 'st_ff',
+  st_fum_rec: 'st_fum_rec',
   blk_kick_ret_yd: 'blk_kick_ret_yd',
   fg_ret_yd: 'fg_ret_yd',
   fum_ret_yd: 'fum_ret_yd',
@@ -525,6 +537,8 @@ export const STAT_TO_SCORING_KEY = {
   fgm_40_49: 'fgm_40_49',
   fgm_50_59: 'fgm_50_59',
   fgm_60p: 'fgm_60p',
+  fgm_50p: 'fgm_50p',
+  fgmiss_50p: 'fgmiss_50p',
   fgmiss: 'fgmiss',
   fgmiss_0_19: 'fgmiss_0_19',
   fgmiss_20_29: 'fgmiss_20_29',
@@ -549,6 +563,11 @@ export const STAT_TO_SCORING_KEY = {
   def_forced_punts: 'def_forced_punts',
   def_pass_def: 'def_pass_def',
   def_st_tkl_solo: 'def_st_tkl_solo',
+  def_st_td: 'def_st_td',
+  def_st_ff: 'def_st_ff',
+  def_st_fum_rec: 'def_st_fum_rec',
+  // Sleeper's D/ST forced fumble is plain `ff` on the team's stat line.
+  ff: 'def_ff',
   def_kr_yd: 'def_kr_yd',
   def_pr_yd: 'def_pr_yd',
   sack: 'sack',
@@ -610,10 +629,16 @@ function calcPointsWithSettings(stats, settings, position = null) {
   const positionSettings = getPositionScoringSettings(settings, position);
   let pts = 0;
 
+  let hasRawStats = false;
   for (const [statKey, scoringKey] of Object.entries(STAT_TO_SCORING_KEY)) {
     const statVal = stats[statKey];
+    if (statVal) hasRawStats = true;
     const hasPosition = position != null && String(position).trim() !== '';
-    const idpEligible = !hasPosition || IDP_POSITIONS.has(normalizePosition(position));
+    // Sleeper scores IDP stats for whoever records them — a receiver's tackle
+    // after an interception earns the league's solo-tackle points (checked
+    // against Sleeper's awarded totals). ESPN profiles keep IDP scoring to
+    // defensive positions.
+    const idpEligible = !hasPosition || settings?.provider !== 'espn' || IDP_POSITIONS.has(normalizePosition(position));
     if (statVal && positionSettings[scoringKey] && (!IDP_SCORING_KEYS.has(scoringKey) || idpEligible)) {
       pts += statVal * positionSettings[scoringKey];
     }
@@ -621,8 +646,13 @@ function calcPointsWithSettings(stats, settings, position = null) {
 
   // Position-specific bonuses (require position context)
   if (position) {
-    // Per-reception bonuses by position
-    if (stats.rec) {
+    // Per-reception bonuses by position. Sleeper's line carries its own count
+    // (`bonus_rec_wr` for a two-way player listed at DB who caught passes), so
+    // that wins; otherwise the roster position decides.
+    const recBonusKeys = ['bonus_rec_te', 'bonus_rec_rb', 'bonus_rec_wr'];
+    if (recBonusKeys.some((key) => stats[key] != null)) {
+      recBonusKeys.forEach((key) => { if (stats[key] && positionSettings[key]) pts += stats[key] * positionSettings[key]; });
+    } else if (stats.rec) {
       if (position === 'TE' && positionSettings.bonus_rec_te) pts += stats.rec * positionSettings.bonus_rec_te;
       if (position === 'RB' && positionSettings.bonus_rec_rb) pts += stats.rec * positionSettings.bonus_rec_rb;
       if (position === 'WR' && positionSettings.bonus_rec_wr) pts += stats.rec * positionSettings.bonus_rec_wr;
@@ -632,23 +662,25 @@ function calcPointsWithSettings(stats, settings, position = null) {
       pts += stats.rush_att * positionSettings.bonus_rush_att;
     }
     // Position-specific first down bonuses
-    if (positionSettings.bonus_fd_qb && position === 'QB') {
-      pts += ((stats.pass_fd ?? 0) + (stats.rush_fd ?? 0)) * positionSettings.bonus_fd_qb;
-    }
-    if (positionSettings.bonus_fd_rb && position === 'RB') {
-      pts += ((stats.rush_fd ?? 0) + (stats.rec_fd ?? 0)) * positionSettings.bonus_fd_rb;
-    }
-    if (positionSettings.bonus_fd_wr && position === 'WR' && stats.rec_fd) {
-      pts += stats.rec_fd * positionSettings.bonus_fd_wr;
-    }
-    if (positionSettings.bonus_fd_te && position === 'TE' && stats.rec_fd) {
-      pts += stats.rec_fd * positionSettings.bonus_fd_te;
+    // Position first-down bonuses count every first down the player earned,
+    // passing, rushing, or receiving (Sleeper's `bonus_fd_te` for a tight end
+    // with one catch and one run for a first down is 2). Sleeper's own count
+    // on the stat line wins when it is there.
+    const fdBonusKeys = ['bonus_fd_qb', 'bonus_fd_rb', 'bonus_fd_wr', 'bonus_fd_te'];
+    if (fdBonusKeys.some((key) => stats[key] != null)) {
+      fdBonusKeys.forEach((key) => { if (stats[key] && positionSettings[key]) pts += stats[key] * positionSettings[key]; });
+    } else {
+      const fdKey = { QB: 'bonus_fd_qb', RB: 'bonus_fd_rb', WR: 'bonus_fd_wr', TE: 'bonus_fd_te' }[position];
+      if (fdKey && positionSettings[fdKey]) {
+        pts += ((stats.pass_fd ?? 0) + (stats.rush_fd ?? 0) + (stats.rec_fd ?? 0)) * positionSettings[fdKey];
+      }
     }
   }
 
-  // Fallback: if raw stat keys produced nothing, use Sleeper's pre-computed points.
-  // This handles cases where the API returns only pts_ppr/pts_std without raw stats.
-  if (pts === 0) {
+  // Fallback: a line with no raw stats at all, only Sleeper's pre-computed
+  // points. A real line that nets to exactly 0 (a missed field goal against
+  // two extra points) stays 0.
+  if (pts === 0 && !hasRawStats) {
     const rec = positionSettings.rec ?? 1.0;
     if (rec >= 1.0 && stats.pts_ppr != null)      return ROUND_2(stats.pts_ppr);
     if (rec >= 0.5 && stats.pts_half_ppr != null)  return ROUND_2(stats.pts_half_ppr);
@@ -715,8 +747,11 @@ const SCORING_SETTINGS_ALIASES = {
   idp_fum_ret_yd: 'idp_fr_yd',
   idp_safe:       'idp_safety',  // Sleeper scoring_settings uses idp_safe
   fum_rec_td:     'fum_ret_td',  // Sleeper scoring_settings uses fum_rec_td
+  ff:             'def_ff',      // Sleeper scoring_settings: D/ST forced fumble
   int_ret_td:     'pass_int_td', // Sleeper scoring_settings key for Pick 6 Thrown
-  rush_att:       'bonus_rush_att', // Sleeper uses rush_att for per-carry scoring setting
+  // Sleeper's `rush_att` setting is points per carry for every position (a
+  // quarterback's runs earn it too), so it stays `rush_att`, not the RB-only
+  // `bonus_rush_att`.
   // Big-play bonuses: Sleeper scoring_settings omits the bonus_ prefix (e.g. pass_td_40p)
   // but our internal key and calcPoints lookup uses the bonus_ prefix form.
   pass_td_40p:  'bonus_pass_td_40p',

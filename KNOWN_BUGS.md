@@ -15,6 +15,10 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups live estimates gave every passing touchdown to the defense that allowed it as a defensive touchdown, and gave a team defense a forced fumble on fumbles nobody forced. | v9.3.8 |
+| Fantasy points differed from Sleeper's totals in some leagues: defensive stats by offensive players, per-carry points for non-running backs, 50+ yard field goals, tight end rushing first downs, and lines that net to zero were scored wrongly, and return touchdowns could earn phantom points. | v9.3.8 |
+| Matchups scoring plays credited a catch, run, or return that ended in a fumble to the wrong player or yardage, credited kick-coverage tackles as defensive tackles, and missed special-teams scores, blocked kicks, and returns for no gain. | v9.3.8 |
+| Matchups and Statistics showed the raw provider text for fumbles, interceptions returned for no gain, sacks without yardage, and several rarer plays instead of a plain sentence. | v9.3.8 |
 | Matchups and the Heatmap never refreshed Sleeper's stat lines during games, so Matchups could not confirm plays by stats, drop plays Sleeper never credited, or add stats no play explained. | v9.3.8 |
 | Statistics player game-log scroll arrows could open the game behind them instead of scrolling, and the left arrow was hidden behind frozen columns. | v9.3.7 |
 | Matchups starter rows could show about double a player's points during a live game: plays the live feed delivered after Sleeper had already counted them stayed pending and were added on top of Sleeper's total until the game ended. | v9.3.6 |

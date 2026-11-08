@@ -1520,3 +1520,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Game Story** - Game Story is now always written from the game's own play-by-play.
 - **Standings and Rosters layout** - Standings use flat tables, Rosters switches between Players and Draft Picks with tabs, and phone Rosters and Matchups rows give long names more room.
 - **Setup guide** - The README is shorter, with Docker and data setup moved to a self-hosting guide.
+- **Readable play-by-play** - Every play now reads as a plain sentence in Matchups and Statistics, including catches and runs that end in a fumble, bad snaps, muffed punts, onside kicks, blocked kicks, lateral chains, and plays the provider sent without a summary. Interceptions name the thrower, the target, and where the ball was picked off.
+- **Penalties in play-by-play** - A flag names the player, team, and jersey number, the foul, the yards, and where the ball is next. A flag that wipes out a play says what it cost: a touchdown called back, an interception erased, or a gain that didn't count.
+- **Scoring matches Sleeper** - Fantasy points now match Sleeper's own totals for any league's scoring: special-teams scores and tackles, blocked kicks, per-carry points for every position, defensive stats by any player, 50+ yard field goals, kick-distance and catch-length bonuses, and first-down bonuses that count runs.
+- **Defensive touchdowns** - A passing touchdown no longer counts as a defensive touchdown for the team that gave it up, and a forced fumble needs a defender who forced it.

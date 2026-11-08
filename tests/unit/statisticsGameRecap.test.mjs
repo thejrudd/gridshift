@@ -34,7 +34,7 @@ test('final recap names the winner, the lead-for-good score, and each quarter ne
   assert.equal(leadForGood, 'Cincinnati Bengals took the lead for good with 2:48 left in the third quarter. Evan McPherson made a 35 yard field goal.');
   assert.equal(
     recap.sections[1].paragraphs[0],
-    'Neither team scored. DJ Turner II intercepted the pass and returned it 7 yards. Cincinnati Bengals led 17-16 at the end of regulation.',
+    "Neither team scored. J.Flacco's pass for C.Tillman was intercepted by DJ Turner II at the Cleveland 47 and returned 7 yards. Cincinnati Bengals led 17-16 at the end of regulation.",
   );
   assert.match(recap.sections[4].paragraphs[0], /^Chase Brown ran it in from 5 yards out\. Cincinnati Bengals led 7-0 after the first quarter\.$/);
 });
