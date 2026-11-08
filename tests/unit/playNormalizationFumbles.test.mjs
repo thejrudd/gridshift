@@ -50,8 +50,9 @@ const statsOf = (events, playerId) => events.find((event) => event.playerId === 
 
 test('a catch that ends in a lost fumble reads as the catch plus the fumble', () => {
   const play = normalizeCanonicalPlay(HUNTER_FUMBLE, { gameId: 'jax-bal', homeTeam: 'BAL', awayTeam: 'JAX' });
-  // The official description's -3, not the compact text's "Loss of 1".
-  assert.equal(play.narrative.sentence, 'Trevor Lawrence found Travis Hunter for a loss of 3 yards. M.Starks forced a fumble, recovered by Teddye Buchanan.');
+  // The compact text's "Loss of 1" is the official credit (Hunter: 1 catch
+  // for -1 in Week 9), not the gamebook's -3, where the ball came out.
+  assert.equal(play.narrative.sentence, 'Trevor Lawrence found Travis Hunter for a loss of 1 yard. M.Starks forced a fumble, recovered by Teddye Buchanan.');
   assert.equal(play.narrative.label, 'Fumble');
   assert.equal(play.offenseTeam, 'JAX');
   assert.deepEqual(
@@ -78,8 +79,8 @@ test('both managers scoring on the same fumble get their own rows with the right
   const sides = { lawrence: 'a', hunter: 'a', starks: 'b', buchanan: 'b' };
 
   // The catch is charged with the fumble, not a first down the defense earned.
-  assert.deepEqual(statsOf(events, 'hunter'), { fum: 1, fum_lost: 1, rec: 1, rec_yd: -3, rec_0_4: 1 });
-  assert.equal(statsOf(events, 'lawrence').pass_yd, -3);
+  assert.deepEqual(statsOf(events, 'hunter'), { fum: 1, fum_lost: 1, rec: 1, rec_yd: -1, rec_0_4: 1 });
+  assert.equal(statsOf(events, 'lawrence').pass_yd, -1);
   assert.equal(statsOf(events, 'starks').idp_ff, 1);
   assert.equal(statsOf(events, 'starks').idp_tkl, 1);
   assert.deepEqual(statsOf(events, 'buchanan'), { idp_fr: 1 });
@@ -91,7 +92,7 @@ test('both managers scoring on the same fumble get their own rows with the right
   assert.deepEqual(bySide.b.contributors.map((c) => c.playerId).sort(), ['buchanan', 'starks']);
   // One snap, one sentence on both sides of the matchup.
   assert.equal(bySide.a.desc, bySide.b.desc);
-  assert.equal(bySide.a.desc, 'Trevor Lawrence found Travis Hunter for a loss of 3 yards. M.Starks forced a fumble, recovered by Teddye Buchanan.');
+  assert.equal(bySide.a.desc, 'Trevor Lawrence found Travis Hunter for a loss of 1 yard. M.Starks forced a fumble, recovered by Teddye Buchanan.');
 });
 
 test('a lost fumble after a long catch credits the catch, not the recovery return', () => {
@@ -357,4 +358,24 @@ test('a loose snap pitched on and fumbled away charges each fumbler', () => {
   assert.equal(statsOf(events, 'irving').fum_lost, 1);
   assert.equal(statsOf(events, 'irving').rush_yd, 14);
   assert.deepEqual(statsOf(events, 'mayfield'), { fum: 1 });
+});
+
+test('a run ending in a lost fumble credits the run, not the defense\'s recovery return', () => {
+  // Week 2 LAC–LV: Omarion Hampton officially gained 2; Jeremy Chinn returned
+  // the fumble 43 (the provider's stat_yardage).
+  const game = { id: 'lac-lv', visitor_team: { abbreviation: 'LAC' }, home_team: { abbreviation: 'LV' } };
+  const play = {
+    id: 'hampton-fumble',
+    type_slug: 'fumble-recovery-opponent',
+    team: { abbreviation: 'LV' },
+    period: 2,
+    clock_display: '3:52',
+    text: '(Shotgun) O.Hampton up the middle to LV 46 for 2 yards (N.Dean). FUMBLES (N.Dean), RECOVERED by LV-J.Chinn at LV 47. J.Chinn to LAC 10 for 43 yards (J.Herbert).',
+    short_text: 'Omarion Hampton 2 Yd Rush Omarion Hampton Fumble Jeremy Chinn 43 Yd Fumble Recovery',
+    stat_yardage: 43,
+    scoring_play: false,
+  };
+  const events = eventsFor([play], [starter('hampton', 'Omarion Hampton', 'RB', 'LAC')], game);
+  assert.equal(statsOf(events, 'hampton').rush_yd, 2);
+  assert.equal(statsOf(events, 'hampton').fum_lost, 1);
 });

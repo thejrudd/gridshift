@@ -1547,10 +1547,14 @@ export function parsePlayNarrative(play) {
     if (!parsed.actors.some((actor) => actor.name === fumble.fumbler)) {
       fumbleActors.push({ role: PLAY_ROLES.FUMBLER, name: fumble.fumbler });
     }
-    // The official description, not the compact text, holds the gain the
-    // catch or run is credited with; the compact text can measure to the
-    // recovery ("for Loss of 1 Yd" against the gamebook's "for -3 yards").
-    if (SCRIMMAGE_KINDS.has(kind) && !fumble.snap && !fumble.muff) {
+    // The compact text states the gain the catch or run is officially
+    // credited with; the gamebook's "for N yards" is where the carrier was
+    // when the ball came out, before the official adjustment for where it
+    // went ("Pass Complete for No Gain" against "for 2 yards … touched at",
+    // "9 Yd Rush" against "for 8 yards … and recovers"). Checked against
+    // official stat lines for every scrimmage fumble in weeks 1–8 of 2026.
+    // The gamebook stands in only when the compact text gives no yardage.
+    if (SCRIMMAGE_KINDS.has(kind) && !fumble.snap && !fumble.muff && !Number.isFinite(parsed.yards)) {
       const gains = [...authoritativeText(tackleText).matchAll(/\bfor (?:(-?\d+) yards?|(no gain))/gi)];
       const last = gains.at(-1);
       if (last) parsed.yards = last[2] ? 0 : Number(last[1]);

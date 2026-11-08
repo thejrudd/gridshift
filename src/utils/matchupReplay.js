@@ -5,6 +5,8 @@
 // helpers turn the live feed's series and events into what the page shows at
 // that moment, oriented to the viewer's side ("mine") and the opponent's.
 
+import { normalizeBdlScoreboardGame } from './balldontlieNflScoreboard.js';
+
 const EPSILON = 1e-6;
 
 function finite(value) {
@@ -91,6 +93,36 @@ export function getGameStateAt({ axis, gameId, at = null, liveState = null, live
   // is live, and one that has not kicked off yet is still "pre".
   if (liveState === 'pre' || liveState === 'scheduled') return { state: 'pre', progress: 0 };
   return { state: 'live', progress };
+}
+
+/**
+ * A live game's clock right now, labelled as Statistics Scores labels it from
+ * the same games feed ("Halftime", "Q2 · 1:23"). Null when the feed has no
+ * live clock; a player's latest play is never a stand-in for the game clock
+ * except as the caller's last resort.
+ */
+export function getLiveGameClockLabel(game) {
+  const normalized = game ? normalizeBdlScoreboardGame(game) : null;
+  if (normalized?.status === 'halftime') return normalized.statusLabel;
+  if (normalized?.status === 'live' && normalized.live?.period && normalized.live?.clock) return normalized.statusLabel;
+  return null;
+}
+
+/**
+ * How far through regulation a live game is right now (0..1), from the games
+ * feed's own status and clock, on the same scale as `getPlayProgress()` puts
+ * plays. Halftime is 0.5; overtime clamps to 1. Null when the feed has no live
+ * clock, so callers fall back to their wall-clock estimate.
+ */
+export function getLiveGameProgress(game) {
+  const normalized = game ? normalizeBdlScoreboardGame(game) : null;
+  if (normalized?.status === 'halftime') return 0.5;
+  if (normalized?.status !== 'live') return null;
+  const period = Number(normalized.live?.period);
+  const clock = /^(\d{1,2}):(\d{2})$/.exec(String(normalized.live?.clock ?? '').trim());
+  if (!Number.isFinite(period) || period < 1 || !clock) return null;
+  const secondsLeft = Math.min(900, Math.max(0, Number(clock[1]) * 60 + Number(clock[2])));
+  return Math.min(1, Math.max(0, ((period - 1) * 900 + (900 - secondsLeft)) / 3600));
 }
 
 /** Both / Mine / Theirs / Big plays. `side` is the event's side: 'mine' | 'opp'. */

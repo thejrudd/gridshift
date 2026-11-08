@@ -5,6 +5,8 @@ import {
   filterScoringPlays,
   getGameStateAt,
   getHoverCardMode,
+  getLiveGameClockLabel,
+  getLiveGameProgress,
   getSeriesPointAt,
 } from '../../src/utils/matchupReplay.js';
 import { buildSlateAxis } from '../../src/utils/matchupSlateAxis.js';
@@ -109,5 +111,39 @@ describe('Matchups hover card mode', () => {
     assert.equal(getHoverCardMode('scheduled'), 'season');
     assert.equal(getHoverCardMode('live'), 'live');
     assert.equal(getHoverCardMode('final'), 'final');
+  });
+});
+
+describe('getLiveGameClockLabel', () => {
+  const teams = { home_team: { id: 1, abbreviation: 'ATL', full_name: 'Atlanta Falcons' }, visitor_team: { id: 7, abbreviation: 'CIN', full_name: 'Cincinnati Bengals' } };
+  const game = { id: 1392338, week: 9, season: 2026, postseason: false, date: '2026-11-08T14:30:00.000Z', ...teams };
+
+  it('reads the game feed, so halftime shows even when a player last played at 2:00 of Q2', () => {
+    assert.equal(getLiveGameClockLabel({ ...game, status: 'Halftime', status_state: 'in_progress' }), 'Halftime');
+  });
+
+  it('labels a running clock the way Statistics Scores does', () => {
+    assert.equal(getLiveGameClockLabel({ ...game, status: '4:12 - 3rd', status_state: 'in_progress' }), 'Q3 · 4:12');
+  });
+
+  it('has no label when the feed carries no live clock', () => {
+    assert.equal(getLiveGameClockLabel({ ...game, status: 'In Progress', status_state: 'in_progress' }), null);
+    assert.equal(getLiveGameClockLabel({ ...game, status: 'Final', status_state: 'completed' }), null);
+    assert.equal(getLiveGameClockLabel(null), null);
+  });
+});
+
+describe('getLiveGameProgress', () => {
+  const game = { id: 1, week: 9, season: 2026, date: '2026-11-08T14:30:00.000Z', home_team: { id: 1, abbreviation: 'ATL' }, visitor_team: { id: 7, abbreviation: 'CIN' } };
+
+  it('places halftime and a running clock on the same scale as play times', () => {
+    assert.equal(getLiveGameProgress({ ...game, status: 'Halftime', status_state: 'in_progress' }), 0.5);
+    assert.equal(getLiveGameProgress({ ...game, status: '7:30 - 3rd', status_state: 'in_progress' }), 0.625);
+  });
+
+  it('is unknown without a live clock', () => {
+    assert.equal(getLiveGameProgress({ ...game, status: 'In Progress', status_state: 'in_progress' }), null);
+    assert.equal(getLiveGameProgress({ ...game, status: 'Final', status_state: 'completed' }), null);
+    assert.equal(getLiveGameProgress(null), null);
   });
 });

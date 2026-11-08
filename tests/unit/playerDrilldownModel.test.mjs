@@ -167,6 +167,34 @@ test('elapsed fraction is zero before kickoff and one when settled', () => {
   assert.equal(getDrilldownElapsedFraction({ phase: 'final' }), 1);
 });
 
+test('elapsed fraction follows the game clock over the kickoff estimate', () => {
+  // An hour and forty minutes after kickoff estimates the second quarter; the
+  // game is at halftime, so a play at Q2 2:00 is not in the future.
+  const scheduleEntry = { kickoff: '2026-11-08T14:30:00Z', completed: false };
+  const now = Date.parse('2026-11-08T16:10:00Z');
+  assert.ok(getDrilldownElapsedFraction({ phase: 'live', scheduleEntry, now }) < 0.467);
+  assert.equal(getDrilldownElapsedFraction({ phase: 'live', scheduleEntry, now, gameProgress: 0.5 }), 0.5);
+  const fumble = { id: 'f', progress: 28 / 60, pts: -1.8, glance: { clock: 'Q2 2:00' } };
+  const pace = buildScoringPace({ events: [{ id: 'r', progress: 0.1, pts: 9.5 }, fumble], phase: 'live', elapsed: 0.5, total: 7.7, projected: 19 });
+  assert.deepEqual(pace.marks.map(mark => mark.pts), [9.5, -1.8]);
+  assert.equal(pace.unexplained, 0);
+});
+
+test('the stat line names every scoring row outside the headline stats', () => {
+  const rows = [
+    { statKey: 'rush_yd', label: 'Rush Yards', statVal: 59, pts: 4.54 },
+    { statKey: 'rec_yd', label: 'Rec Yards', statVal: 22, pts: 2.2 },
+    { statKey: 'rec_fd', label: 'Rec 1st Down', statVal: 1, pts: 0.5 },
+    { statKey: 'fum', label: 'Fumble', statVal: 1, pts: -2.5 },
+  ];
+  const line = buildDrilldownStatLine({ rows, statKeys: [{ key: 'rush_yd', label: 'Rush Yards' }, { key: 'rec_yd', label: 'Rec Yards' }], total: 4.74 });
+  assert.equal(line.other, -2);
+  assert.deepEqual(line.extras.map(row => [row.label, row.value, row.pts]), [['Fumble', 1, -2.5], ['Rec 1st Down', 1, 0.5]]);
+  assert.equal(line.unexplained, null);
+  const ahead = buildDrilldownStatLine({ rows, statKeys: [{ key: 'rush_yd', label: 'Rush Yards' }], total: 6 });
+  assert.equal(ahead.unexplained, 1.26);
+});
+
 test('next-week preview reports a bye and unknown schedules', () => {
   const players = { p: { position: 'WR', team: 'CIN' } };
   assert.deepEqual(buildNextWeekPreview({ playerId: 'p', players, weeklyStats: {}, scheduleMap: { 8: { BAL: { opp: 'PIT' } } }, scoringSettings: scoring, week: 7 }), { week: 8, bye: true });

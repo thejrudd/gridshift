@@ -335,7 +335,9 @@ function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble)
   // So is a fumble written after the play: the provider's yardage on a lost
   // fumble is the defense's recovery return, not the catch or run.
   const scrimmageYards = (play.narrative?.penalty && !play.narrative.penalty.declined && creditedYards != null)
-    || ((play.narrative?.fumble || play.narrative?.chain) && play.narrative.creditedYards != null)
+    // A lost fumble's own row ("2 Yd Rush … Fumble … 43 Yd Fumble Recovery")
+    // parses as a fumble play without a separate fumble clause.
+    || ((play.narrative?.fumble || play.narrative?.chain || play.narrative?.playKind === 'fumble') && play.narrative.creditedYards != null)
     ? creditedYards
     : yards;
   const type = String(play.type ?? '').toLowerCase();
