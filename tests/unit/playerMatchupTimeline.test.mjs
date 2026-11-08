@@ -43,6 +43,21 @@ test('timeline retains deductions, credits only selected role, removes duplicate
   assert.equal(receiver[0].pts, 10.9);
 });
 
+test('an abbreviated fumbler shared by two rostered teammates is charged to the snap\'s own ball carrier', () => {
+  const atlGame = { id: 7, season: 2026, week: 9, season_type: 2, home_team: { abbreviation: 'ATL' }, visitor_team: { abbreviation: 'CIN' } };
+  const fumble = { id: 'fum', period: 2, clock_display: '2:00', type_slug: 'pass-reception', team: { abbreviation: 'ATL' }, short_text: 'Michael Penix Jr. Pass Complete for No Gain to Bijan Robinson Bijan Robinson Fumble', text: 'M.Penix pass short left to B.Robinson to ATL 43 for 2 yards (B.Carter). FUMBLES (B.Carter), touched at ATL 41, ball out of bounds at ATL 37.', stat_yardage: -4 };
+  const roster = {
+    bijan: { full_name: 'Bijan Robinson', position: 'RB', team: 'ATL' },
+    brian: { full_name: 'Brian Robinson Jr.', position: 'RB', team: 'ATL' },
+    penix: { full_name: 'Michael Penix Jr.', position: 'QB', team: 'ATL' },
+  };
+  const [event] = buildPlayerTimelineEvents({ game: atlGame, plays: [fumble], playerId: 'bijan', players: roster, team: 'ATL', scoringSettings: { ...scoringSettings, fum: -2.5 } });
+  assert.equal(event.stats.fum, 1);
+  // No yards: the loose ball was touched back at the line ("for No Gain").
+  assert.equal(event.pts, -1.5);
+  assert.deepEqual(buildPlayerTimelineEvents({ game: atlGame, plays: [fumble], playerId: 'brian', players: roster, team: 'ATL', scoringSettings }), []);
+});
+
 test('captured provider gamebook rows produce player contributions with unmodified shared parsing', () => {
   const captured = JSON.parse(readFileSync(new URL('../fixtures/bdlNflPlays.json', import.meta.url))).games[0];
   const events = buildPlayerTimelineEvents({ game: captured, plays: captured.plays, playerId: 'hurts', team: 'PHI', players: { hurts: { full_name: 'Jalen Hurts', position: 'QB', team: 'PHI' } }, scoringSettings });

@@ -7,6 +7,7 @@ import {
   getProjectionScoreTone,
   isStarterGameStarted,
   projectFromGameInfo,
+  resolveStarterGameInfo,
 } from '../../src/utils/starterProjections.js';
 
 function playerInfo() {
@@ -226,4 +227,22 @@ test('availability scaling keeps projected D/ST tier flags meaningful', () => {
   );
   assert.equal(breakdown.total, projection.projected);
   assert.equal(breakdown.rows.find(row => row.key === 'scoring_adjustment')?.pts, 2.8);
+});
+
+test('a neutral-site game uses its real venue, not the home team stadium', () => {
+  const venue = { id: '1353', name: 'Santiago Bernabéu', city: 'Madrid', country: 'Spain', indoor: true };
+  const context = {
+    players: { bijan: { position: 'RB', team: 'ATL' } },
+    weeklyStats: {},
+    week: 9,
+    scheduleMap: { 9: { ATL: { opp: 'CIN', home: true, venue, neutralSite: true }, CIN: { opp: 'ATL', home: false, venue, neutralSite: true } } },
+  };
+  const info = resolveStarterGameInfo('bijan', context);
+  assert.equal(info.stadium.name, 'Santiago Bernabéu');
+  assert.equal(info.stadium.city, 'Madrid');
+  assert.equal(info.isIndoor, true);
+
+  const regular = resolveStarterGameInfo('bijan', { ...context, scheduleMap: { 9: { ATL: { opp: 'CIN', home: true, venue: { name: 'Mercedes-Benz Stadium', indoor: true }, neutralSite: false } } } });
+  assert.equal(regular.stadium.name, 'Mercedes-Benz Stadium');
+  assert.equal(regular.stadium.lat != null, true);
 });

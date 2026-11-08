@@ -114,6 +114,19 @@ test('actual stat rows retain league-scored performance detail', () => {
   assert.doesNotMatch(html, /Fantasy scoring breakdown|Full scoring breakdown/);
 });
 
+test('the headline matches the matchup row points when the stat line lags them', () => {
+  const html = render({ kickoff: '2020-09-12T17:00:00Z', completed: true, points: 14.69, weeklyStats: { player: [{ week: 1, pass_yd: 250 }] } });
+  assert.match(html, />14\.69</);
+  assert.doesNotMatch(html, />10\.00<small>PTS/);
+  assert.match(html, /Other scoring/);
+});
+
+test('the venue line shows where the game is played', () => {
+  const html = render({ kickoff: '2099-11-08T14:30:00Z', enriched: { isHome: true, stadium: { name: 'Santiago Bernabéu', city: 'Madrid', indoor: true }, isIndoor: true, neutralSite: true } });
+  assert.match(html, /Home vs CLE · Santiago Bernabéu · Madrid · Indoor/);
+  assert.doesNotMatch(html, /Mercedes-Benz/);
+});
+
 test('pregame keeps recent completed results below the decision briefing', () => {
   const pairs = [
     ['JAX', 'CLE'], ['BUF', 'MIA'], ['BAL', 'PIT'], ['CIN', 'HOU'], ['IND', 'TEN'],

@@ -81,5 +81,8 @@ export async function loadPlayerMatchupTimeline(options, api = defaultApi) {
     stale: payload.cache?.stale === true || payload.freshness?.stale === true,
     message: events.length ? null : 'No scoring contributions could be matched to this player in the available plays.',
     gameId: String(game.id),
+    // The game record carries the live status and clock the drilldown's
+    // "now" is placed by.
+    game,
   };
 }

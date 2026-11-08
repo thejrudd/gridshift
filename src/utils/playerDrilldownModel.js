@@ -116,9 +116,25 @@ export function buildDrilldownStatLine({ rows = [], entry = null, statKeys = [],
   const rowTotal = (rows ?? []).reduce((sum, row) => sum + (matchupNumber(row?.pts) ?? 0), 0);
   const resolvedTotal = matchupNumber(total) ?? rowTotal;
   const other = resolvedTotal - items.reduce((sum, item) => sum + item.pts, 0);
+  // Every scoring row outside the headline stats, by name, so a detail view
+  // can spell out "Other scoring" (a fumble and a first down, not one net).
+  const listed = new Set(statKeys.map(({ key }) => key));
+  const extras = (rows ?? [])
+    .filter(row => !listed.has(String(row?.statKey ?? row?.key ?? '')) && Math.abs(matchupNumber(row?.pts) ?? 0) >= MIN_STEP)
+    .map(row => ({
+      key: String(row.statKey ?? row.key),
+      label: row.label ?? String(row.statKey ?? row.key),
+      value: matchupNumber(row.statVal),
+      pts: round(Number(row.pts)),
+    }))
+    .sort((left, right) => Math.abs(right.pts) - Math.abs(left.pts));
+  // What no row explains (a total ahead of the stat line).
+  const unexplained = other - extras.reduce((sum, row) => sum + row.pts, 0);
   return {
     items,
     other: Math.abs(other) >= MIN_STEP ? round(other) : null,
+    extras,
+    unexplained: Math.abs(unexplained) >= MIN_STEP ? round(unexplained) : null,
     total: round(resolvedTotal),
   };
 }
@@ -264,9 +280,11 @@ export function buildProjectionBridge({ projection = null, projectedRows = [], p
 }
 
 /** Share of the player's game already played, 0–1. Settled games are 1. */
-export function getDrilldownElapsedFraction({ phase, scheduleEntry = null, total = null, now = Date.now() } = {}) {
+export function getDrilldownElapsedFraction({ phase, scheduleEntry = null, total = null, now = Date.now(), gameProgress = null } = {}) {
   if (phase === 'final') return 1;
   if (phase !== 'live') return 0;
+  const progress = matchupNumber(gameProgress);
+  if (progress != null) return Math.max(0, Math.min(1, progress));
   const remaining = getFallbackRemainingGameFraction({ scheduleEntry, currentPoints: total, now });
   return Number.isFinite(remaining) ? Math.max(0, Math.min(1, 1 - remaining)) : 0;
 }

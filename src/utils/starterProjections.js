@@ -120,7 +120,12 @@ export function resolveStarterGameInfo(playerId, context) {
     ? schedEntry.home
     : weekEntry != null ? (weekEntry.home === 1 || weekEntry.home === true) : null;
   const homeTeam = isHome === true ? myTeam : isHome === false ? oppTeam : null;
-  const stadium = homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
+  // A neutral site (an international game) is played where ESPN says, not at
+  // the home team's stadium, so its roof decides the weather effect.
+  const siteVenue = schedEntry?.neutralSite === true ? schedEntry.venue : null;
+  const stadium = siteVenue?.name
+    ? { name: siteVenue.name, city: siteVenue.city ?? null, indoor: siteVenue.indoor ?? null, lat: null, lng: null }
+    : homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
   const defStrength = oppTeam && defenseTable
     ? getDefenseStrength(defenseTable, oppTeam, player.position, week)
     : null;
