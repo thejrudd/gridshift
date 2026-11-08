@@ -18,6 +18,8 @@ import { PLAY_MATCH_STATS } from './livePlaysFeed.js';
 export const STAT_LINE_FRESH_MS = 90000;
 /** A stat-line surplus must survive this long across two fetches before a row. */
 export const FALLBACK_GRACE_MS = 30000;
+/** First-down credits: checked for the stat-line correction, not for whether a play happened. */
+const FIRST_DOWN_KEYS = new Set(['pass_fd', 'rush_fd', 'rec_fd']);
 /** Sleeper rounds yardage differently per source; counting stats must be exact. */
 export const YARDAGE_TOLERANCE = 3;
 /** Slack on the points-provisional walk, covering per-play rounding. */
@@ -115,11 +117,18 @@ export function createReconciliationState() {
  * given everything already confirmed?
  */
 export function playFitsStatLine(play, sleeperStats, confirmedCumulative) {
-  const keys = positiveMatchKeys(play?.stats);
+  const matched = positiveMatchKeys(play?.stats);
   // A play whose whole delta sits outside PLAY_MATCH_STATS (IDP lines, team
   // defense) has nothing to check against, so it is left to the points step
   // rather than confirmed on a vacuously true condition.
-  if (!keys.length) return false;
+  if (!matched.length) return false;
+  // A first down is a judgement the provider and Sleeper can make differently
+  // (a gain that reaches the line on a play with an accepted flag). It never
+  // identifies a play — the carry, catch or completion does, exactly — so it
+  // does not hold back a play Sleeper has otherwise counted; rule 16 then
+  // settles the first-down gap on the play.
+  const identifying = matched.filter((key) => !FIRST_DOWN_KEYS.has(key));
+  const keys = identifying.length ? identifying : matched;
   return keys.every((key) => (
     lookupMatchStat(sleeperStats, key) + toleranceFor(key)
       >= num(confirmedCumulative[key]) + num(play.stats[key])

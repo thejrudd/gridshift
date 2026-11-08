@@ -418,6 +418,22 @@ function matchNarrativeActors(play, nameIndex) {
 // Who fumbled, and whether the other side came up with it. A fumble is charged
 // to that player's own involvement in the play (the sack, the run, the catch,
 // the return) rather than inferred from the word "fumble" in the sentence.
+// An abbreviated fumbler ("B.Robinson") can name two rostered teammates. The
+// fumbler is one of this snap's own actors, so an ambiguous name settles on
+// the single already-matched player it fits.
+function lookupFumbler(nameIndex, name, team, matches) {
+  const options = { team, normalize: normalizeStarterName };
+  const record = lookupPlayerByName(nameIndex, name, options);
+  if (record || !matches.length) return record;
+  const matched = new Set(matches.map((match) => match.playerId));
+  const index = new Map();
+  nameIndex.index.forEach((owners, key) => {
+    const kept = owners.filter((id) => matched.has(id));
+    if (kept.length) index.set(key, kept);
+  });
+  return lookupPlayerByName({ ...nameIndex, index }, name, options);
+}
+
 function withFumbleCredit(matches, play, nameIndex) {
   // A snap with two fumbles names each fumbler in the narrative; the gamebook
   // reader below only finds the first.
@@ -425,7 +441,7 @@ function withFumbleCredit(matches, play, nameIndex) {
   if (Array.isArray(listed) && listed.length) {
     let next = matches;
     listed.forEach((entry, index) => {
-      const record = lookupPlayerByName(nameIndex, entry.fumbler, { team: play.offenseTeamAbbr, normalize: normalizeStarterName });
+      const record = lookupFumbler(nameIndex, entry.fumbler, play.offenseTeamAbbr, matches);
       const playerId = getIndexedPlayerId(nameIndex, record);
       if (!playerId) return;
       const credit = { lost: Boolean(entry.lost) };
@@ -440,10 +456,7 @@ function withFumbleCredit(matches, play, nameIndex) {
   }
   const fumble = parseFumbleCredit(play?.raw?.text ?? play?.description);
   if (!fumble?.fumbledBy) return matches;
-  const record = lookupPlayerByName(nameIndex, fumble.fumbledBy, {
-    team: isKickReturnPlay(play) ? play.defenseTeamAbbr : play.offenseTeamAbbr,
-    normalize: normalizeStarterName,
-  });
+  const record = lookupFumbler(nameIndex, fumble.fumbledBy, isKickReturnPlay(play) ? play.defenseTeamAbbr : play.offenseTeamAbbr, matches);
   const playerId = getIndexedPlayerId(nameIndex, record);
   return matches.map((match) => (
     match.playerId === playerId && ['passer', 'rusher', 'receiver', 'returner'].includes(match.role)

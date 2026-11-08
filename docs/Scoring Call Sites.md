@@ -103,7 +103,10 @@ scoring engine when adding or changing a stat key:
   `rush_2pt` only when it succeeded (`credit.conversion` from the matcher).
   A fumble is charged to the ball carrier the gamebook names (`fum`, plus
   `fum_lost` when the other side recovered; `credit.fumble`), never inferred
-  from the word "fumble".
+  from the word "fumble". The run or catch on a fumble play is credited the
+  compact text's yards (`narrative.creditedYards`, including a lost fumble's
+  own row, `playKind: 'fumble'`), never the provider's `stat_yardage`, which
+  on a lost fumble is the defense's return.
 - For an identifiable completed pass followed by laterals, Fantasy Live's
   matcher supplies carrier-specific receiving yardage to `buildPlayStatDelta`;
   only the original receiver has a reception, and only the final carrier earns

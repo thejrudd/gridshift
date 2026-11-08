@@ -321,3 +321,33 @@ test('every credited defender is named in the sentence', () => {
     rawText: 'S.Darnold pass incomplete deep left.',
   }).sentence, 'Sam Darnold threw it away incomplete.');
 });
+
+test('a scrimmage fumble credits the compact text\'s yards, the official credit', () => {
+  // Week 9 ATL–CIN: officially 0 yards (Bijan Robinson 3 catches for 22).
+  const touchedBehind = parsePlayNarrative({
+    typeSlug: 'pass-reception',
+    shortText: 'Michael Penix Jr. Pass Complete for No Gain to Bijan Robinson Bijan Robinson Fumble',
+    rawText: 'M.Penix pass short left to B.Robinson to ATL 43 for 2 yards (B.Carter). FUMBLES (B.Carter), touched at ATL 41, ball out of bounds at ATL 37.',
+    statYardage: -4,
+  });
+  assert.equal(touchedBehind.creditedYards, 0);
+
+  // Week 8 TEN–CIN: officially -1 (the gamebook says -2).
+  const touchedThenRecovered = parsePlayNarrative({
+    typeSlug: 'pass-reception',
+    shortText: "Cam Ward Pass Complete for Loss of 1 Yd to Wan'Dale Robinson Wan'Dale Robinson Fumble Josh Newton 0 Yd Fumble Recovery",
+    rawText: '(Shotgun) C.Ward pass short right to W.Robinson to CIN 39 for -2 yards (D.Turner). FUMBLES (D.Turner), touched at CIN 38, RECOVERED by CIN-J.Newton at CIN 32.',
+    statYardage: 0,
+  });
+  assert.equal(touchedThenRecovered.creditedYards, -1);
+
+  // Week 8 PIT–CLE: the runner recovered his own fumble; officially 9.
+  const ownRecovery = parsePlayNarrative({
+    typeSlug: 'fumble-recovery-own',
+    shortText: 'Jaylen Warren 9 Yd Rush Jaylen Warren Fumble Jaylen Warren 0 Yd Fumble Recovery',
+    rawText: 'J.Warren left tackle to CLV 48 for 8 yards (T.Campbell). FUMBLES (T.Campbell), and recovers at CLV 47.',
+    statYardage: 8,
+  });
+  assert.equal(ownRecovery.creditedYards, 9);
+
+});
