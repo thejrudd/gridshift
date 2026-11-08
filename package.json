@@ -25,6 +25,7 @@
     "preview": "vite preview",
     "validate:routing": "node scripts/validate-routing.mjs",
     "validate:tour": "node scripts/validate-whats-new-tour.mjs",
+    "audit:plays": "node --env-file-if-exists=.env scripts/play-feed-audit.mjs",
     "test:unit": "node --test tests/unit/*.test.mjs",
     "test:e2e": "TMPDIR=/tmp playwright test",
     "test:e2e:tour": "TMPDIR=/tmp playwright test tests/e2e/whats-new-tour.spec.js --config=playwright.tour.config.js",

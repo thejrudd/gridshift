@@ -10,7 +10,7 @@ import { normalizeEspnLeaguePayload } from '../../utils/espnFantasyAdapter';
 import { buildScoringModelOptions } from '../../utils/scoringModelOptions';
 import { formatScoringSettingValue } from '../../utils/scoringDisplay';
 import {
-  SCORING_GAME_EXAMPLE_OPTIONS, SCORING_PLAY_TYPES, filterScoringGroups, getPositionStrengthRanking, getScoringGameExample, getScoringGameExampleCandidates, getScoringProfile, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId,
+  SCORING_GAME_EXAMPLE_OPTIONS, SCORING_PLAY_TYPES, filterScoringGroups, getPositionStrengthRanking, getScoringGameExample, getScoringProductionSeason, getScoringGameExampleCandidates, getScoringProfile, isNonStandardScoringSetting, isScoringRuleRosterEligible, pickRandomScoringGameExample, pickRandomScoringGameExampleId,
 } from '../../utils/scoringGuide';
 import {
   CompanionMenuChevron, CompanionMenuSelectionMark, CompanionMenuTrigger, CompanionSelectorButton, CompanionSelectorRail, CompanionSegmentedControl,
@@ -347,7 +347,7 @@ export default function CompanionScoring() {
     setScoringOverride, clearScoringOverride, setScoringOverridePaused,
     league, season, selectedLeagueId, linkedLeagueHistory, linkedLeagueSeasonOptions,
   } = useSleeperLeague();
-  const { players, statsBySeason, loadPlayers, loadStatsForSeason } = useSleeperStats();
+  const { players, seasonStats, statsBySeason, loadPlayers, loadStatsForSeason } = useSleeperStats();
   const [showActiveOnly, setShowActiveOnly] = useState(true);
   const [highlightNonStandard, setHighlightNonStandard] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -365,12 +365,14 @@ export default function CompanionScoring() {
   const displayRosterPositions = scoringOverride?.rosterPositions ?? league?.roster_positions;
   const scoringSeason = String(league?.season ?? season ?? '').trim();
   const selectedScoringSeason = String(scoringOverride?.season ?? scoringSeason);
-  const defaultProductionSeason = Number.isFinite(Number(scoringSeason))
-    ? String(Number(scoringSeason) - 1)
+  const currentSeasonStats = platform === 'sleeper' && scoringSeason
+    ? (statsBySeason?.[scoringSeason]?.seasonStats
+      ?? (String(season ?? '') === scoringSeason ? seasonStats : null))
     : null;
-  const productionSeason = defaultProductionSeason;
+  const hasCurrentSeasonStats = Object.keys(currentSeasonStats ?? {}).length > 0;
+  const productionSeason = getScoringProductionSeason(scoringSeason, currentSeasonStats);
   const productionStats = platform === 'sleeper' && productionSeason
-    ? statsBySeason?.[productionSeason]?.seasonStats
+    ? (productionSeason === scoringSeason ? currentSeasonStats : statsBySeason?.[productionSeason]?.seasonStats)
     : null;
   const hasProductionStats = Object.keys(productionStats ?? {}).length > 0;
   const hasPlayers = Object.keys(players ?? {}).length > 0;
@@ -452,6 +454,11 @@ export default function CompanionScoring() {
       });
     return () => { cancelled = true; };
   }, [hasPlayers, hasProductionStats, loadPlayers, loadStatsForSeason, platform, productionSeason]);
+  useEffect(() => {
+    // Current-season stats decide when position strength moves off last year.
+    if (platform !== 'sleeper' || !scoringSeason || hasCurrentSeasonStats) return;
+    void loadStatsForSeason(scoringSeason).catch(() => null);
+  }, [hasCurrentSeasonStats, loadStatsForSeason, platform, scoringSeason]);
   useEffect(() => {
     if (platform !== 'sleeper' || players) return;
     void loadPlayers().catch(() => null);
@@ -673,7 +680,9 @@ export default function CompanionScoring() {
                 <span>03</span>
                 <h2 id="scoring-position-strength-title">Position strength</h2>
               </div>
-              <p>{productionSeason ? `${productionSeason} results · ${selectedScoringSeason || 'current'} rules` : 'Historical results · selected rules'}</p>
+              <p>{productionSeason
+                ? `${productionSeason} results${productionSeason === scoringSeason ? ' to date' : ''}`
+                : 'Historical results'}</p>
             </div>
             {positionStrength.length > 0 ? (
               <div className="companion-scoring-position-strength__table" role="table" aria-label="Position strength by average fantasy points per game">

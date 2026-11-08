@@ -131,6 +131,7 @@ The live layer inside Fantasy Matchups (the separate Live tab was retired; `/fan
 | `src/components/companion/matchup/MatchupPointSourcesCard.jsx`, `src/utils/matchupPointSources.js` | Scorecard hover card: points by position (projected pregame, scored so far live, official vs projection final), summing to the masthead total |
 | `src/utils/teamScoringDrilldownModel.js` | Team drilldown model: lineup spots, grouped projected/actual categories, totals matching the masthead |
 | `src/utils/livePlaysFeed.js` | Starter matching, feed events, play → 0..1 game progress (`getPlayProgress()`); play normalization and stat deltas come from `playByPlay/` |
+| `scripts/play-feed-audit.mjs` (`npm run audit:plays`) | Rebuilds completed weeks' stat lines from the play feed and diffs them against official stats; read [[Play Feed Audit]] before changing play parsing or pricing |
 | `src/utils/liveReconciliation.js` | Plays reconciled against Sleeper: pending/confirmed status, residual adjustment, displayed totals, stat-update fallback |
 | `src/utils/liveWinProbability.js` | `explainWinProbability()`, `resolveStarterProjection()` |
 | `src/data/liveWinProbabilityModel.js` | Generated coefficient contract — never hand-edit |
