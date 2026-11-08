@@ -23,8 +23,11 @@ test('the compound play preserves each reported carrier, recovery, and return', 
   assert.equal(parsed.fumble.at, 'CAR 25');
   assert.equal(parsed.fumble.returnTo, 'CAR 22');
   assert.deepEqual(parsed.tacklers, ['B.Young']);
-  // Do not make the general narrative matcher more permissive.
-  assert.equal(parsePlayNarrative(normalize()).confident, false);
+  // The chain reads from the official description, carrier by carrier.
+  const narrative = parsePlayNarrative(normalize());
+  assert.equal(narrative.confident, true);
+  assert.equal(narrative.chain, true);
+  assert.match(narrative.sentence, /^Bryce Young found T(?:etairoa|\.)\s?McMillan, who lateraled to J(?:alen|\.)\s?Coker\. J\.Bullard forced a fumble, recovered by /);
 });
 
 test('original offense, net advance, and drive grouping agree despite the retained pass slug', () => {

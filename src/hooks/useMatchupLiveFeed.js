@@ -65,6 +65,8 @@ import {
   parseGlanceProgress,
   sortLiveFeedEvents,
 } from '../utils/livePlaysFeed.js';
+import { buildPlayerNumbers } from '../utils/nflPlays/playNarrative.js';
+import { canonicalTeam } from '../utils/nflPlays/fieldSpots.js';
 import { createReconciliationState, reconcileLivePlays } from '../utils/liveReconciliation.js';
 import {
   buildPaceSeries,
@@ -1271,12 +1273,29 @@ export default function useMatchupLiveFeed({
     liveGames.filter((game) => isFinalGame(game)).map((game) => String(game.id))
   ), [liveGames]);
 
+  // Jersey numbers for penalty sentences ("Byron Murphy II (Seattle, #91)"),
+  // from Sleeper's player list, limited to the teams playing this week.
+  const playerNumbers = useMemo(() => {
+    if (!players) return null;
+    const teams = new Set([...gamesById.values()]
+      .flatMap((game) => [game?.visitor_team?.abbreviation ?? game?.away?.id, game?.home_team?.abbreviation ?? game?.home?.id])
+      .filter(Boolean)
+      .map(canonicalTeam));
+    return buildPlayerNumbers(Object.values(players)
+      .filter((player) => player?.team && teams.has(canonicalTeam(player.team)))
+      .map((player) => ({
+        team: player.team,
+        name: player.full_name ?? [player.first_name, player.last_name].filter(Boolean).join(' '),
+        number: player.number,
+      })));
+  }, [gamesById, players]);
+
   const playEvents = useMemo(() => {
     // Only this week's games: plays fetched for another week's game list can
     // never reach the feed, whatever order the requests settle in.
     const currentPlaysByGame = Object.fromEntries(Object.entries(playsByGame).filter(([gameId]) => gamesById.has(String(gameId))));
     const built = traceLiveWork('build play events', () => (
-      buildPlayEvents(currentPlaysByGame, starterNameIndex, activeScoringSettings, positionsById, gamesById)
+      buildPlayEvents(currentPlaysByGame, starterNameIndex, activeScoringSettings, positionsById, gamesById, { playerNumbers })
     ), `${Object.keys(currentPlaysByGame).length} games`);
     if (!sandbox?.replay) return built;
     return built.map((event) => {
@@ -1284,7 +1303,7 @@ export default function useMatchupLiveFeed({
       const at = Number.isFinite(slate) ? sandbox.instantAt(slate) : null;
       return Number.isFinite(at) ? { ...event, at, timelineAt: at, slateProgress: slate } : event;
     });
-  }, [activeScoringSettings, gamesById, playsByGame, positionsById, sandbox, starterNameIndex]);
+  }, [activeScoringSettings, gamesById, playerNumbers, playsByGame, positionsById, sandbox, starterNameIndex]);
 
   const observedPlayPoints = useMemo(() => buildObservedPlayerPoints(playEvents), [playEvents]);
 

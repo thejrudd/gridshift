@@ -10,7 +10,7 @@
 // always drives left to right and the home team right to left, which is how
 // broadcast field graphics are read.
 
-import { parseInterception, parsePassLaterals } from './playNarrative.js';
+import { authoritativeText, parseInterception, parsePassLaterals } from './playNarrative.js';
 import { canonicalTeam, FIELD_SPOT_PATTERN, possessionTextToPercent } from './fieldSpots.js';
 
 export { canonicalTeam, possessionTextToPercent } from './fieldSpots.js';
@@ -169,6 +169,11 @@ export function getPassLateralGeometry(play, { homeTeam, awayTeam } = {}) {
   };
 }
 
+export function kickingTeamRecovered(play) {
+  const text = authoritativeText(play?.rawText ?? play?.description ?? '');
+  return /\b(?:FUMBLES|MUFFS)\b[\s\S]*?\bRECOVERED by [A-Z]{2,3}-/.test(text);
+}
+
 function isPossessionChangingPlay(play, context = {}) {
   const lateral = getPassLateralGeometry(play, context);
   if (lateral) return lateral.changesPossession;
@@ -176,8 +181,14 @@ function isPossessionChangingPlay(play, context = {}) {
   if (!slug) return false;
   // A kick is a possession change the two sides line up for: the kicking team
   // is the offense and the coverage unit, the receiving team fields it.
-  if (isKickPossessionPlay(play)) return true;
+  // Unless the kicking team then took it back on a fumble or muff: the gamebook
+  // capitalizes RECOVERED for a change of possession ("Z.Branch MUFFS catch,
+  // RECOVERED by CHI-J.Blackwell"), and `team` already names the kicking team.
+  if (isKickPossessionPlay(play)) return !kickingTeamRecovered(play);
   if (/interception/.test(slug)) return true;
+  // A fumble out of the defense's end zone is a touchback: their ball, though
+  // the row keeps the run's slug ("rush") and names them as `team`.
+  if (/\bFUMBLES\b(?:\s*\([^)]*\))?,?[^.]*?\bout of bounds in End Zone, Touchback\b/i.test(authoritativeText(play?.rawText ?? play?.description ?? ''))) return true;
   // `opp` covers both `-opp-` and `-opponent`; a slug uses one or the other.
   return /fumble/.test(slug) && /opp/.test(slug);
 }
@@ -230,6 +241,10 @@ export function isTurnoverOnDowns(play) {
   // gained the distance can read as short of it. The narrative's credited
   // yards are what the offense actually gained.
   const penalty = play?.narrative?.penalty;
+  // An accepted flag on the side that does not have the ball after the snap
+  // (roughing the passer on fourth-and-22) gave the offense its first down.
+  if (penalty && !penalty.declined && penalty.team && play?.team
+    && canonicalTeam(penalty.team) !== canonicalTeam(play.team)) return false;
   const credited = Number(play?.narrative?.creditedYards);
   const gained = penalty && !penalty.declined && play?.narrative?.creditedYards != null && Number.isFinite(credited)
     ? credited

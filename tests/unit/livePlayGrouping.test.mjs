@@ -146,9 +146,9 @@ test('an unparsed provider sentence retains the conservative text-matching fallb
   assert.deepEqual(event.stats, { rush_att: 1, rush_yd: 4 });
 });
 
-test('an unparsed mixed pass-fumble sentence does not turn a mentioned defender into a feed scorer', () => {
-  // The provider's compact text can combine the pass, fumble, and recovery in
-  // a shape outside the narrative grammar. B.Young in the official text is
+test('a mixed pass-fumble sentence does not turn a mentioned defender into a feed scorer', () => {
+  // The provider's compact text combines the pass, fumble, and recovery in
+  // one row; the narrative reads it as the pass plus a fumble clause. B.Young in the official text is
   // Bryce Young, not either rostered Byron Young. The Rams defender proves the
   // wrong-team rejection; the Bears defender proves that a team match alone
   // cannot invent the recovery role from B.Young's passing clause.
@@ -169,7 +169,10 @@ test('an unparsed mixed pass-fumble sentence does not turn a mentioned defender 
   play.offenseTeamAbbr = 'CAR';
   play.defenseTeamAbbr = 'CHI';
 
-  assert.equal(play.narrative, null);
+  assert.equal(
+    play.narrative?.sentence,
+    'Bryce Young found Tetairoa McMillan for 21 yards. Tetairoa McMillan fumbled, recovered by Devin Bush.',
+  );
   assert.deepEqual(matchPlayToStarters(play, buildStarterNameIndex(starters)), []);
   assert.deepEqual(buildPlayEvents(
     { 'game-chi-car': [rawPlay] },
@@ -301,7 +304,8 @@ test('explicit multi-role defenders and team defense each produce one row', () =
     idp_fr: 1,
   });
   assert.equal(events.filter((event) => event.playerId === 'det-dst').length, 1);
-  assert.deepEqual(events.find((event) => event.playerId === 'det-dst')?.stats, { def_ff: 1 });
+  // The team defense also recovered it (Sleeper's D/ST fum_rec).
+  assert.deepEqual(events.find((event) => event.playerId === 'det-dst')?.stats, { fum_rec: 1, def_ff: 1 });
 });
 
 test('named tacklers stay a generic tackle in the stat line but are priced the league\'s way', () => {
@@ -482,11 +486,12 @@ test('structured end-down data credits first downs when provider text omits the 
 });
 
 test('a made field goal carries cumulative yards over 30 for kicker scoring', () => {
+  // Sleeper's distance bands ride along: a 59-yarder is both 50_59 and 50p.
   [
-    { distance: 30, over30: 0 },
-    { distance: 31, over30: 1 },
-    { distance: 59, over30: 29 },
-  ].forEach(({ distance, over30 }) => {
+    { distance: 30, over30: 0, bands: { fgm_30_39: 1 } },
+    { distance: 31, over30: 1, bands: { fgm_30_39: 1 } },
+    { distance: 59, over30: 29, bands: { fgm_50_59: 1, fgm_50p: 1 } },
+  ].forEach(({ distance, over30, bands }) => {
     const play = normalizePlay({
       id: `field-goal-${distance}`,
       type_slug: 'field-goal',
@@ -500,6 +505,7 @@ test('a made field goal carries cumulative yards over 30 for kicker scoring', ()
       fgm: 1,
       fgm_yds: distance,
       fgm_yds_over_30: over30,
+      ...bands,
     });
   });
 });
@@ -638,7 +644,8 @@ test('a summary-only pick-six recovers the same-possession passer and credits Ho
   ).filter((event) => event.sharedPlayId === '401873286469');
 
   assert.deepEqual(events.map((event) => event.playerId).sort(), ['hou-dst', 'mendoza', 'woodaz']);
-  assert.deepEqual(events.find((event) => event.playerId === 'mendoza').stats, { pass_int: 1, pass_att: 1, pass_inc: 1 });
+  // A pick returned for a score is also Sleeper's "Pick 6 Thrown".
+  assert.deepEqual(events.find((event) => event.playerId === 'mendoza').stats, { pass_int: 1, pass_att: 1, pass_inc: 1, pass_int_td: 1 });
   assert.equal(events.find((event) => event.playerId === 'woodaz').play.defenseTeamAbbr, 'HOU');
   assert.equal(events.find((event) => event.playerId === 'hou-dst').play.defenseTeamAbbr, 'HOU');
   const mendoza = events.find((event) => event.playerId === 'mendoza');

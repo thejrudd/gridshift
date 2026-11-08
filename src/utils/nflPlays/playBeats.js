@@ -522,6 +522,8 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
     && (narrative.confident || placedKickPenalty);
 
   if (!narrative.confident && !bespokeKick && !officialInterception) return generic();
+  // A lateral chain the geometry could not confirm is not a plain catch.
+  if (narrative.chain) return generic();
 
   if (bespokePass) {
     snap({ passer: named(who.passer), passing: true });

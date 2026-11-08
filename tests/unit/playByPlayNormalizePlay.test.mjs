@@ -220,7 +220,8 @@ test('team-defense scoring detection covers sacks, turnovers, safeties and break
   assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
     description: 'D.Hunter sacked F.Mendoza for -7 yards.',
     yards: -7,
-  })), { sack: 1, sack_yd: 7 });
+  // A sack for a loss is also the team's tackle for loss.
+  })), { sack: 1, sack_yd: 7, tkl_loss: 1 });
   assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
     description: 'W.Woodaz intercepted the pass and returned it 80 yards for a touchdown.',
     scoring: true,
@@ -230,11 +231,21 @@ test('team-defense scoring detection covers sacks, turnovers, safeties and break
   });
   assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
     description: 'A.Thomas recovers the fumble and returns it 55 yards for a touchdown.',
+    type: 'fumble-return-touchdown',
+    defensiveActors: [{ role: 'forcer', name: 'B.Smith' }],
+    raw: { text: 'J.Doe left end to DAL 40 for 2 yards (B.Smith). FUMBLES (B.Smith), RECOVERED by NYG-A.Thomas at DAL 45. A.Thomas for 55 yards, TOUCHDOWN.' },
     scoring: true,
     yards: 55,
   })), {
-    def_ff: 1, def_td: 1, def_fum_td: 1, fum_ret_yd: 55, bonus_def_fum_td_50p: 1,
+    fum_rec: 1, def_ff: 1, def_td: 1, def_fum_td: 1, fum_ret_yd: 55, bonus_def_fum_td_50p: 1,
   });
+  // The offense's touchdown is not the defense's.
+  assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
+    description: 'Bryce Young found Darren Waller for a 50-yard touchdown.',
+    type: 'passing-touchdown',
+    scoring: true,
+    yards: 50,
+  })), {});
   assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
     description: 'Tackled in the end zone for a safety.',
   })), { safe: 1 });
@@ -417,7 +428,7 @@ test('a kickoff credits the returner to the receiving team and the tackler to th
   const events = buildPlayEvents(
     { 'game-phi-dal': [kickoff] },
     buildStarterNameIndex(starters),
-    { kr_yd: 0.04, idp_tkl: 1 },
+    { kr_yd: 0.04, idp_tkl: 1, st_tkl_solo: 1 },
     new Map([['turpin', 'WR'], ['brown', 'S'], ['elliott', 'K']]),
     new Map([['game-phi-dal', game]]),
   );
@@ -427,7 +438,8 @@ test('a kickoff credits the returner to the receiving team and the tackler to th
   assert.ok(returner, 'the receiving team keeps its returner');
   assert.ok(tackler, 'the kicking team keeps its coverage tackle');
   assert.deepEqual(returner.stats, { kr_yd: 23 });
-  assert.deepEqual(tackler.stats, { idp_tkl: 1 });
+  // A coverage tackle is a special-teams tackle in Sleeper's lines, not an IDP one.
+  assert.deepEqual(tackler.stats, { st_tkl_solo: 1 });
 
   // The kicking team is the resolved offense on the play both are attached to.
   assert.equal(returner.play.offenseTeamAbbr, 'PHI');
