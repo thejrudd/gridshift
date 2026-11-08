@@ -51,11 +51,12 @@ test('a completed pass and lateral split the receiving yards and charge the fumb
   const byId = Object.fromEntries(events.map((event) => [event.playerId, event]));
   assert.equal(byId.young.stats.pass_yd, 9);
   assert.equal(byId.young.stats.idp_tkl, 1);
-  assert.deepEqual(byId.mcmillan.stats, { rec: 1, rec_yd: 8 });
+  // Sleeper's per-catch length bucket rides with the catch.
+  assert.deepEqual(byId.mcmillan.stats, { rec: 1, rec_yd: 8, rec_5_9: 1 });
   assert.deepEqual(byId.coker.stats, { fum: 1, fum_lost: 1, rec_yd: 1 });
   assert.equal(byId.mcmillan.pts, 1.8);
   assert.equal(byId.coker.pts, -1.9);
-  assert.equal(byId.coker.desc, 'Bryce Young found Tetairoa McMillan, who lateraled to Jalen Coker. Jalen Coker fumbled; Brenton Cox Jr. recovered.');
+  assert.equal(byId.coker.desc, 'Bryce Young found Tetairoa McMillan, who lateraled to Jalen Coker. J.Bullard forced a fumble, recovered by Brenton Cox Jr., who returned it 3 yards.');
   assert.equal(byId.bullard.stats.idp_ff, 1);
   assert.equal(byId.cox.stats.idp_fr, 1);
 });
@@ -139,7 +140,7 @@ test('multiple laterals can give one carrier negative receiving yards without an
       text: 'B.Young pass short middle to T.McMillan to CAR 24 for 8 yards. Lateral to J.Coker to CAR 26 for 2 yards. Lateral to C.Hubbard to CAR 23 for -3 yards.' }],
   });
   const byId = Object.fromEntries(events.map((event) => [event.playerId, event]));
-  assert.deepEqual(byId.first.stats, { rec: 1, rec_yd: 8 });
+  assert.deepEqual(byId.first.stats, { rec: 1, rec_yd: 8, rec_5_9: 1 });
   assert.deepEqual(byId.second.stats, { rec_yd: 2 });
   assert.deepEqual(byId.third.stats, { rec_yd: -3 });
   assert.equal(byId.third.pts, -0.3);
@@ -166,7 +167,8 @@ test('a pass and fumble without a lateral gets a readable feed description', () 
       text: '(Shotgun) J.Love pass short left to C.Watson to CAR 42 for 8 yards (N.Scott). FUMBLES (N.Scott), touched at CAR 40, RECOVERED by CAR-B.Okereke at CAR 37.',
       short_text: 'Jordan Love Pass Complete for 8 Yds to Christian Watson Christian Watson Fumble Bobby Okereke 0 Yd Fumble Recovery', stat_yardage: 8 }],
   });
-  assert.equal(events[0].desc, 'Jordan Love found Christian Watson, who fumbled. Bobby Okereke recovered.');
+  // The shared narrative owns this sentence, so Matchups and Statistics read the same.
+  assert.equal(events[0].desc, 'Jordan Love found Christian Watson for 8 yards. N.Scott forced a fumble, recovered by Bobby Okereke.');
   assert.equal(events[0].stats.fum_lost, 1);
   assert.equal(events[0].stats.rec, 1);
 });
@@ -491,7 +493,7 @@ test('an offensive flag after a fourth-down conversion does not hand the ball to
       }],
     },
   );
-  assert.deepEqual(events[0]?.stats, { rec: 1, rec_yd: 11, rec_fd: 1 });
+  assert.deepEqual(events[0]?.stats, { rec: 1, rec_yd: 11, rec_fd: 1, rec_10_19: 1 });
 });
 
 test('an automatic first down from a defensive flag is not the runner\'s first down', () => {

@@ -203,6 +203,80 @@ Every key below must stay in step with `scoringEngine.js`'s
 one place per-play fantasy points are rounded (two decimals). `buildPlayEvents`
 calls it rather than inlining `calcPoints(buildPlayStatDelta(...))`.
 
+## Compound plays and attribution rules
+
+Measured against weeks 6–9 of 2026 (43 games, 7,939 rows): the narrative was
+unconfident on 155 rows (1.95%) before v9.3.8 and 37 (0.47%) after. The rest
+are onside kicks, muffed punts, center-fumbled snaps, and one-off shapes, which
+render the official description.
+
+- **Fumble clause.** `short_text` writes a fumble after the play it ended
+  ("… to Travis Hunter Travis Hunter Fumble Teddye Buchanan 0 Yd Fumble
+  Recovery"), or before it on a kick. `splitFumbleClause()` lifts the clause
+  out and the base grammar must match the rest. The fumbler must be that play's
+  ball carrier: the receiver of a pass, the rusher, the sacked passer, the
+  returner, or the aborted-snap holder. A passer fumbling on a pass play, or a
+  fumbler who keeps the play going after recovering (`fumbleContinues()`), is
+  a botched snap ahead of the real play and stays unparsed.
+- The fumbler keeps their base role (no second `fumbler` actor), so a kick
+  returner is still checked against the receiving roster. `narrative.fumble`
+  carries `{ fumbler, recoverer, returnYards }`; `narrative.returnYards` stays
+  the kick return.
+- The base gain and tackle come from the official description **before**
+  FUMBLES. The compact text can measure to the recovery, and the last tackle
+  group can be the recovery-return tackle. On a lost fumble the provider's
+  `stat_yardage` is the defense's return, so `buildPlayStatDelta` credits
+  `narrative.creditedYards` whenever `narrative.fumble` is set.
+- After an opponent recovery, the carrier earns a first down only if their own
+  credited yards reached the line (`isFirstDownPlay`).
+- A returner is credited `narrative.returnYards` (yards to a return foul's
+  spot; zero on "Return, No Gain") rather than the provider's net.
+- An interception narrative names the thrower from the official description,
+  so the passer is charged even when the compact text names only the defender.
+- **Kick recovered by the kicking team.** The gamebook capitalizes RECOVERED
+  for a change of possession. A kick with `FUMBLES`/`MUFFS … RECOVERED by` has
+  changed hands twice, `team` already names the kicking team, and
+  `isPossessionChangingPlay()` does not flip it.
+- Fantasy Live's `describePassFumble()` wording is used only when the narrative
+  did not parse the fumble (lateral chains). Otherwise the feed row, the shared
+  Matchups row (`groupSharedPlayEvents`), and Statistics read the same
+  sentence.
+
+## Game context, penalties, and the remaining shapes (v9.3.8, second pass)
+
+Over weeks 6–9 of 2026 every one of 7,939 rows now parses.
+
+- **Game context.** `collectPlayNames(rows)` gathers the full names a game's
+  compact texts spell out; pass it as `nameHints`. `buildPlayerNumbers(rows)`
+  turns roster rows into the `playerNumbers` lookup. Both reach
+  `parsePlayNarrative` through `normalizeCanonicalPlay`, Fantasy Live's
+  `normalizePlay` / `buildPlayEvents(…, { playerNumbers })`, and Statistics'
+  `normalizeBdlScorePlay` / `groupBdlPlaysIntoDrives(…, { playerNumbers })`.
+  Fantasy takes numbers from Sleeper's player list; Statistics from the game's
+  BDL player lines (players without stats, usually linemen, have none there).
+- **Interceptions** read "Sam Darnold's pass for Tory Horton was intercepted by
+  Kris Abrams-Draine at the Denver 31." (`spotPhrase`: shared cities use the
+  nickname). The thrower is a passer actor so the interception is charged.
+- **Penalties.** `parsePenaltyClause` reads every flag on the snap and returns
+  the one that stands (or `offsetting` when both teams' flags cancel). The
+  sentence names the player, team and number, the foul, the yards, and the
+  next spot: "Byron Murphy II (Seattle, #91) was flagged for a face mask, 15
+  yards. Ball at the Denver 44." A flag that wipes the play out leads with what
+  it cost: "Touchdown called back: …", "Interception erased: …", "…'s 12-yard
+  run didn't count." A play that lost nothing just adds the flag.
+- **Shapes added:** a snap fumbled before the real play (`fumble.snap`), muffed
+  punts, onside kicks, summary-only rows (return TD, fumble-recovery TD, safety,
+  defensive conversion, blocked-kick return), a sack-fumble return touchdown
+  told from the gamebook, completed-pass lateral chains (`lateral-pass`, from
+  `parsePassLaterals`), a loose snap pitched on and fumbled away
+  (`snap-lateral`, with every fumbler in `narrative.fumbles`), and a kick row
+  whose compact text is missing or the literal string `"null"`.
+- `narrative.chain` marks a lateral chain: the field animation draws it only
+  from confirmed lateral geometry, never as a plain catch.
+- Possession: a kick the kicking team recovered (capital `RECOVERED by` after
+  `FUMBLES`/`MUFFS`) and a fumble out of the defense's end zone for a touchback
+  are both read as possession changes by `isPossessionChangingPlay()`.
+
 ## Tests
 
 | Behavior | Test | Command |
@@ -211,3 +285,4 @@ calls it rather than inlining `calcPoints(buildPlayStatDelta(...))`.
 | Statistics Scores adapter output and drive grouping | `tests/unit/balldontlieNflScoreboard.test.mjs` | `node --test tests/unit/balldontlieNflScoreboard.test.mjs` |
 | Fantasy Live adapter, matching, and feed events | `tests/unit/livePlayGrouping.test.mjs`, `tests/unit/livePlayText.test.mjs`, `tests/unit/liveFeedClassification.test.mjs` | `node --test tests/unit/livePlayGrouping.test.mjs` |
 | Possession correction itself | `tests/unit/nflFieldGeometry.test.mjs` | `node --test tests/unit/nflFieldGeometry.test.mjs` |
+| Compound fumbles, no-gain returns and picks, sacker-less sacks, kick recoveries, both-sides shared rows | `tests/unit/playNormalizationFumbles.test.mjs` | `node --test tests/unit/playNormalizationFumbles.test.mjs` |

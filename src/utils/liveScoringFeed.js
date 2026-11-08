@@ -217,7 +217,8 @@ export function mapBdlStatsToGridShift(row, position = null) {
     pr_yd: row?.punt_return_yards ?? 0,
     kr_td: row?.kick_return_touchdowns ?? 0,
     pr_td: row?.punt_return_touchdowns ?? 0,
-    ret_td: (row?.kick_return_touchdowns ?? 0) + (row?.punt_return_touchdowns ?? 0),
+    // Sleeper's key for a player's return touchdown (ESPN reads kr_td / pr_td).
+    st_td: (row?.kick_return_touchdowns ?? 0) + (row?.punt_return_touchdowns ?? 0),
     fgm: fieldGoalsMade,
     fgmiss: Number.isFinite(fieldGoalAttempts) ? Math.max(0, fieldGoalAttempts - fieldGoalsMade) : 0,
     xpm: extraPointsMade,
@@ -669,7 +670,7 @@ export function getEventClassification(delta, position) {
   const mechanism = getEventMechanism(delta, pos);
   let kind = null;
 
-  if (n(delta.pass_td) + n(delta.rush_td) + n(delta.rec_td) + n(delta.ret_td)
+  if (n(delta.pass_td) + n(delta.rush_td) + n(delta.rec_td) + n(delta.ret_td) + n(delta.st_td)
     + n(delta.kr_td) + n(delta.pr_td)
     + n(delta.fum_ret_td) + n(delta.def_td) + n(delta.idp_def_td) > 0) kind = 'td';
   else if (n(delta.fgm) + n(delta.fgmiss) > 0) kind = 'fg';

@@ -15,6 +15,32 @@ When making any change to scoring logic (new fields in `DEFAULT_SCORING`/`STAT_T
 | `src/context/SleeperContext.jsx` | Verify startup re-derives from `league.scoring_settings` via `importLeagueScoring` or `normalizeScoringProfile` |
 | `src/utils/espnBigPlayBonuses.js` / `src/context/SleeperContext.jsx` | ESPN-only scoring-play enrichment derives long TD counters and successful two-point conversions from NFL scoring plays; keep it behind `platform === 'espn'` so Sleeper calculations stay API-native |
 
+## Sleeper Parity (verified)
+
+`calcPoints()` reproduces the points Sleeper awarded exactly for 132,147
+rostered player-weeks: 38 sampled leagues with distinct scoring (2025 season)
+plus the maintainer's leagues (2025, 2026 weeks 1–9). Rules that parity needed:
+
+- Sleeper pays IDP stats to whoever records them (a receiver's tackle after an
+  interception earns the league's tackle points). The IDP position gate applies
+  only to ESPN profiles (`provider: 'espn'`).
+- Sleeper's `rush_att` setting is per carry for every position; it is not
+  aliased to the RB-only `bonus_rush_att`.
+- Position bonuses: Sleeper's own `bonus_rec_*` / `bonus_fd_*` counts on the
+  stat line win (a two-way player listed at DB earns `bonus_rec_wr`). Without
+  them, first-down bonuses count passing, rushing and receiving first downs.
+- `fgm_50p` / `fgmiss_50p` are scored alongside the 10-yard bands.
+- The `pts_ppr` / `pts_std` fallback applies only to a line with no raw stats;
+  a real line that nets to 0 stays 0.
+- A player's return TD is Sleeper's `st_td`; the GridShift-only `ret_td`
+  defaults to 0 because Sleeper leagues never list it.
+
+Live estimates emit Sleeper's keys per play wherever a play can carry them:
+`fgm_*` / `fgmiss_*` distance bands (plus `_50p`), `rec_0_4` … `rec_40p`
+per catch, `pass_int_td`, and the team defense's `fum_rec`, `tkl_loss` and
+`def_4_and_stop`. Game totals (`pts_allow_*`, `yds_allow_*`) and solo/assisted
+tackle splits arrive through reconciliation with Sleeper's stat line.
+
 ## Live Provider Play And Reconciliation Boundary
 
 Fantasy Live and Statistics Scores share the canonical provider semantics in
@@ -86,8 +112,33 @@ scoring engine when adding or changing a stat key:
   Unclear or penalty-adjusted splits fail closed
   while retaining a separately identifiable fumble.
 - Team defenses score special teams through `buildTeamDefensePlayDelta()`'s
-  `detail`: the receiving side's `def_kr_yd` / `def_pr_yd` and the kicking
-  side's `def_st_tkl_solo` when one coverage tackler is named.
+  `detail`: the receiving side's `def_kr_yd` / `def_pr_yd` (plus `def_st_td`
+  and ESPN's `kr_td` / `pr_td` when the returner scores), and the kicking
+  side's `def_st_tkl_solo` (one tackler named), `def_st_ff`, `def_st_fum_rec`
+  and `def_st_td` (`getKickCoverageCredit()`). The generic team-defense path
+  does not run on an unblocked kick.
+- Special teams follow Sleeper's own lines (checked against weeks 6–8 of
+  2026): on a kickoff or punt (`isSpecialTeamsPlay()`), a lone coverage tackle
+  is `st_tkl_solo` (a shared one is not credited), a forced fumble is
+  `idp_ff` + `st_ff`, a recovery is `st_fum_rec`, and players at any position
+  earn them, priced at their own position so IDP keys stay IDP-only. A kicker
+  or punter who tackles the returner keeps the kick and adds `st_tkl_solo`. A
+  returner's touchdown is `st_td` (plus ESPN's `kr_td` / `pr_td`); the old
+  GridShift-only `ret_td` fell back to a default of 6 in Sleeper leagues that
+  score special-teams touchdowns at 0.
+- A blocked kick is the defense's play: the blocker keeps `idp_blk_kick`, the
+  team gets `blk_kick`, and a blocked kick returned for a score is `st_td` for
+  the scorer and `def_st_td` (ESPN `blk_kick_ret_td`) for the team, not
+  `def_td`.
+- A team defense's `def_td` requires the defense to have scored: an
+  interception, a fumble the gamebook shows changing hands (capital
+  `RECOVERED by`), or a blocked kick. Every passing touchdown used to credit
+  the defense that allowed it. `def_ff` requires a defender who forced the
+  fumble. A summary-only "fumble return touchdown" row cannot tell an
+  offensive end-zone recovery from a defensive one and credits no defense.
+- `STAT_TO_SCORING_KEY` maps Sleeper's `def_st_td`, `def_st_ff`,
+  `def_st_fum_rec`, `st_ff` and `st_fum_rec`; Sleeper's D/ST forced fumble
+  `ff` (stat line and `scoring_settings`) maps to the internal `def_ff`.
 - Single-game threshold bonuses (`bonus_rush_att_20`, `bonus_pass_yd_300`,
   `bonus_rec_yd_100`, `bonus_tkl_10p`, `bonus_sack_2p`, `idp_pass_def_3p`, and
   the rest of `MILESTONE_BONUSES` in `livePlaysFeed.js`) are added to the play
