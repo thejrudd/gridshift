@@ -80,7 +80,7 @@ import MatchupScoringPlays from './matchup/MatchupScoringPlays.jsx';
 import MatchupPlayerHoverCard from './matchup/MatchupPlayerHoverCard.jsx';
 import MatchupPointSourcesCard from './matchup/MatchupPointSourcesCard.jsx';
 import { buildMatchupPointSources, buildMatchupScoredSources } from '../../utils/matchupPointSources.js';
-import { buildReplayFrame, getEventContributions, getGameStateAt } from '../../utils/matchupReplay.js';
+import { buildReplayFrame, getEventContributions, getGameStateAt, getLiveGameClockLabel, getLiveGameProgress } from '../../utils/matchupReplay.js';
 import { FantasyBaseOverride } from '../../context/SleeperContext';
 import { LIVE_SANDBOX_ENABLED, LiveSandboxPanel, useLiveSandbox } from '../../dev/liveSandbox';
 import { mergeSeasonScheduleResultsIntoMap } from '../../utils/seasonScheduleResults.js';
@@ -1081,7 +1081,12 @@ function CompanionMatchupView({
       : weekEntry != null ? (weekEntry.home === 1 || weekEntry.home === true) : null;
     // Home team hosts → determines whose stadium we use
     const homeTeam = isHome === true ? myTeam : isHome === false ? oppTeam : null;
-    const stadium = homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
+    // A neutral site (an international game) is where ESPN says it is played,
+    // not the home team's stadium; it has no coordinates for a weather lookup.
+    const siteVenue = schedEntry?.neutralSite === true ? schedEntry.venue : null;
+    const stadium = siteVenue?.name
+      ? { name: siteVenue.name, city: siteVenue.city ?? null, indoor: siteVenue.indoor ?? null, lat: null, lng: null }
+      : homeTeam ? (STADIUMS[homeTeam] ?? null) : null;
     const defStrength = hasAdvancedStats && oppTeam && defenseTable
       ? getDefenseStrength(defenseTable, oppTeam, p.position, week)
       : null;
@@ -1127,6 +1132,7 @@ function CompanionMatchupView({
       gameStarted,
       stadium,
       isIndoor: stadium?.indoor ?? null,
+      neutralSite: siteVenue != null,
       weekly,
       availabilityStatus: getPlayerAvailabilityStatus(p),
       defStrength,
@@ -1202,7 +1208,7 @@ function CompanionMatchupView({
 
     for (const player of allPlayers) {
       const date = player.gameDate ?? WEEK_DATES_2025[week];
-      if (!date || !player.homeTeam || player.isIndoor) continue;
+      if (!date || !player.homeTeam || player.isIndoor || player.neutralSite) continue;
       const s = STADIUMS[player.homeTeam];
       if (s && !s.indoor) {
         const key = `${player.homeTeam}-${date}`;
@@ -2049,10 +2055,24 @@ function CompanionMatchupView({
       const points = effectiveReplayAt == null
         ? liveDisplayedPoints.get(String(player.id)) ?? player.weekPts ?? 0
         : liveFrame.pointsByPlayer.get(String(player.id)) ?? 0;
-      return { ...player, weekPts: state === 'pre' ? null : points, gameStarted: state !== 'pre' };
+      // The game's real position from its live clock, so "expected pace" and
+      // the projected finish match the player drilldown (live only).
+      const gameProgress = effectiveReplayAt == null && state === 'live'
+        ? getLiveGameProgress(live.starterGameStateById.get(String(player.id))?.game)
+        : null;
+      return { ...player, weekPts: state === 'pre' ? null : points, gameStarted: state !== 'pre', gameProgress };
     };
     return enrichedSlots.map((slot) => ({ ...slot, mine: follow(slot.mine), opp: follow(slot.opp) }));
-  }, [effectiveReplayAt, enrichedSlots, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive]);
+  }, [effectiveReplayAt, enrichedSlots, live.starterGameStateById, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive]);
+
+  // The player drilldown reports the same number as the player's row: live
+  // displayed points (never a replay moment), otherwise Sleeper's points.
+  const drilldownEnrichedPlayer = useMemo(() => {
+    if (!selectedDrilldownPlayer || !liveLayerActive) return selectedDrilldownPlayer;
+    const livePoints = liveDisplayedPoints.get(String(selectedDrilldownPlayer.id));
+    if (!Number.isFinite(livePoints) || liveGameStateFor(selectedDrilldownPlayer.id).state === 'pre') return selectedDrilldownPlayer;
+    return { ...selectedDrilldownPlayer, weekPts: livePoints };
+  }, [liveDisplayedPoints, liveGameStateFor, liveLayerActive, selectedDrilldownPlayer]);
 
   const liveYetToFinish = useMemo(() => {
     if (!liveLayerActive) return null;
@@ -2207,8 +2227,13 @@ function CompanionMatchupView({
     const points = liveLayerActive
       ? liveFrame?.pointsByPlayer.get(String(player.id)) ?? 0
       : Number(player.weekPts) || 0;
+    const liveGame = live.starterGameStateById.get(String(player.id))?.game;
     const quarterClock = () => {
       if (effectiveReplayAt == null) {
+        // The game's own clock, labelled as Statistics Scores labels it; a
+        // player's latest play only stands in when the feed has no clock.
+        const gameClock = getLiveGameClockLabel(liveGame);
+        if (gameClock) return gameClock;
         const latest = plays[plays.length - 1];
         return latest?.glance?.clock ?? 'In progress';
       }
@@ -2217,7 +2242,6 @@ function CompanionMatchupView({
       return `Q${quarter} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
     };
     const gameLabel = getGameLabel(player) ?? '';
-    const liveGame = live.starterGameStateById.get(String(player.id))?.game;
     const kickoffWindow = liveGame ? live.axis.windowByGameId.get(String(liveGame.id)) : null;
     const kickoffLabel = kickoffWindow ? `Kicks off ${kickoffWindow.longLabel}` : gameLabel;
     const clockLabel = state === 'live' ? quarterClock() : state === 'final' ? gameLabel : kickoffLabel;
@@ -2815,7 +2839,7 @@ function CompanionMatchupView({
           week={week}
           projection={selectedDrilldownPlayer?.projection ?? null}
           baseline={projectionBaselines[selectedPlayer.id] ?? null}
-          enrichedPlayer={selectedDrilldownPlayer}
+          enrichedPlayer={drilldownEnrichedPlayer}
           benchComparison={drilldownBenchComparison}
           onViewBenchPlayer={(playerId) => setSelectedPlayer({ id: playerId })}
           onClose={() => setSelectedPlayer(null)}
@@ -3507,10 +3531,12 @@ function getPlayerPerformanceTarget(player, actualScore, projectedPts) {
     position: player.position,
     projection: player.projection ?? null,
     fallbackAvg: player.avgPPG,
-    fraction: getFallbackRemainingGameFraction({
-      scheduleEntry: player.scheduleEntry ?? null,
-      currentPoints: actualScore,
-    }),
+    fraction: Number.isFinite(player.gameProgress)
+      ? Math.max(0, Math.min(1, 1 - player.gameProgress))
+      : getFallbackRemainingGameFraction({
+        scheduleEntry: player.scheduleEntry ?? null,
+        currentPoints: actualScore,
+      }),
   });
   return Number.isFinite(outlook.expectedAtNow) ? outlook.expectedAtNow : null;
 }
@@ -3591,6 +3617,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       total: actualScore,
       projected: projectedPts,
       scheduleEntry: player.scheduleEntry ?? null,
+      gameProgress: player.gameProgress ?? null,
     })
     : null;
   const displayedProjection = paceAdjustedProjection ?? projectedPts;

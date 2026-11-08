@@ -218,23 +218,28 @@ export function resolvePlayerDisplayProjection({ isPregame, projection, baseline
  * intentionally use the full-game projection instead; pregame has no actual
  * score to compare.
  */
+// The game's real position (0..1, from its live clock) when known; otherwise
+// the wall-clock estimate from kickoff.
+function getRemainingFraction({ scheduleEntry, currentPoints, now, gameProgress }) {
+  const progress = matchupNumber(gameProgress);
+  if (progress != null) return Math.max(0, Math.min(1, 1 - progress));
+  return getFallbackRemainingGameFraction({ scheduleEntry, currentPoints, now });
+}
+
 export function getPlayerPerformanceTarget({
   phase,
   total,
   projected,
   scheduleEntry = null,
   now = Date.now(),
+  gameProgress = null,
 } = {}) {
   const projection = matchupNumber(projected);
   if (projection == null) return null;
   if (phase === 'final') return projection;
   if (phase !== 'live') return null;
 
-  const remainingFraction = getFallbackRemainingGameFraction({
-    scheduleEntry,
-    currentPoints: total,
-    now,
-  });
+  const remainingFraction = getRemainingFraction({ scheduleEntry, currentPoints: total, now, gameProgress });
   return projection * (1 - remainingFraction);
 }
 
@@ -251,6 +256,7 @@ export function getPaceAdjustedProjection({
   projected,
   scheduleEntry = null,
   now = Date.now(),
+  gameProgress = null,
 } = {}) {
   const projection = matchupNumber(projected);
   if (phase !== 'live' || projection == null) return null;
@@ -258,7 +264,7 @@ export function getPaceAdjustedProjection({
   const outlook = getStarterOutlook({
     current,
     projection: { projected: projection },
-    fraction: getFallbackRemainingGameFraction({ scheduleEntry, currentPoints: current, now }),
+    fraction: getRemainingFraction({ scheduleEntry, currentPoints: current, now, gameProgress }),
     model: PACE_PROJECTION_MODEL,
   });
   return getPaceProjectedFinal(outlook);

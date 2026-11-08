@@ -85,7 +85,7 @@ src/
 ├── data/
 │   ├── teamColors.js              # Official color palettes for all 32 teams (light + dark)
 │   ├── honors.json                # Static Pro Bowl / All-Pro records by player and season
-│   └── stadiums.js                # All 32 NFL stadiums: indoor flag, coordinates, week dates
+│   └── stadiums.js                # All 32 NFL stadiums: indoor flag, coordinates, week dates (home stadiums only; a neutral-site game uses the schedule entry's ESPN `venue`)
 └── utils/
     ├── playerApi.js               # ESPN API fetches: roster, stats, game log, bio
     ├── playerCache.js             # localStorage cache with per-key TTLs

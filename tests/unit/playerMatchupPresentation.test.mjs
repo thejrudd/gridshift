@@ -222,3 +222,12 @@ test('getPaceAdjustedProjection moves a live projection with pace and leaves oth
   assert.equal(getPaceAdjustedProjection({ ...args, phase: 'final', total: 22 }), null);
   assert.equal(getPaceAdjustedProjection({ ...args, projected: null, total: 5 }), null);
 });
+
+test('pace targets use the game clock when one is known', () => {
+  const now = Date.parse('2026-09-13T18:00:00Z');
+  const args = { phase: 'live', projected: 20, scheduleEntry: { kickoff: '2026-09-13T17:00:00Z', completed: false }, now };
+  assert.equal(getPlayerPerformanceTarget({ ...args, total: 5, gameProgress: 0.5 }), 10);
+  assert.notEqual(getPlayerPerformanceTarget({ ...args, total: 5 }), 10);
+  const halftime = getPaceAdjustedProjection({ ...args, total: 10, gameProgress: 0.5 });
+  assert.ok(Math.abs(halftime - 20) < 0.2);
+});

@@ -15,6 +15,11 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Matchups player drilldowns showed different live points than the player's row, left plays late in a half off the scoring chart, and grouped a fumble and a first down together as Other scoring. | v9.3.8 |
+| Matchups hover cards showed the clock of the player's last play instead of the game clock, so a game at halftime read as still in the second quarter. | v9.3.8 |
+| International games showed the home team's stadium and weather instead of the neutral site where they were played. | v9.3.8 |
+| A fumble by a player whose abbreviated name matched a teammate's was not charged in their drilldown, runs that ended in a lost fumble got no yards or the defense's return yards, and catches or runs that ended in a fumble could get the wrong yardage. | v9.3.8 |
+| Matchups live totals ran ahead of Sleeper when Sleeper credited a first down differently from the play feed, holding an already-counted play as pending. | v9.3.8 |
 | Matchups live estimates gave every passing touchdown to the defense that allowed it as a defensive touchdown, and gave a team defense a forced fumble on fumbles nobody forced. | v9.3.8 |
 | Fantasy points differed from Sleeper's totals in some leagues: defensive stats by offensive players, per-carry points for non-running backs, 50+ yard field goals, tight end rushing first downs, and lines that net to zero were scored wrongly, and return touchdowns could earn phantom points. | v9.3.8 |
 | Matchups scoring plays credited a catch, run, or return that ended in a fumble to the wrong player or yardage, credited kick-coverage tackles as defensive tackles, and missed special-teams scores, blocked kicks, and returns for no gain. | v9.3.8 |

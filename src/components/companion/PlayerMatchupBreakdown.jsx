@@ -36,6 +36,7 @@ import {
   getStatLinePoints,
   selectDrilldownStatKeys,
 } from '../../utils/playerDrilldownModel.js';
+import { getLiveGameProgress } from '../../utils/matchupReplay.js';
 import { BridgeChart, CategoryShiftChart, OutlookChart, PaceChart, RankStrip, Ring, StatLineBars, TierChart, WeekColumns } from './drilldown/DrilldownCharts.jsx';
 import { fmt, sgn, statTone } from './drilldown/drilldownChartUtils.js';
 import { usePlayerMatchupTimeline } from '../../hooks/usePlayerMatchupTimeline.js';
@@ -483,10 +484,12 @@ function KeyTiles({ tiles }) {
 
 function PointsPopover({ title, line }) {
   if (!line) return null;
-  const rows = [
-    ...line.items.filter(item => item.pts !== 0 || item.value),
-    ...(line.other != null ? [{ key: 'other', label: 'Other scoring', value: null, pts: line.other }] : []),
-  ];
+  // A detail view names every scoring stat; only a season average (no single
+  // stat line to itemize) or points no stat explains fall back to Other.
+  const rest = line.extras
+    ? [...line.extras, ...(line.unexplained != null ? [{ key: 'other', label: 'Other scoring', value: null, pts: line.unexplained }] : [])]
+    : line.other != null ? [{ key: 'other', label: 'Other scoring', value: null, pts: line.other }] : [];
+  const rows = [...line.items.filter(item => item.pts !== 0 || item.value), ...rest];
   return <div className="pdd-tip pdd-tip--bd" role="dialog" aria-label={title}>
     <b>{title}</b>
     <div className="pdd-bdt">
@@ -669,14 +672,21 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
       : baseWeekEntry
   ), [baseWeekEntry, espnDerivedWeekEntry, isPregame]);
 
+  // The matchup row's points (live displayed or the platform's credited total)
+  // are the headline; the stat line explains them, with any gap as an adjustment.
+  // ESPN keeps its official-total merge below.
+  const rowPoints = isPregame || platform === 'espn' ? undefined : matchupNumber(enrichedPlayer?.weekPts) ?? undefined;
   const { breakdown, total } = useMemo(() => {
     if (!weekEntry) return { breakdown: [], total: null };
     const result = buildFantasyScoringBreakdown(weekEntry, scoring, position, {
       preferRawStats: Boolean(espnDerivedWeekEntry),
-      adjustmentLabel: platform === 'espn' ? 'Official Scoring Adjustment' : 'Scoring Adjustment',
+      // Live, the row's total runs ahead of the stat line by the plays not yet
+      // counted in it.
+      adjustmentLabel: platform === 'espn' ? 'Official Scoring Adjustment' : phase === 'live' ? 'Plays not yet in stats' : 'Scoring Adjustment',
+      authoritativeTotal: rowPoints,
     });
     return { breakdown: result.rows, total: result.total };
-  }, [weekEntry, scoring, position, espnDerivedWeekEntry, platform]);
+  }, [weekEntry, scoring, position, espnDerivedWeekEntry, platform, rowPoints, phase]);
 
   const projectionView = useMemo(() => resolvePlayerDisplayProjection({ isPregame, projection, baseline }), [baseline, isPregame, projection]);
   const displayProjection = projectionView.projection;
@@ -706,7 +716,15 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     currentGames: enrichedPlayer.defStrength.gamesAnalyzed,
     evidenceKind: 'current',
   } : null);
-  const performanceTarget = getPlayerPerformanceTarget({ phase, total, projected: projectedValue, scheduleEntry, now });
+  // "Now" is the game's own clock when the play feed reports one, and never
+  // earlier than a play that has already happened.
+  const latestPlayProgress = phase === 'live'
+    ? Math.max(0, ...timeline.events.map(event => matchupNumber(event?.progress) ?? 0))
+    : 0;
+  const clockProgress = phase === 'live' ? getLiveGameProgress(timeline.game) : null;
+  const elapsed = Math.max(getDrilldownElapsedFraction({ phase, scheduleEntry, total, now, gameProgress: clockProgress }), latestPlayProgress);
+  const gameProgress = phase === 'live' ? elapsed : null;
+  const performanceTarget = getPlayerPerformanceTarget({ phase, total, projected: projectedValue, scheduleEntry, now, gameProgress });
   const hero = buildHeroModel({ phase, total, projectionView, seasonBenchmark, performanceTarget });
   const rankModel = buildRankModel({ phase, rank: enrichedPlayer?.rank, weekRank: enrichedPlayer?.weekRank, position, week });
 
@@ -740,8 +758,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
   const seasonLine = averageLine(weeks.prior.map(row => lineByWeek.get(row.week)));
   const bridge = isPregame ? buildProjectionBridge({ projection: displayProjection, projectedRows: projectedBreakdown?.rows ?? [], priorWeeks: weeks.prior }) : null;
 
-  const elapsed = getDrilldownElapsedFraction({ phase, scheduleEntry, total, now });
-  const estimate = getPaceAdjustedProjection({ phase, total, projected: projectedValue, scheduleEntry, now });
+  const estimate = getPaceAdjustedProjection({ phase, total, projected: projectedValue, scheduleEntry, now, gameProgress });
   const pace = phase === 'pregame' ? null : buildScoringPace({
     events: timeline.events,
     phase,

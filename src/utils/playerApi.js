@@ -1121,7 +1121,7 @@ async function fetchWeekSchedule(season, week) {
   const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
   const ttl = Number(season) < CURRENT_SEASON ? TTL.historical : TTL.stats;
   return cachedFetch(
-    `sched_v7_${season}_${week}`,
+    `sched_v8_${season}_${week}`,
     async () => {
       const res = await fetch(url);
       if (!res.ok) return {};
@@ -1155,6 +1155,17 @@ async function fetchWeekSchedule(season, week) {
         // competitor.id is a competition-specific ID and does NOT match.
         const kickoff = event.date ?? null;
         const eventDate = kickoff?.slice(0, 10) ?? null;
+        // Where the game is actually played: international and other neutral
+        // sites are not the home team's stadium.
+        const competition = event.competitions?.[0];
+        const venue = competition?.venue?.fullName ? {
+          id: competition.venue.id ?? null,
+          name: competition.venue.fullName,
+          city: competition.venue.address?.city ?? null,
+          country: competition.venue.address?.country ?? null,
+          indoor: typeof competition.venue.indoor === 'boolean' ? competition.venue.indoor : null,
+        } : null;
+        const neutralSite = competition?.neutralSite === true;
         map[homeAbbr] = {
           opp: awayAbbr,
           home: true,
@@ -1165,6 +1176,8 @@ async function fetchWeekSchedule(season, week) {
           espnEventId: event.id,
           espnCompetitorId: homeC.team?.id,
           date: eventDate,
+          venue,
+          neutralSite,
         };
         map[awayAbbr] = {
           opp: homeAbbr,
@@ -1176,6 +1189,8 @@ async function fetchWeekSchedule(season, week) {
           espnEventId: event.id,
           espnCompetitorId: awayC.team?.id,
           date: eventDate,
+          venue,
+          neutralSite,
         };
       }
       return map;

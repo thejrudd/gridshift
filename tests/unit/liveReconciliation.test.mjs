@@ -1163,3 +1163,35 @@ test('unconfirmed decisions are idempotent', () => {
   assert.deepEqual(twice.feedEvents, once.feedEvents);
   assert.equal(twice.players.get('wr1').displayedPoints, once.players.get('wr1').displayedPoints);
 });
+
+test('a first down Sleeper did not credit never holds back a play it has counted', () => {
+  // Penix, week 9: three scrambles (11, 23, 16 yards) each reached the line to
+  // gain, but Sleeper credits two rushing first downs (the 11-yarder had an
+  // accepted defensive hold). Its 50 yards and 3 carries include all three.
+  // A first down worth a full point keeps the points walk's rounding slack
+  // from confirming the play on its own.
+  const scoring = { ...SCORING, rush_fd: 1 };
+  const runs = [
+    makePlay({ playerId: 'qb1', position: 'QB', stats: { rush_att: 1, rush_yd: 11, rush_fd: 1 }, pts: 2.1, order: 10 }),
+    makePlay({ playerId: 'qb1', position: 'QB', stats: { rush_att: 1, rush_yd: 23, rush_fd: 1 }, pts: 3.3, order: 20 }),
+    makePlay({ playerId: 'qb1', position: 'QB', stats: { rush_att: 1, rush_yd: 16, rush_fd: 1 }, pts: 2.6, order: 30 }),
+  ];
+  const sleeper = { sleeperPointsById: new Map([['qb1', 7]]), sleeperStatsById: new Map([['qb1', { rush_att: 3, rush_yd: 50, rush_fd: 2 }]]) };
+  const state = reconcileLivePlays(createReconciliationState(), {
+    scoringSettings: scoring, positionsById: POSITIONS, playEvents: runs, ...sleeper, sleeperStatsFetchedAt: 100, now: 100,
+  });
+  const player = state.players.get('qb1');
+
+  assert.equal(player.pendingPoints, 0);
+  assert.equal(player.displayedPoints, 7);
+  const latest = player.plays.find((play) => play.id === runs[2].id);
+  assert.equal(latest.status, 'confirmed');
+  assert.deepEqual(latest.adjustmentParts.map((part) => [part.key, part.gap, part.pts]), [['rush_fd', -1, -1]]);
+
+  // A carry Sleeper has not counted yet still waits.
+  const fourth = makePlay({ playerId: 'qb1', position: 'QB', stats: { rush_att: 1, rush_yd: 15 }, pts: 1.5, order: 40 });
+  const next = reconcileLivePlays(state, {
+    scoringSettings: scoring, positionsById: POSITIONS, playEvents: [...runs, fourth], ...sleeper, sleeperStatsFetchedAt: 200, now: 200,
+  });
+  assert.equal(next.players.get('qb1').pendingPoints, 1.5);
+});
