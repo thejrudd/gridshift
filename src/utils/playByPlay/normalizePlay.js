@@ -15,7 +15,7 @@
 // See docs/Play-By-Play Normalization.md.
 
 import { parseDefensiveActors, parsePlayNarrative } from '../nflPlays/playNarrative.js';
-import { getOffenseTeam, isKickPossessionPlay } from '../nflPlays/fieldGeometry.js';
+import { getOffenseTeam, isKickPossessionPlay, isTurnoverOnDowns } from '../nflPlays/fieldGeometry.js';
 
 export {
   PLAY_MATCH_STATS,
@@ -190,6 +190,8 @@ export function normalizeCanonicalPlay(raw, {
   homeTeam = null,
   awayTeam = null,
   inferredPasserName = null,
+  nameHints = null,
+  playerNumbers = null,
   normalizeTeam = (value) => value ?? null,
 } = {}) {
   if (!raw) return null;
@@ -210,6 +212,13 @@ export function normalizeCanonicalPlay(raw, {
     rawText: rawDescription,
     description: rawDescription,
     statYardage: firstFinite(raw.stat_yardage, raw.yards_gained, raw.yards, raw.net_yards),
+    // Full names spelled out elsewhere in the game (`collectPlayNames`), for
+    // sentences built from the abbreviated official description.
+    nameHints,
+    // Jersey numbers from the surface's roster data (`buildPlayerNumbers`),
+    // and the provider's end-of-play spot, for a penalty's sentence.
+    playerNumbers,
+    endPossessionText: firstString(raw.end_possession_text),
   });
   const defensiveActors = parseDefensiveActors(rawDescription, { typeSlug });
 
@@ -285,5 +294,7 @@ export function normalizeCanonicalPlay(raw, {
   });
   canonical.offenseTeam = offenseTeam;
   canonical.defenseTeam = defenseTeam;
+  // A fourth down the offense came up short on: the defense's stop.
+  canonical.turnoverOnDowns = isTurnoverOnDowns(readGeometryFields(canonical));
   return canonical;
 }

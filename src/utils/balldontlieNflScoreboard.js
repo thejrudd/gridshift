@@ -8,6 +8,7 @@ import {
   isNonSnapPlay,
   isTurnoverOnDowns,
 } from './nflPlays/fieldGeometry.js';
+import { buildPlayerNumbers, collectPlayNames } from './nflPlays/playNarrative.js';
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 import { normalizeCanonicalPlay } from './playByPlay/normalizePlay.js';
 import { buildPlayerQuarterStats, getStatisticsPlayerKey } from './statisticsPlayerQuarterStats.js';
@@ -495,9 +496,9 @@ function formatPlaySpot(play, team, game) {
  * the rendered score, and `scoring`, which stays the provider's own
  * `scoring_play` flag rather than Fantasy Live's text-inferred reading.
  */
-export function normalizeBdlScorePlay(play, game) {
+export function normalizeBdlScorePlay(play, game, { nameHints = null, playerNumbers = null } = {}) {
   if (!play) return null;
-  const canonical = normalizeCanonicalPlay(play, { gameId: game?.id ?? null });
+  const canonical = normalizeCanonicalPlay(play, { gameId: game?.id ?? null, nameHints, playerNumbers });
   const description = firstString(play.text, play.short_text, 'Play unavailable') ?? 'Play unavailable';
   const down = play.start_down > 0
     ? `${ordinal(play.start_down)} & ${play.start_distance ?? '—'}`
@@ -542,6 +543,10 @@ export function normalizeBdlScorePlay(play, game) {
     // from earlier, positively identified passes in the same possession. This
     // is app-owned context, never presented as a provider-supplied field.
     inferredPasserName: canonical.inferredPasserName,
+    // Full names from the game's other plays; Statistics' own narrative calls
+    // read them so its sentences match the feed's.
+    nameHints,
+    playerNumbers,
     homeWinProbability: canonical.homeWinProbability,
     awayScore: asScore(play.away_score),
     homeScore: asScore(play.home_score),
@@ -897,12 +902,13 @@ function describeDrive(group, index) {
   };
 }
 
-export function groupBdlPlaysIntoDrives(plays = [], game) {
+export function groupBdlPlaysIntoDrives(plays = [], game, { playerNumbers = null } = {}) {
   const homeTeam = game?.home?.id ?? null;
   const awayTeam = game?.away?.id ?? null;
+  const nameHints = collectPlayNames(plays);
   const normalized = enrichPlaySequenceContext(sortBdlPlaysChronologically(plays)
     .filter((play) => !isPeriodBoundaryPlay(play))
-    .map((play) => normalizeBdlScorePlay(play, game))
+    .map((play) => normalizeBdlScorePlay(play, game, { nameHints, playerNumbers }))
     .filter(Boolean), { homeTeam, awayTeam });
 
   // Group by the team that ran each play, not by `team` — which names whoever
@@ -1197,7 +1203,13 @@ export function buildScoreDetailFromGame(game, {
   const quarterValues = normalizeQuarterValues(game, rawGame);
   const detailsProvider = game?.detailsProvider ?? game?.provider;
   const supportsBdlDetail = detailsProvider === 'balldontlie';
-  const drives = supportsBdlDetail ? groupBdlPlaysIntoDrives(rawPlays, game) : [];
+  // Jersey numbers for penalty sentences, from the game's own player lines.
+  const playerNumbers = buildPlayerNumbers(playerStats.map((row) => ({
+    team: row?.team?.abbreviation ?? row?.team,
+    name: [row?.player?.first_name, row?.player?.last_name].filter(Boolean).join(' '),
+    number: row?.player?.jersey_number,
+  })));
+  const drives = supportsBdlDetail ? groupBdlPlaysIntoDrives(rawPlays, game, { playerNumbers }) : [];
   const terminal = supportsBdlDetail ? getBdlFinalGameTerminal(rawPlays, game?.status) : null;
   const awayId = game?.away?.id ?? teamFromBdl(rawGame?.visitor_team).id;
   const homeId = game?.home?.id ?? teamFromBdl(rawGame?.home_team).id;

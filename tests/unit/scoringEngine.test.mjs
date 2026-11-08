@@ -24,13 +24,23 @@ describe('scoring engine provider profiles', () => {
     assert.equal(points, 23);
   });
 
-  it('applies field-goal yard bonuses and excludes IDP tackle scoring from offense', () => {
+  it('applies field-goal yard bonuses and scores IDP stats the way each platform does', () => {
     assert.equal(calcPoints({ fgm_yds_over_30: 22 }, {
       ...DEFAULT_SCORING,
       fgm_yds_over_30: 0.1,
     }, 'K'), 2.2);
+    // Sleeper pays IDP stats to whoever records them: a receiver's tackle
+    // after an interception earns the league's tackle points (verified against
+    // Sleeper's awarded totals across 38 leagues).
     assert.equal(calcPoints({ idp_tkl: 4, idp_tkl_ast: 2 }, {
       ...DEFAULT_SCORING,
+      idp_tkl: 1,
+      idp_tkl_ast: 0.5,
+    }, 'WR'), 5);
+    // ESPN profiles keep IDP scoring to defensive positions.
+    assert.equal(calcPoints({ idp_tkl: 4, idp_tkl_ast: 2 }, {
+      ...DEFAULT_SCORING,
+      provider: 'espn',
       idp_tkl: 1,
       idp_tkl_ast: 0.5,
     }, 'WR'), 0);
@@ -275,5 +285,43 @@ describe('scoring engine provider profiles', () => {
     assert.equal(profile.sourceMeta.rawScoringItems[0].mappedKey, 'pass_inc');
     assert.equal(profile.sourceMeta.rawScoringItems[1].mappedKey, 'rush_att');
     assert.equal(profile.sourceMeta.statIdMap[35], 'bonus_rush_td_40p');
+  });
+});
+
+// Each case below was a real mismatch against the points Sleeper awarded in
+// sampled leagues (38 scoring systems, 2025 season, 126,264 player-weeks).
+describe('Sleeper-native scoring parity', () => {
+  it('scores a per-carry setting for every position, not only running backs', async () => {
+    const { importLeagueScoring } = await import('../../src/utils/scoringEngine.js');
+    const scoring = importLeagueScoring({ rush_att: 0.1, rush_yd: 0.1 });
+    assert.equal(calcPoints({ rush_att: 10, rush_yd: 50 }, scoring, 'QB'), 6);
+  });
+
+  it('keeps a real line that nets to zero at zero', async () => {
+    const { importLeagueScoring } = await import('../../src/utils/scoringEngine.js');
+    const scoring = importLeagueScoring({ fgmiss: -1, fgmiss_30_39: -1, xpm: 1 });
+    // A missed 35-yarder (both miss keys) against two extra points: 0, not Sleeper's generic pts_ppr.
+    assert.equal(calcPoints({ fgmiss: 1, fgmiss_30_39: 1, xpm: 2, pts_ppr: 1 }, scoring, 'K'), 0);
+  });
+
+  it('counts rushing first downs in a tight end first-down bonus and prefers Sleeper\'s own count', async () => {
+    const { importLeagueScoring } = await import('../../src/utils/scoringEngine.js');
+    const scoring = importLeagueScoring({ bonus_fd_te: 0.5 });
+    assert.equal(calcPoints({ rec_fd: 1, rush_fd: 1 }, scoring, 'TE'), 1);
+    assert.equal(calcPoints({ rec_fd: 1, rush_fd: 1, bonus_fd_te: 3 }, scoring, 'TE'), 1.5);
+  });
+
+  it('pays a two-way player the reception bonus Sleeper\'s line carries', async () => {
+    const { importLeagueScoring } = await import('../../src/utils/scoringEngine.js');
+    const scoring = importLeagueScoring({ rec: 1, bonus_rec_wr: 0.5 });
+    // Listed at DB, caught four passes as a receiver.
+    assert.equal(calcPoints({ rec: 4, bonus_rec_wr: 4 }, scoring, 'DB'), 6);
+  });
+
+  it('scores 50+ yard field goal settings and never a phantom return-TD default', async () => {
+    const { importLeagueScoring } = await import('../../src/utils/scoringEngine.js');
+    const scoring = importLeagueScoring({ fgm_50p: 2, fgmiss_50p: -1, st_td: 0 });
+    assert.equal(calcPoints({ fgm_50p: 1, fgmiss_50p: 1 }, scoring, 'K'), 1);
+    assert.equal(calcPoints({ ret_td: 1, st_td: 1 }, scoring, 'RB'), 0);
   });
 });

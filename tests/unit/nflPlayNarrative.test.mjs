@@ -112,7 +112,8 @@ test('a play wiped out by penalty says so and reports no yardage', () => {
   const narrative = parsePlayNarrative(findByShortText(423945, 'Miles Sanders Tyler Smith 10 Yd Pnlty'));
   assert.equal(narrative.negated, true);
   assert.equal(narrative.yards, null);
-  assert.match(narrative.sentence, /Wiped out by offensive holding on DAL\.$/);
+  // A wiped-out gain says it didn't count, then names the flag and the next spot.
+  assert.equal(narrative.sentence, "Dak Prescott's 4-yard pass to Miles Sanders didn't count. Tyler Smith (Dallas) was flagged for holding, 10 yards. Ball at the Philadelphia 43.");
 });
 
 test('a team penalty with no named player still parses', () => {
@@ -238,6 +239,7 @@ test('the penalty clause is read out of the official description', () => {
     // off the clause rather than guessed from the yardage.
     enforcedAt: 'DAL 12',
     noPlay: false,
+    offsetting: false,
   });
   const wiped = parsePenaltyClause('PENALTY on DAL-T.Smith, Offensive Holding, 10 yards, enforced at PHI 33 - No Play.');
   assert.equal(wiped.noPlay, true);
@@ -255,6 +257,7 @@ test('a kickoff landing-zone placement is parsed without invented penalty yards'
     declined: false,
     enforcedAt: 'LV 40',
     noPlay: false,
+    offsetting: false,
   });
 
   const narrative = parsePlayNarrative({
@@ -264,7 +267,7 @@ test('a kickoff landing-zone placement is parsed without invented penalty yards'
   });
   assert.equal(narrative.confident, true);
   assert.equal(narrative.playKind, 'penalty');
-  assert.match(narrative.sentence, /placed at LV 40/i);
+  assert.equal(narrative.sentence, "Ka'imi Fairbairn (Houston) was flagged for a kickoff short of landing zone. Ball placed at the Las Vegas 40.");
   assert.doesNotMatch(narrative.sentence, /0 yards/i);
 });
 
