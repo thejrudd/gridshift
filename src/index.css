@@ -30168,6 +30168,61 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   color: var(--color-label);
 }
 
+/* ── Live scoreboard card ─────────────────────────────────────────────────── */
+
+.global-search-live__row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.global-search-live__row:not(button):hover {
+  background: transparent;
+}
+
+.global-search-live__teams {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.global-search-live__team {
+  display: grid;
+  grid-template-columns: 18px 2.75rem 2rem;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-label-secondary);
+}
+
+.global-search-live__team.is-leading {
+  font-weight: 700;
+  color: var(--color-label);
+}
+
+.global-search-live__logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.global-search-live__score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-live__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-secondary);
+  text-align: right;
+}
+
 /* ── Compare card ── two value columns under a side header ──────────────── */
 
 .global-search-compare__head,

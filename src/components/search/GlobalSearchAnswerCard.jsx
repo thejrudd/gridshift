@@ -186,6 +186,55 @@ function CompareRows({ sides, rows, onSelectPlayer, onRoute }) {
   );
 }
 
+/**
+ * A scoreboard: each game as away and home with their scores and the game's
+ * state. A game in progress carries the shared live dot. Each row opens the
+ * game, on Scores once it has kicked off.
+ */
+function LiveGameRows({ games, onRoute }) {
+  return (
+    <ol className="global-search-answer__rows global-search-live">
+      {games.map((game) => {
+        const content = (
+          <>
+            <span className="global-search-live__teams">
+              {[
+                ['away', game.awayId, game.awayLogoId, game.awayScore],
+                ['home', game.homeId, game.homeLogoId, game.homeScore],
+              ].map(([side, teamId, logoId, score]) => {
+                const other = side === 'away' ? game.homeScore : game.awayScore;
+                const leading = score != null && other != null && score > other;
+                return (
+                  <span key={side} className={`global-search-live__team${leading ? ' is-leading' : ''}`}>
+                    <img src={`/logos/${logoId}.png`} alt="" className="global-search-live__logo" loading="lazy" />
+                    <span className="global-search-live__abbr">{teamId}</span>
+                    <span className="global-search-live__score">{score ?? ''}</span>
+                  </span>
+                );
+              })}
+            </span>
+            <span className="global-search-live__status">
+              {game.inProgress ? <span className="matchup-live-dot" aria-hidden="true" /> : null}
+              <span>{game.statusLabel}</span>
+            </span>
+          </>
+        );
+        return (
+          <li key={game.key}>
+            {game.route ? (
+              <button type="button" className="global-search-answer__row global-search-live__row" onClick={() => onRoute?.(game.route)}>
+                {content}
+              </button>
+            ) : (
+              <div className="global-search-answer__row global-search-live__row">{content}</div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute }) {
   // A team's leaders card carries its whole qualifying group and shows the top
   // five, because five is the answer and the rest is the list.
@@ -201,7 +250,7 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
   const expanded = expandedFor != null && expandedFor === answer.title;
   const collapseAfter = answer.collapseAfter ?? null;
   // A compare card's rows are its own value lines, drawn by CompareRows.
-  const rows = answer.kind === 'compare' ? null : (answer.rows ?? null);
+  const rows = answer.kind === 'compare' ? null : (answer.rows ?? answer.games ?? null);
   const hiddenCount = rows && collapseAfter && !expanded
     ? Math.max(0, rows.length - collapseAfter)
     : 0;
@@ -231,6 +280,8 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
           rows={visibleRows}
           onSelectRow={(row) => onRoute?.(rowRoute(row))}
         />
+      ) : visibleRows && answer.kind === 'liveGames' ? (
+        <LiveGameRows games={visibleRows} onRoute={onRoute} />
       ) : visibleRows ? (
         <LeaderRows rows={visibleRows} onSelectPlayer={onSelectPlayer} />
       ) : null}

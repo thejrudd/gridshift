@@ -387,7 +387,23 @@ export const INTENT_PATTERNS = [
   ['projected',      { type: 'intent', val: 'projection' }],
   ['defense',        { type: 'intent', val: 'defenseVs'  }],
   ['defenses',       { type: 'intent', val: 'defenseVs'  }],
+  // Live game state. Answered only on a server with live data enabled; without
+  // it these words still reach the Scores and Live replay destinations.
+  ['live',           { type: 'intent', val: 'live'       }],
+  ['live score',     { type: 'intent', val: 'live'       }],
+  ['live scores',    { type: 'intent', val: 'live'       }],
+  ['score',          { type: 'intent', val: 'live'       }],
+  ['scores',         { type: 'intent', val: 'live'       }],
+  ['playing now',    { type: 'intent', val: 'live'       }],
+  ['right now',      { type: 'intent', val: 'live'       }],
+  ['in progress',    { type: 'intent', val: 'live'       }],
+  ['winning',        { type: 'intent', val: 'live'       }],
 ];
+
+// Words that are never a correction target. A live word reached by correction
+// would turn a name search into a live question: "love" is one edit from
+// "live", and "jordan love" must stay a search for Jordan Love.
+const UNCORRECTABLE = new Set(['live', 'score', 'scores', 'winning']);
 
 // ── Commands ────────────────────────────────────────────────────────────────
 // Verbs the palette performs rather than navigates to. `val` is the command id
@@ -483,7 +499,9 @@ export function lookupPhrase(phrase) {
 // phrase ("ward" → "card", from "wild card") is noise — the fragment carries no
 // meaning by itself.
 export const CORRECTION_DICTIONARY = Object.freeze([
-  ...new Set(GLOBAL_PATTERNS.map(([phrase]) => phrase).filter((phrase) => !phrase.includes(' '))),
+  ...new Set(GLOBAL_PATTERNS
+    .map(([phrase]) => phrase)
+    .filter((phrase) => !phrase.includes(' ') && !UNCORRECTABLE.has(phrase))),
 ]);
 
 // Correction dictionary for a word being matched as part of a multi-word phrase.
