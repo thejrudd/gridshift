@@ -5,7 +5,10 @@ Back: [[Home]] · Routing: [[Where To Edit]]
 One search surface reachable from anywhere — `Cmd/Ctrl+K` on desktop, the search
 button in `NavBar` on mobile, the sidebar entry on desktop. It finds players, NFL
 teams, games and weeks, fantasy teams, app destinations, and commands, and
-answers some questions inline.
+answers some questions inline: stats, leaders, standings, "X vs Y" comparisons,
+live scores on live-enabled servers, and the connected league's history. Before
+anything is typed it shows recent searches and suggestions, and the selected
+result offers actions beside its own destination.
 
 ## Why it is built this way
 
@@ -17,7 +20,9 @@ stay out: they are the thing this design deliberately does not attempt.
 
 **No server.** The index is a static build artifact, precached by the service
 worker and persisted to IndexedDB, so search works on a first-ever offline
-launch. Nothing in the search path requires the network.
+launch. Nothing in the search path requires the network — with one deliberate
+exception, live answers, which exist only on a server with live data enabled
+and degrade to destinations without it. See [Live answers](#live-answers).
 
 **Nothing derivable is shipped.** Player tokens are rebuilt from the name at
 load rather than serialized, which is what keeps the artifact small.
@@ -34,12 +39,12 @@ Re-measure and update these whenever the index shape changes.
 
 | | |
 | --- | --- |
-| Artifact size | 385.4 KB raw, 84.7 KB gzipped |
-| Records | 3,370 — 359 static + 3,011 players |
-| Players openable with no lookup | 92% (890 ids from Sleeper + 1,871 backfilled from ESPN rosters) |
-| Hydrate + index build | ~42 ms for the full corpus |
-| Query latency | 0–9 ms |
-| Palette chunk | 39 KB (lazy). It carries `scoringEngine` and `statisticsStandings` for the answer resolvers, which is most of it; the shared `PlayerAvatar` adds 48 bytes on top of that. |
+| Artifact size | 388.3 KB raw, 85.8 KB gzipped |
+| Records | 3,393 — 359 static + 3,034 players |
+| Players openable with no lookup | 92% (898 ids from Sleeper + 1,902 backfilled from ESPN rosters) |
+| Hydrate + index build | 42–67 ms for the full corpus |
+| Query latency | 0.35 ms median, 1.3 ms p95, 6 ms worst (a corrected typo) |
+| Palette chunk | 69 KB raw, 22 KB gzipped (lazy). Up from 39 KB in v9.1: the live card reuses `balldontlieNflScoreboard` for game normalization and box-score highlights, and history answers reuse `leagueHistory`. Before that it was mostly `scoringEngine` and `statisticsStandings`. |
 
 `scripts/build-search-index.mjs` fails the build above a 600 KB raw ceiling.
 Narrow what is indexed rather than raising it.
@@ -54,16 +59,23 @@ Narrow what is indexed rather than raising it.
 | `src/utils/globalSearch/tokenIndex.js` | Exact / prefix / trigram inverted indexes; no entity knowledge |
 | `src/utils/globalSearch/buildIndex.js` | Composes adapters into slices and an index |
 | `src/utils/globalSearch/rank.js` | Slot filtering, slot-agreement scoring, grouping |
-| `src/utils/globalSearch/persist.js` | IndexedDB `gridshift-search`, version-busted on `__APP_VERSION__` |
+| `src/utils/globalSearch/persist.js` | IndexedDB `gridshift-search`, version-busted on `__APP_VERSION__`; device-local recents under their own key, never busted |
+| `src/utils/globalSearch/recents.js` | Recent queries and opened results: add, dedupe, cap, resolve against the live index |
+| `src/utils/globalSearch/suggestions.js` | Empty-palette groups: recent, your starters, this week's games |
 | `src/utils/globalSearch/resolveRoute.js` | Result to route object; ESPN id fallback for players; game results pick Scores or team schedule at click time |
-| `src/utils/globalSearch/detail.js` | Expanded-result content, derived from the index only |
+| `src/utils/globalSearch/detail.js` | Expanded-result content and result actions, derived from the index only |
 | `src/utils/fantasyOwnership.js` | Who rosters a player; shared with the Statistics player header |
 | `src/utils/globalSearch/entities/*.js` | One adapter per source; `record.js` holds the shape |
 | `src/utils/globalSearch/answers/*.js` | Inline answer resolvers + dispatch |
 | `src/utils/globalSearch/answers/scope.js` | Conference / division / team slots to a set of teams, shared by every scoped answer |
 | `src/utils/globalSearch/answers/standings.js` | NFL and fantasy standings models and cards |
 | `src/utils/globalSearch/answers/teamStats.js` | One team's season: record, PF, PA, differential, PPG, SOS |
-| `src/hooks/useGlobalSearch.js` | Open state, `Cmd/Ctrl+K`, index lifecycle |
+| `src/utils/globalSearch/answers/compare.js` | "X vs Y": two players, NFL teams, or fantasy teams side by side |
+| `src/utils/globalSearch/answers/live.js` | Live scoreboard card, line score, box-score highlights |
+| `src/utils/globalSearch/answers/history.js` | Champions, head to head, trades, transactions from stored League History |
+| `src/utils/globalSearch/live/liveSource.js` | Search's one network path: live gate and session, `/api/live` games, box score |
+| `src/hooks/useLiveSearchAnswer.js` | When the live request runs and how its result reaches the palette |
+| `src/hooks/useGlobalSearch.js` | Open state, `Cmd/Ctrl+K`, index lifecycle, recents state |
 | `src/components/search/*.jsx` | Palette, result row, expanded detail, answer card, empty-state guide |
 | `scripts/build-search-index.mjs` | Generates `public/search-index.v1.json` (`prebuild`) |
 
@@ -98,7 +110,9 @@ was meant, so it offers both readings and ranking settles it on evidence. A
 corrected position is the exception: like an exact position phrase, it filters
 by position without requiring the typo to appear in a player's name. Consumers
 that make a strong claim from a slot — answer cards — check `slots.correctedTypes`
-and decline a corrected one.
+and decline a corrected one. The palette's "Showing results for" note follows the
+same rule from the other side: it is shown only when the top result did not
+match the word as typed, so "target magnet" never announces "targets".
 
 **Soft terms are optional and exact.** Intent words ("standings", "matchup") are
 also destination names, so they score against record text — but they are OR-ed
@@ -191,6 +205,34 @@ palette instant.
 
 Commands and destinations do not expand. Their row already says everything;
 expanding one would only echo the label back.
+
+### Result actions
+
+The expanded result carries `actions` beside its own destination: a rostered
+player can be traded for from his owner (or traded away) and opens the owner's
+roster or matchup; an NFL team opens its schedule or the standings; a fantasy
+team opens its matchup. Trade is offered only where the Trade tab is available.
+Every action is a plain route through `applyRoute`.
+
+From the keyboard, → or Tab moves into the actions and ← or Shift+Tab back out;
+Enter runs the focused one. The search field stays focused and names the action
+as its active descendant, so typing never stops working. Focus is stored
+against the row it belongs to, so moving to another row needs no reset. → only
+moves into actions when the caret is at the end of the query.
+
+### Recents and suggestions
+
+Before anything is typed the palette shows recent searches, recently opened
+results, your starters, and this week's games, then the examples. Groups use the
+`rankResults` shape, so they render, expand and navigate like typed results.
+Anything unavailable contributes no group.
+
+Recents are device-local — IndexedDB, never the server — and survive app
+updates. A search is recorded when a result, action or answer is opened, never
+per keystroke. Picks store identity only and are re-read from the live index,
+so a renamed team never shows stale text and a record that left the index is
+dropped. "This week" is the earliest week with a game less than 36 hours past
+kickoff, so Monday night still shows the week finishing.
 
 ### The motion rule
 
@@ -346,9 +388,77 @@ decimal for them rather than reporting a number the player did not record.
 
 Covered today: player stat lines, fantasy ranking, trade value, leaders (league
 wide or scoped to any conference, division and team combination), team stat
-leaders, IDP stat lines and leaders, NFL and fantasy standings, and team season
-stats (record, PF, PA, differential, points per game, strength of schedule).
-Not covered: live scores and game status, league history, scout and draft.
+leaders, IDP stat lines and leaders, NFL and fantasy standings, team season
+stats (record, PF, PA, differential, points per game, strength of schedule),
+"X vs Y" comparisons, live scores and box scores on live-enabled servers, and
+league history (champions, head to head, trades, transactions).
+Not covered: the user's live fantasy matchup, a player's live stat line, scout
+and draft prospects.
+
+### Compare: "X vs Y"
+
+`vs`, `versus` and `against` split the query (`slots.compare`), and **each side is
+parsed and ranked on its own**. Requiring every name term on one record — the
+normal rule — meant "jsn vs kupp" matched nobody. Ranking alternates the two
+sides' results so each side's best match leads its group and tags every entry
+with `compareSide`; two named teams keep only the games they play each other.
+
+Each side is read as whatever it most strongly matched, and a card appears only
+when both are the same kind. "bills" matches Buffalo's players too, but "vane vs
+bills" is a player against a team — no card — rather than a quiet swap to
+Buffalo's quarterback. A side that is only "me" or "my team" stands for the
+user's own team, which is how "me vs dana" reaches head to head.
+
+The card's numbers are the existing ones: `positionSeason` (shared with the
+ranking answer and cached per stats and scoring object) for points and rank,
+`productionAdjustedValue` with its null propagation for trade value, and the
+standings models for teams. Ranks at different positions are not compared.
+`searchAnswerData` does not carry KTC data today, so the trade value row — like
+the "trade value" answer — only appears once it does.
+
+### Live answers
+
+"bills score", "live scores", "jsn live". This is the one place search goes to
+the network, under rules that are each load-bearing:
+
+- **Only on a live-enabled server.** The gate is Fantasy Live's: `getLiveStatus`
+  reporting `live.enabled` and a live session for the league. A session is
+  started under exactly Fantasy Live's condition — league on the allowlist, no
+  access code — and never otherwise. With the gate off no live request is made,
+  no card shows, and the live words still reach Scores and Live replay. That is
+  the keyless path the project requires.
+- **Only GridShift's own endpoints.** `/api/live/games` for the week and the
+  Scores detail endpoint with `plays=0` for a team card's box score. Never a
+  third-party host from the browser.
+- **Only for a live question, once.** After the input settles, aborted when the
+  query changes, a 4 s timeout, and 30 s caches, so "bills score" then "chiefs
+  score" reads the week once.
+- **A failure is said, not swallowed.** The results stay and the palette says
+  live scores are unavailable.
+
+Provider team codes are canonicalized (`WSH` and `WAS` are one team) for
+matching; logos use the schedule record's own code, which is the logo file
+name. A team card's started games get a line score and seven headline team
+stats from `buildGameStatHighlights`, the same builder the Scores page uses.
+The whole-slate card stays a compact list and fetches no box scores.
+
+"my live matchup" is deliberately not answered live: its points come from the
+fantasy platform rather than GridShift's live server.
+
+### League history
+
+Champions, head to head, a player's or manager's trades, and recent
+transactions, built with `buildLeagueHistoryModel` and
+`buildActivitySeasonGroups` from the season snapshots League History has
+already stored. `peekLeagueHistorySnapshot` reads them without fetching, at any
+age. Before League History has been opened on a device these questions fall
+through to its destinations. Head to head counts playoff meetings, as League
+History's rivalries do.
+
+History words (`title`, `adds`, `drops`, `trades`) and live words (`live`,
+`score`) are in `UNCORRECTABLE` in `vocabulary.js`: short words one edit from
+surnames would otherwise turn a name search into a question — "jordan love"
+must not become a live query.
 
 ## Index lifecycle
 
