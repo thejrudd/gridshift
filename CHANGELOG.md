@@ -1557,3 +1557,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Game logs after mid-season trades** - Statistics player game logs show the team, opponent and result for games after a mid-season trade, and only show byes when the player's team had no game.
 - **Desktop matchup cards** - Desktop matchup cards show, beside the photo, the name with the position beside it, the game, then the stat line once the game starts or the kickoff day and time before it. In narrow windows the cards drop the team logo and then the photo, so names and games stay whole.
 
+## v9.4.1 - Roster Link Fix
+*2026-11-09*
+
+- **Roster link from player stats** - Opening another team's roster from a player's Statistics page no longer flips back and forth between that roster and yours.

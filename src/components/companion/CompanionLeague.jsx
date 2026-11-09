@@ -350,7 +350,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
           tradeDisabled={tradeDisabled}
           tradeDisabledTitle={tradeDisabledTitle}
           selectedRosterIdProp={routeState?.rosterId ?? null}
-          onSelectedRosterChange={(rosterId) => onRouteStateChange?.({ ...(routeState ?? {}), subView: 'roster', rosterId })}
+          onSelectedRosterChange={onRouteStateChange ? (rosterId) => onRouteStateChange({ ...(routeState ?? {}), subView: 'roster', rosterId }) : null}
         />
       )}
       </div>
@@ -378,30 +378,22 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   const useMobileTeamMenu = useMobilePreviewSheet;
 
   const myRosterData = useMemo(() => myRoster(), [myRoster]);
-  const [selectedRosterId, setSelectedRosterId] = useState(null);
+  const [localRosterId, setLocalRosterId] = useState(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const [teamMenuOpen, setTeamMenuOpen] = useState(false);
 
-  // Default to my own roster once it's available
-  useEffect(() => {
-    if (myRosterData && selectedRosterId === null) {
-      setSelectedRosterId(myRosterData.roster_id);
-    }
-  }, [myRosterData, selectedRosterId]);
-
-  useEffect(() => {
-    if (selectedRosterIdProp == null) {
-      setSelectedRosterId(myRosterData?.roster_id ?? null);
-      return;
-    }
-    setSelectedRosterId(Number(selectedRosterIdProp));
-  }, [selectedRosterIdProp, myRosterData?.roster_id]);
-
-  useEffect(() => {
-    if (selectedRosterId == null) return;
-    if (selectedRosterIdProp != null && Number(selectedRosterIdProp) === selectedRosterId) return;
-    onSelectedRosterChange?.(String(selectedRosterId));
-  }, [selectedRosterId, selectedRosterIdProp, onSelectedRosterChange]);
+  // When routed, the route is the only source of truth for the selected team
+  // (defaulting to mine). Mirroring it into state and syncing back in effects
+  // raced when the route changed from outside — e.g. the Statistics player
+  // "Roster" chip — and flipped between the two teams forever.
+  const isRouted = typeof onSelectedRosterChange === 'function';
+  const selectedRosterId = isRouted
+    ? (selectedRosterIdProp != null ? Number(selectedRosterIdProp) : (myRosterData?.roster_id ?? null))
+    : (localRosterId ?? myRosterData?.roster_id ?? null);
+  const selectRoster = (rosterId) => {
+    if (isRouted) onSelectedRosterChange(String(rosterId));
+    else setLocalRosterId(rosterId);
+  };
 
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
 
@@ -536,7 +528,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
             onOpenChange={setTeamMenuOpen}
             onChange={(nextRosterIds) => {
               const nextRosterId = Number(nextRosterIds[0]);
-              if (Number.isFinite(nextRosterId)) setSelectedRosterId(nextRosterId);
+              if (Number.isFinite(nextRosterId)) selectRoster(nextRosterId);
             }}
             mode="single"
             includeAll={false}
@@ -556,7 +548,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
                 return (
                   <CompanionSelectorButton
                     key={roster.roster_id}
-                    onClick={() => setSelectedRosterId(roster.roster_id)}
+                    onClick={() => selectRoster(roster.roster_id)}
                     active={isSelected}
                     className="gap-1.5"
                   >
