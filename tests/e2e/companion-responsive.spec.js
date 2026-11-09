@@ -1287,8 +1287,8 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await expect(upcoming).toHaveAttribute('data-heatmap-future-opponent', 'true');
   await upcoming.click();
   const dialog = page.getByRole('dialog', { name: 'Heatmap drilldown' });
-  await expect(dialog.getByText(/DAL WR scored:/)).toBeVisible();
-  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await expect(dialog.getByText('DAL WR scored', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Target Magnet')).toBeVisible();
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
   await page.getByRole('button', { name: 'Close heatmap drilldown' }).click();
@@ -1303,8 +1303,8 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await expect(historical).toContainText('29.0');
   await page.getByRole('button', { name: 'Hide Filters' }).click();
   await upcoming.click();
-  await expect(dialog.getByText(/DAL WR scored: 5.0 PPG/)).toBeVisible();
-  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await expect(dialog.locator('.companion-heatmap-drilldown-stat', { hasText: 'DAL WR scored' })).toContainText('5.0 PPG');
+  await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Target Magnet')).toHaveCount(0);
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
   await page.getByRole('button', { name: 'Close heatmap drilldown' }).click();
@@ -1314,9 +1314,9 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await page.getByRole('button', { name: 'Hide Filters' }).click();
   const sanFrancisco = page.locator('tbody tr').filter({ hasText: /^SF/ });
   await sanFrancisco.locator('td[data-heatmap-column-week="4"]').click();
-  await expect(dialog.getByText(/DAL WR scored: 5.0 PPG/)).toBeVisible();
-  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
-  await expect(dialog.getByText('Grid rank reflects SF\'s matchup.')).toBeVisible();
+  await expect(dialog.locator('.companion-heatmap-drilldown-stat', { hasText: 'DAL WR scored' })).toContainText('5.0 PPG');
+  await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/Grid rank reflects SF's matchup/)).toBeVisible();
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
 });
 
