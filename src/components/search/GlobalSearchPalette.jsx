@@ -114,7 +114,17 @@ export default function GlobalSearchPalette({
     return buildResultDetail(record, { index, answerData });
   }, [activeIndex, answerData, flatResults, index]);
 
-  const correction = slots.corrections?.[0] ?? null;
+  // A typo note only for a correction the results actually used. A word that
+  // corrects into the vocabulary is also kept as typed ("target" → "targets",
+  // "moss" → "most"); when the top result matched it as typed, announcing the
+  // correction would describe a search that did not happen.
+  const topTokens = flatResults[0]?.record?.tokens ?? [];
+  const corrections = slots.compare
+    ? [...slots.compare.left.corrections, ...slots.compare.right.corrections]
+    : (slots.corrections ?? []);
+  const correction = hasQuery
+    ? corrections.find(({ from }) => !topTokens.includes(from)) ?? null
+    : null;
 
   const handleSelect = useCallback((entry) => {
     if (!entry) return;
