@@ -529,6 +529,9 @@ function AppInner() {
     closeSearch,
     index: searchIndex,
     status: searchStatus,
+    recents: searchRecents,
+    recordSearch,
+    clearRecents: clearSearchRecents,
   } = useGlobalSearch({ league: searchLeague, sleeperPlayers, espnIdOverrides });
   const [searchNotice, setSearchNotice] = useState(null);
   const [searchResolvingId, setSearchResolvingId] = useState(null);
@@ -2838,6 +2841,9 @@ function AppInner() {
             notice={searchNotice}
             onClearNotice={() => setSearchNotice(null)}
             resolvingId={searchResolvingId}
+            recents={searchRecents}
+            onRecordSearch={recordSearch}
+            onClearRecents={clearSearchRecents}
           />
         </Suspense>
       )}

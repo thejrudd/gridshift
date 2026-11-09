@@ -16,6 +16,7 @@ import { isEmptyQuery, parseGlobalQuery } from '../../utils/globalSearch/parseIn
 import { rankResults } from '../../utils/globalSearch/rank.js';
 import { resolveAnswer } from '../../utils/globalSearch/answers/index.js';
 import { buildResultDetail } from '../../utils/globalSearch/detail.js';
+import { buildSuggestionGroups } from '../../utils/globalSearch/suggestions.js';
 
 const GROUP_LIMIT = 6;
 
@@ -46,6 +47,9 @@ export default function GlobalSearchPalette({
   notice = null,
   onClearNotice,
   resolvingId = null,
+  recents = null,
+  onRecordSearch,
+  onClearRecents,
 }) {
   const [query, setQuery] = useState('');
   const [rawActiveIndex, setActiveIndex] = useState(0);
@@ -66,11 +70,24 @@ export default function GlobalSearchPalette({
     return rankResults(index, slots, { groupLimit: GROUP_LIMIT });
   }, [index, slots]);
 
+  const hasQuery = Boolean(query.trim());
+  const fantasyLeague = answerData?.fantasyLeague ?? null;
+
+  // Before anything is typed: what was opened last, your starters, and this
+  // week's games. Same shape as typed results, so they render, expand and
+  // keyboard-navigate identically.
+  const suggestionGroups = useMemo(() => {
+    if (hasQuery) return [];
+    return buildSuggestionGroups({ index, recents, fantasyLeague });
+  }, [fantasyLeague, hasQuery, index, recents]);
+
+  const visibleGroups = hasQuery ? groups : suggestionGroups;
+
   // Flattened in render order, so arrow keys move across group boundaries the
   // way the list reads.
   const flatResults = useMemo(
-    () => groups.flatMap((group) => group.results),
-    [groups],
+    () => visibleGroups.flatMap((group) => group.results),
+    [visibleGroups],
   );
 
   // Clamped during render rather than reset in an effect: the result list can
@@ -101,12 +118,34 @@ export default function GlobalSearchPalette({
 
   const handleSelect = useCallback((entry) => {
     if (!entry) return;
+    onRecordSearch?.({ query, record: entry.record });
     if (entry.record.command) {
       onCommand?.(entry.record.command);
       return;
     }
     onNavigate?.(entry);
-  }, [onCommand, onNavigate]);
+  }, [onCommand, onNavigate, onRecordSearch, query]);
+
+  // Opening something from an answer card remembers the question that led there.
+  const recordQuery = useCallback(() => {
+    onRecordSearch?.({ query });
+  }, [onRecordSearch, query]);
+
+  const handleAnswerSelectPlayer = useCallback((sleeperId) => {
+    recordQuery();
+    onSelectPlayerId?.(sleeperId);
+  }, [onSelectPlayerId, recordQuery]);
+
+  const handleAnswerRoute = useCallback((route) => {
+    recordQuery();
+    onRoute?.(route);
+  }, [onRoute, recordQuery]);
+
+  const applyExample = useCallback((text) => {
+    setQuery(text);
+    setActiveIndex(0);
+    inputRef.current?.focus();
+  }, []);
 
   const handleKeyDown = useCallback((event) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -147,7 +186,8 @@ export default function GlobalSearchPalette({
   // result list that looks like the query simply matched nothing.
   const failed = status === 'error';
   const loading = status === 'loading' || status === 'idle';
-  const showGuide = !failed && (!query.trim() || (!groups.length && loading));
+  const showGuide = !failed && (!hasQuery || (!groups.length && loading));
+  const recentQueries = hasQuery ? [] : (recents?.queries ?? []);
   let flatCursor = -1;
 
   return (
@@ -229,20 +269,41 @@ export default function GlobalSearchPalette({
           aria-label="Search results"
           ref={listRef}
         >
-          {showGuide ? (
-            <GlobalSearchGuide onExample={(example) => {
-              setQuery(example);
-              setActiveIndex(0);
-              inputRef.current?.focus();
-            }}
-            />
+          {recentQueries.length ? (
+            <div className="global-search__recent-queries">
+              <div className="global-search__group-label global-search__recent-queries-label">
+                <span>Recent searches</span>
+                <button
+                  type="button"
+                  className="global-search__recent-clear"
+                  onClick={() => {
+                    onClearRecents?.();
+                    inputRef.current?.focus();
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="global-search-guide__chips">
+                {recentQueries.map(({ text }) => (
+                  <button
+                    key={text}
+                    type="button"
+                    onClick={() => applyExample(text)}
+                    className="global-search-guide__chip"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
 
-          {!showGuide && !failed && answer ? (
+          {hasQuery && !failed && answer ? (
             <GlobalSearchAnswerCard
               answer={answer}
-              onSelectPlayer={onSelectPlayerId}
-              onRoute={onRoute}
+              onSelectPlayer={handleAnswerSelectPlayer}
+              onRoute={handleAnswerRoute}
             />
           ) : null}
 
@@ -252,13 +313,13 @@ export default function GlobalSearchPalette({
             </p>
           ) : null}
 
-          {!showGuide && !failed && !groups.length ? (
+          {hasQuery && !showGuide && !failed && !groups.length ? (
             <p className="global-search__empty">
               No matches for “{query.trim()}”.
             </p>
           ) : null}
 
-          {!showGuide && !failed && groups.map((group) => (
+          {!failed && (hasQuery ? !showGuide : true) && visibleGroups.map((group) => (
             <div key={group.kind} className="global-search__group">
               <div className="global-search__group-label">{group.label}</div>
               {group.results.map((entry) => {
@@ -278,13 +339,17 @@ export default function GlobalSearchPalette({
                       detail={position === activeIndex ? activeDetail : null}
                       darkMode={darkMode}
                       onSelect={handleSelect}
-                      onRoute={onRoute}
+                      onRoute={(route) => {
+                        onRecordSearch?.({ query, record: entry.record });
+                        onRoute?.(route);
+                      }}
                     />
                   </div>
                 );
               })}
             </div>
           ))}
+          {showGuide ? <GlobalSearchGuide onExample={applyExample} /> : null}
         </div>
 
         <div className="global-search__footer">
