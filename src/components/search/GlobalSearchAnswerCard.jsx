@@ -64,6 +64,34 @@ function LeaderRows({ rows, onSelectPlayer }) {
 }
 
 /**
+ * League history rows: a season or week in the rank column, who on the first
+ * line, what happened on the second. Each opens the history page it came from.
+ */
+function HistoryRows({ rows, onRoute }) {
+  return (
+    <ol className="global-search-answer__rows">
+      {rows.map((row) => (
+        <li key={row.key}>
+          <button
+            type="button"
+            className="global-search-answer__row global-search-history__row"
+            onClick={() => onRoute?.(row.route)}
+          >
+            <span className="global-search-answer__rank global-search-history__when">{row.rank}</span>
+            <span className="global-search-answer__row-text">
+              <span className="global-search-answer__row-label">{row.label}</span>
+              {row.sublabel ? (
+                <span className="global-search-answer__row-sublabel global-search-history__detail">{row.sublabel}</span>
+              ) : null}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
  * A standings table.
  *
  * Built from divs with ARIA table roles and a shared grid template rather than
@@ -346,6 +374,8 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
           rows={visibleRows}
           onSelectRow={(row) => onRoute?.(rowRoute(row))}
         />
+      ) : visibleRows && answer.kind === 'historyRows' ? (
+        <HistoryRows rows={visibleRows} onRoute={onRoute} />
       ) : visibleRows && answer.kind === 'liveGames' ? (
         <LiveGameRows games={visibleRows} onRoute={onRoute} detailed={!answer.collapseAfter} />
       ) : visibleRows ? (

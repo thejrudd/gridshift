@@ -247,12 +247,28 @@ export function parseGlobalQuery(query, { splitCompare = true } = {}) {
  * typed operator splits — a typo that corrected into "vs" is too weak a signal
  * to cut a query in half.
  */
+// A side that is only the user ("me vs dana", "my team vs dana") stands for
+// the user's own fantasy team. "me" is otherwise a stopword, so without this the
+// side parses as empty and the query stops being a comparison at all.
+const SELF_SIDE_WORDS = new Set(['me', 'i', 'my', 'mine', 'us', 'our', 'team']);
+
+function parseSide(sideWords) {
+  const side = parseGlobalQuery(sideWords.join(' '), { splitCompare: false });
+  if (!isEmptyQuery(side)) return side;
+  if (sideWords.length && sideWords.every((word) => SELF_SIDE_WORDS.has(word))) {
+    return { ...side, scope: 'self' };
+  }
+  return side;
+}
+
 function splitComparison(words) {
   const at = words.findIndex((word) => lookupPhrase(word)?.type === 'operator');
   if (at <= 0 || at >= words.length - 1) return null;
-  const left = parseGlobalQuery(words.slice(0, at).join(' '), { splitCompare: false });
-  const right = parseGlobalQuery(words.slice(at + 1).join(' '), { splitCompare: false });
-  if (isEmptyQuery(left) || isEmptyQuery(right)) return null;
+  const left = parseSide(words.slice(0, at));
+  const right = parseSide(words.slice(at + 1));
+  const usable = (side) => !isEmptyQuery(side) || side.scope === 'self';
+  if (!usable(left) || !usable(right)) return null;
+  if (left.scope === 'self' && right.scope === 'self' && isEmptyQuery(right) && isEmptyQuery(left)) return null;
   return { left, right };
 }
 
