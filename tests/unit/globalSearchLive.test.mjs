@@ -5,7 +5,12 @@ import { parseGlobalQuery } from '../../src/utils/globalSearch/parseIntent.js';
 import { rankResults } from '../../src/utils/globalSearch/rank.js';
 import { buildStaticRecords, composeIndex } from '../../src/utils/globalSearch/buildIndex.js';
 import { buildPlayerRecords } from '../../src/utils/globalSearch/entities/players.js';
-import { buildLiveAnswer, getLiveRequest } from '../../src/utils/globalSearch/answers/live.js';
+import {
+  attachGameHighlights,
+  buildLiveAnswer,
+  gamesNeedingDetail,
+  getLiveRequest,
+} from '../../src/utils/globalSearch/answers/live.js';
 import {
   LIVE_STATE_ERROR,
   LIVE_STATE_OFF,
@@ -115,6 +120,74 @@ test('a player card names whose game it is, and a bye says so', () => {
   assert.equal(bye.title, 'Seattle Seahawks');
   assert.equal(bye.subtitle, 'No game in week 10');
   assert.deepEqual(bye.games, []);
+});
+
+// ── Box score: line score and highlights ────────────────────────────────────
+
+const LIVE_KC_BUF = {
+  ...GAMES[1],
+  bdlGameId: '1',
+  away: { id: 'KC' },
+  home: { id: 'BUF' },
+  quarterScores: { away: [7, 7, 7, null], home: [3, 14, 0, null] },
+};
+
+const DETAIL = {
+  teamStats: [
+    {
+      team: { abbreviation: 'KC' }, total_yards: 310, net_passing_yards: 220, rushing_yards: 90, turnovers: 2,
+      third_down_conversions: 5, third_down_attempts: 9, possession_time: '17:20',
+    },
+    {
+      team: { abbreviation: 'BUF' }, total_yards: 275, net_passing_yards: 180, rushing_yards: 95, turnovers: 0,
+      third_down_conversions: 3, third_down_attempts: 10, possession_time: '15:40',
+    },
+  ],
+  playerStats: [
+    { team: { abbreviation: 'KC' }, defensive_sacks: 1.5 },
+    { team: { abbreviation: 'KC' }, defensive_sacks: 1 },
+    { team: { abbreviation: 'BUF' }, defensive_sacks: 1 },
+  ],
+};
+
+test('a started game carries its line score, with unplayed quarters left blank', () => {
+  const answer = buildLiveAnswer(requestFor('bills score'), [LIVE_KC_BUF], { index, week: 10, teamNames: TEAM_NAMES, now: NOW });
+  const [game] = answer.games;
+  assert.deepEqual(game.lineScore, { periods: ['1', '2', '3', '4'], away: [7, 7, 7, null], home: [3, 14, 0, null] });
+  assert.equal(game.started, true);
+});
+
+test('only a team card asks for box scores, and only for games that have started', () => {
+  const team = buildLiveAnswer(requestFor('bills score'), [LIVE_KC_BUF], { index, week: 10, teamNames: TEAM_NAMES, now: NOW });
+  assert.deepEqual(gamesNeedingDetail(team).map((game) => game.gameId), ['1']);
+
+  const slate = buildLiveAnswer({ scope: 'all' }, [LIVE_KC_BUF], { index, week: 10, teamNames: TEAM_NAMES, now: NOW });
+  assert.deepEqual(gamesNeedingDetail(slate), [], 'the whole slate stays a compact list');
+
+  const upcoming = buildLiveAnswer(requestFor('washington score'), GAMES, { index, week: 10, teamNames: TEAM_NAMES, now: NOW });
+  assert.deepEqual(gamesNeedingDetail(upcoming), []);
+});
+
+test('highlights read the Scores box score and mark the better side', () => {
+  const team = buildLiveAnswer(requestFor('bills score'), [LIVE_KC_BUF], { index, week: 10, teamNames: TEAM_NAMES, now: NOW });
+  const [game] = attachGameHighlights(team, { 1: DETAIL }).games;
+  const byLabel = Object.fromEntries(game.highlights.map((stat) => [stat.label, stat]));
+
+  assert.deepEqual(game.highlights.map((stat) => stat.label), [
+    'Total yards', 'Passing yards', 'Rushing yards', 'Turnovers', 'Sacks', 'Third down', 'Time of possession',
+  ]);
+  assert.equal(byLabel['Total yards'].away, '310');
+  assert.equal(byLabel['Total yards'].leader, 'away');
+  assert.equal(byLabel.Turnovers.leader, 'home', 'fewer turnovers is better');
+  assert.equal(byLabel.Sacks.away, '2.5', 'sacks are summed from players, halves kept');
+  assert.equal(byLabel['Third down'].leader, 'away', '5 of 9 beats 3 of 10');
+  assert.equal(byLabel['Time of possession'].leader, null, 'possession favours nobody');
+});
+
+test('a game without a box score keeps its score and nothing else', () => {
+  const team = buildLiveAnswer(requestFor('bills score'), [LIVE_KC_BUF], { index, week: 10, teamNames: TEAM_NAMES, now: NOW });
+  assert.equal(attachGameHighlights(team, {}), team);
+  assert.equal(attachGameHighlights(team, { 1: { teamStats: [], playerStats: [] } }), team);
 });
 
 // ── liveSource: the gate and the one request ────────────────────────────────

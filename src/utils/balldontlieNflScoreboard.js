@@ -1053,6 +1053,31 @@ function buildTeamStatGroups(teamStats = [], playerStats = [], awayId, homeId) {
   ].filter(Boolean);
 }
 
+// The handful of team numbers that say how a game is going, in reading order:
+// how each offense is moving, who is giving the ball away, who is getting to
+// the quarterback, who is staying on the field. Everything else lives on the
+// game's Scores page.
+const GAME_HIGHLIGHT_LABELS = [
+  'Total yards',
+  'Passing yards',
+  'Rushing yards',
+  'Turnovers',
+  'Sacks',
+  'Third down',
+  'Time of possession',
+];
+
+/**
+ * Headline team stats for one game from a Scores detail payload, using the same
+ * builder as the Scores page so the two never disagree. Ids are the provider's
+ * team abbreviations. Empty when the provider has no team stats yet.
+ */
+export function buildGameStatHighlights(detail, awayId, homeId) {
+  const groups = buildTeamStatGroups(detail?.teamStats ?? [], detail?.playerStats ?? [], awayId, homeId);
+  const byLabel = new Map(groups.flatMap((group) => group.stats).map((stat) => [stat.label, stat]));
+  return GAME_HIGHLIGHT_LABELS.map((label) => byLabel.get(label)).filter(Boolean);
+}
+
 function playerName(row) {
   return [row?.player?.first_name, row?.player?.last_name].filter(Boolean).join(' ').trim() || 'Unknown player';
 }

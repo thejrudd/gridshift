@@ -124,8 +124,9 @@ export async function getStatisticsScoresGamePlays(gameId, { signal } = {}) {
   return parseScoresResponse(response, 'Could not load BALLDONTLIE game detail.');
 }
 
-export async function getStatisticsScoresGameDetail(gameId, { phase, signal } = {}) {
+export async function getStatisticsScoresGameDetail(gameId, { phase, signal, includePlays = true } = {}) {
   const params = appendPhase(new URLSearchParams(), phase);
+  if (!includePlays) params.set('plays', '0');
   const query = params.size ? `?${params}` : '';
   const response = await fetch(`/api/statistics/scores/game/${encodeURIComponent(gameId)}/detail${query}`, {
     signal,

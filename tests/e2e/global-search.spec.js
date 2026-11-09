@@ -173,6 +173,8 @@ const LIVE_GAMES = [
     visitor_team: { abbreviation: 'BUF', full_name: 'Buffalo Bills' },
     home_team: { abbreviation: 'MIN', full_name: 'Minnesota Vikings' },
     visitor_team_score: 17, home_team_score: 20,
+    visitor_team_q1: 7, visitor_team_q2: 3, visitor_team_q3: 7,
+    home_team_q1: 0, home_team_q2: 13, home_team_q3: 7,
   },
   {
     id: 9002, week: 9, date: '2026-11-09T01:20:00.000Z', status: 'Final',
@@ -182,8 +184,25 @@ const LIVE_GAMES = [
   },
 ];
 
+const LIVE_DETAIL = {
+  ok: true,
+  teamStats: [
+    { team: { abbreviation: 'BUF' }, total_yards: 288, net_passing_yards: 201, rushing_yards: 87, turnovers: 2, third_down_conversions: 4, third_down_attempts: 9, possession_time: '19:02' },
+    { team: { abbreviation: 'MIN' }, total_yards: 301, net_passing_yards: 236, rushing_yards: 65, turnovers: 0, third_down_conversions: 5, third_down_attempts: 10, possession_time: '18:46' },
+  ],
+  playerStats: [
+    { team: { abbreviation: 'BUF' }, defensive_sacks: 2 },
+    { team: { abbreviation: 'MIN' }, defensive_sacks: 3 },
+  ],
+};
+
 async function installLiveServer(page, { enabled = true, gamesStatus = 200 } = {}) {
   const requests = [];
+  await page.route('**/api/statistics/scores/game/*/detail*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(`${url.pathname}${url.search}`);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LIVE_DETAIL) });
+  });
   await page.route('**/api/live/**', async (route) => {
     const url = new URL(route.request().url());
     requests.push(url.pathname);
@@ -220,7 +239,7 @@ test.describe('live answers', () => {
   }
 
   test('a team score query answers with its game in progress, which opens Scores', async ({ page }) => {
-    await installLiveServer(page);
+    const requests = await installLiveServer(page);
     await start(page);
     await searchInput(page).fill('bills score');
     const card = palette(page).getByRole('region', { name: 'Search answer' });
@@ -228,19 +247,30 @@ test.describe('live answers', () => {
     await expect(card).toContainText('Q3 · 4:12');
     await expect(card.locator('.matchup-live-dot')).toHaveCount(1);
 
+    // The box score: points by quarter, then the headline team stats.
+    const lineScore = card.getByRole('table', { name: 'Score by quarter' });
+    await expect(lineScore.getByRole('row', { name: /MIN/ })).toContainText('13');
+    const highlights = card.getByRole('table', { name: 'Game highlights' });
+    await expect(highlights.getByRole('row', { name: /Total yards/ })).toContainText('301');
+    await expect(highlights.getByRole('row', { name: /Turnovers/ })).toContainText('(better)');
+    expect(requests.find((path) => path.includes('/detail'))).toContain('plays=0');
+
     await card.getByRole('button', { name: /BUF/ }).click();
     await expect(palette(page)).toBeHidden();
     await expect(page).toHaveURL(/\/statistics\/scores/);
   });
 
   test('live scores lead with the games in progress', async ({ page }) => {
-    await installLiveServer(page);
+    const requests = await installLiveServer(page);
     await start(page);
     await searchInput(page).fill('live scores');
     const card = palette(page).getByRole('region', { name: 'Search answer' });
     await expect(card.getByRole('heading', { name: 'Live now' })).toBeVisible();
     await expect(card.getByRole('listitem').first()).toContainText('BUF');
     await expect(card.getByRole('listitem').nth(1)).toContainText('Final');
+    // The slate stays a compact list: no box scores, and none fetched.
+    await expect(card.getByRole('table', { name: 'Game highlights' })).toHaveCount(0);
+    expect(requests.filter((path) => path.includes('/detail'))).toEqual([]);
   });
 
   test('with live data off on the server there is no live card and no live request', async ({ page }) => {

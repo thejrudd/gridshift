@@ -187,11 +187,70 @@ function CompareRows({ sides, rows, onSelectPlayer, onRoute }) {
 }
 
 /**
+ * Points by quarter under a started game: one column per period and the total,
+ * so the shape of the game reads at a glance.
+ */
+function LineScore({ game }) {
+  const { lineScore } = game;
+  const template = `2.75rem repeat(${lineScore.periods.length}, minmax(1.5rem, 1fr)) 2rem`;
+  const line = (side, teamId, scores, total) => (
+    <div role="row" className="global-search-linescore__row" style={{ gridTemplateColumns: template }}>
+      <span role="rowheader">{teamId}</span>
+      {scores.map((score, index) => (
+        <span role="cell" key={`${side}-${lineScore.periods[index]}-${index}`}>{score ?? ''}</span>
+      ))}
+      <span role="cell" className="global-search-linescore__total">{total ?? ''}</span>
+    </div>
+  );
+  return (
+    <div role="table" aria-label="Score by quarter" className="global-search-linescore">
+      <div role="row" className="global-search-linescore__row global-search-linescore__head" style={{ gridTemplateColumns: template }}>
+        <span role="columnheader" aria-label="Team" />
+        {lineScore.periods.map((period, index) => (
+          <span role="columnheader" key={`${period}-${index}`}>{period}</span>
+        ))}
+        <span role="columnheader">T</span>
+      </div>
+      {line('away', game.awayId, lineScore.away, game.awayScore)}
+      {line('home', game.homeId, lineScore.home, game.homeScore)}
+    </div>
+  );
+}
+
+/**
+ * The game's headline team stats, away and home, with the better side marked
+ * the same way the compare card marks it.
+ */
+function GameHighlights({ game }) {
+  const template = 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr)';
+  return (
+    <div role="table" aria-label="Game highlights" className="global-search-compare global-search-highlights">
+      <div role="row" className="global-search-compare__row global-search-highlights__head" style={{ gridTemplateColumns: template }}>
+        <span role="columnheader" aria-label="Stat" />
+        <span role="columnheader" className="global-search-compare__value">{game.awayId}</span>
+        <span role="columnheader" className="global-search-compare__value">{game.homeId}</span>
+      </div>
+      {game.highlights.map((stat) => (
+        <div key={stat.label} role="row" className="global-search-compare__row" style={{ gridTemplateColumns: template }}>
+          <span role="rowheader" className="global-search-compare__label">{stat.label}</span>
+          {['away', 'home'].map((side) => (
+            <span key={side} role="cell" className={`global-search-compare__value${stat.leader === side ? ' is-leader' : ''}`}>
+              {stat[side]}
+              {stat.leader === side ? <span className="sr-only"> (better)</span> : null}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * A scoreboard: each game as away and home with their scores and the game's
  * state. A game in progress carries the shared live dot. Each row opens the
  * game, on Scores once it has kicked off.
  */
-function LiveGameRows({ games, onRoute }) {
+function LiveGameRows({ games, onRoute, detailed = false }) {
   return (
     <ol className="global-search-answer__rows global-search-live">
       {games.map((game) => {
@@ -219,6 +278,12 @@ function LiveGameRows({ games, onRoute }) {
             </span>
           </>
         );
+        const detail = detailed && game.started && (game.lineScore || game.highlights) ? (
+          <div className="global-search-live__detail">
+            {game.lineScore ? <LineScore game={game} /> : null}
+            {game.highlights ? <GameHighlights game={game} /> : null}
+          </div>
+        ) : null;
         return (
           <li key={game.key}>
             {game.route ? (
@@ -228,6 +293,7 @@ function LiveGameRows({ games, onRoute }) {
             ) : (
               <div className="global-search-answer__row global-search-live__row">{content}</div>
             )}
+            {detail}
           </li>
         );
       })}
@@ -281,7 +347,7 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
           onSelectRow={(row) => onRoute?.(rowRoute(row))}
         />
       ) : visibleRows && answer.kind === 'liveGames' ? (
-        <LiveGameRows games={visibleRows} onRoute={onRoute} />
+        <LiveGameRows games={visibleRows} onRoute={onRoute} detailed={!answer.collapseAfter} />
       ) : visibleRows ? (
         <LeaderRows rows={visibleRows} onSelectPlayer={onSelectPlayer} />
       ) : null}

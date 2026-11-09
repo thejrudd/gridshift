@@ -12,6 +12,7 @@
 import { KIND_GAME, KIND_PLAYER } from '../entities/record.js';
 import { canonicalTeam } from '../../nflPlays/fieldSpots.js';
 import { routeForGameResult } from '../resolveRoute.js';
+import { buildGameStatHighlights } from '../../balldontlieNflScoreboard.js';
 
 const STATUS_ORDER = { live: 0, halftime: 0, delayed: 1, scheduled: 2, final: 3, postponed: 4 };
 const IN_PROGRESS = new Set(['live', 'halftime']);
@@ -87,10 +88,77 @@ function toRow(game, gameRecords, now) {
       ? [game.dateLabel, game.kickoffLabel].filter(Boolean).join(' · ')
       : game.statusLabel,
     inProgress: IN_PROGRESS.has(game.status),
+    started: game.status !== 'scheduled' && game.status !== 'postponed',
+    lineScore: lineScoreOf(game),
+    gameId: game.bdlGameId ?? null,
+    providerAwayId: game.away?.id ?? null,
+    providerHomeId: game.home?.id ?? null,
     kickoff: game.kickoff ?? null,
     week: game.week,
     route: record ? routeForGameResult({ record, route: record.route }, { now }) : null,
   };
+}
+
+/**
+ * Points by quarter, overtime last, for a game that has started. Quarters not
+ * reached yet stay null rather than reading as scoreless.
+ */
+function lineScoreOf(game) {
+  const away = game.quarterScores?.away;
+  const home = game.quarterScores?.home;
+  if (!away && !home) return null;
+  const length = Math.max(4, away?.length ?? 0, home?.length ?? 0);
+  const periods = Array.from({ length }, (_, index) => (index < 4 ? String(index + 1) : 'OT'));
+  const pad = (scores) => Array.from({ length }, (_, index) => scores?.[index] ?? null);
+  return { periods, away: pad(away), home: pad(home) };
+}
+
+function numeric(value) {
+  if (typeof value === 'number') return value;
+  const parsed = Number(String(value ?? '').replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function highlightLeader(stat) {
+  if (stat.direction === 'neutral') return null;
+  const away = stat.awayRatio ?? numeric(stat.away);
+  const home = stat.homeRatio ?? numeric(stat.home);
+  if (away == null || home == null || away === home) return null;
+  const awayBetter = stat.direction === 'lower' ? away < home : away > home;
+  return awayBetter ? 'away' : 'home';
+}
+
+/**
+ * The games on a team card that are worth a box score: started, and few
+ * enough that the card stays a glance. The whole slate never gets details.
+ */
+export function gamesNeedingDetail(answer) {
+  if (!answer || answer.kind !== 'liveGames' || answer.collapseAfter) return [];
+  return answer.games.filter((game) => game.started && game.gameId).slice(0, 2);
+}
+
+/**
+ * Attach headline team stats to a card's games from their Scores detail
+ * payloads, keyed by provider game id. A game without a payload keeps its score.
+ */
+export function attachGameHighlights(answer, detailsById = {}) {
+  if (!answer?.games?.length) return answer;
+  let changed = false;
+  const games = answer.games.map((game) => {
+    const detail = detailsById[game.gameId];
+    if (!detail) return game;
+    const highlights = buildGameStatHighlights(detail, game.providerAwayId, game.providerHomeId)
+      .map((stat) => ({
+        label: stat.label,
+        away: String(stat.away),
+        home: String(stat.home),
+        leader: highlightLeader(stat),
+      }));
+    if (!highlights.length) return game;
+    changed = true;
+    return { ...game, highlights };
+  });
+  return changed ? { ...answer, games } : answer;
 }
 
 function sortRows(rows) {
