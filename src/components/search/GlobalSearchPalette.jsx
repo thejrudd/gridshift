@@ -15,7 +15,7 @@ import GlobalSearchResultRow from './GlobalSearchResultRow.jsx';
 import { isEmptyQuery, parseGlobalQuery } from '../../utils/globalSearch/parseIntent.js';
 import { rankResults } from '../../utils/globalSearch/rank.js';
 import { resolveAnswer } from '../../utils/globalSearch/answers/index.js';
-import { buildResultDetail } from '../../utils/globalSearch/detail.js';
+import { actionOptionId, buildResultDetail } from '../../utils/globalSearch/detail.js';
 import { buildSuggestionGroups } from '../../utils/globalSearch/suggestions.js';
 import useLiveSearchAnswer from '../../hooks/useLiveSearchAnswer.js';
 
@@ -55,6 +55,10 @@ export default function GlobalSearchPalette({
 }) {
   const [query, setQuery] = useState('');
   const [rawActiveIndex, setActiveIndex] = useState(0);
+  // Which of the active row's actions the keyboard is on, stored against the
+  // row it belongs to so moving to another row — by key, pointer, or a new
+  // query — leaves the actions without an effect to reset it.
+  const [actionFocus, setActionFocus] = useState({ row: null, position: null });
   const inputRef = useRef(null);
   const listRef = useRef(null);
   // Suppresses hover-driven selection while the arrow keys are driving, so a
@@ -121,6 +125,13 @@ export default function GlobalSearchPalette({
     return buildResultDetail(record, { index, answerData });
   }, [activeIndex, answerData, flatResults, index]);
 
+  const activeActions = useMemo(() => activeDetail?.actions ?? [], [activeDetail]);
+  const focusedAction = actionFocus.row === activeIndex
+    && actionFocus.position != null
+    && actionFocus.position < activeActions.length
+    ? actionFocus.position
+    : null;
+
   // A typo note only for a correction the results actually used. A word that
   // corrects into the vocabulary is also kept as typed ("target" → "targets",
   // "moss" → "most"); when the top result matched it as typed, announcing the
@@ -164,7 +175,40 @@ export default function GlobalSearchPalette({
     inputRef.current?.focus();
   }, []);
 
+  // A result's action: remembered like the result itself, then routed.
+  const runAction = useCallback((entry, action) => {
+    if (!entry || !action?.route) return;
+    onRecordSearch?.({ query, record: entry.record });
+    onRoute?.(action.route);
+  }, [onRecordSearch, onRoute, query]);
+
   const handleKeyDown = useCallback((event) => {
+    const input = event.currentTarget;
+    const caretAtEnd = input.selectionStart === input.value.length
+      && input.selectionEnd === input.value.length;
+    const intoActions = (event.key === 'ArrowRight' && caretAtEnd)
+      || (event.key === 'Tab' && !event.shiftKey);
+    const outOfActions = (event.key === 'ArrowLeft' && focusedAction != null)
+      || (event.key === 'Tab' && event.shiftKey && focusedAction != null);
+
+    // → or Tab walks into the active result's actions and along them; ← or
+    // Shift+Tab walks back out to the result. Off the end, Tab is left alone.
+    if (intoActions && activeActions.length) {
+      const next = focusedAction == null ? 0 : focusedAction + 1;
+      if (next >= activeActions.length) {
+        if (event.key === 'Tab') event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      setActionFocus({ row: activeIndex, position: next });
+      return;
+    }
+    if (outOfActions) {
+      event.preventDefault();
+      setActionFocus({ row: activeIndex, position: focusedAction > 0 ? focusedAction - 1 : null });
+      return;
+    }
+
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (!flatResults.length) return;
       event.preventDefault();
@@ -182,9 +226,13 @@ export default function GlobalSearchPalette({
     if (event.key === 'Enter') {
       if (!flatResults.length) return;
       event.preventDefault();
+      if (focusedAction != null) {
+        runAction(flatResults[activeIndex], activeActions[focusedAction]);
+        return;
+      }
       handleSelect(flatResults[activeIndex]);
     }
-  }, [activeIndex, flatResults, handleSelect]);
+  }, [activeActions, activeIndex, flatResults, focusedAction, handleSelect, runAction]);
 
   // Keep the whole expanded row in view, detail included.
   useEffect(() => {
@@ -247,7 +295,9 @@ export default function GlobalSearchPalette({
             aria-expanded={flatResults.length > 0}
             aria-controls="global-search-results"
             aria-activedescendant={
-              flatResults.length ? `global-search-option-${activeIndex}` : undefined
+              focusedAction != null
+                ? actionOptionId(focusedAction)
+                : flatResults.length ? `global-search-option-${activeIndex}` : undefined
             }
             autoComplete="off"
             autoCorrect="off"
@@ -360,10 +410,8 @@ export default function GlobalSearchPalette({
                       detail={position === activeIndex ? activeDetail : null}
                       darkMode={darkMode}
                       onSelect={handleSelect}
-                      onRoute={(route) => {
-                        onRecordSearch?.({ query, record: entry.record });
-                        onRoute?.(route);
-                      }}
+                      onRoute={(route) => runAction(entry, { route })}
+                      focusedAction={position === activeIndex ? focusedAction : null}
                     />
                   </div>
                 );
@@ -376,6 +424,7 @@ export default function GlobalSearchPalette({
         <div className="global-search__footer">
           <span><kbd>↑</kbd><kbd>↓</kbd> to move</span>
           <span><kbd>↵</kbd> to open</span>
+          {activeActions.length ? <span><kbd>→</kbd> for actions</span> : null}
           <span><kbd>esc</kbd> to close</span>
         </div>
       </div>
