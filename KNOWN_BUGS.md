@@ -15,6 +15,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Opening another team's roster from a player's Statistics page flipped Rosters back and forth between that team and your own without stopping. | v9.4.1 |
 | Free agents whom Sleeper lists with no team and no ESPN id, such as Najee Harris, were found by Search but could not open their Statistics page from Search, Rankings, or Rosters. | v9.4.0 |
 | Statistics player game logs showed no team, opponent, or result for games a player played after a mid-season trade, took bye weeks and playoff games from his first team of the season, and filled weeks before his first game with byes even when his team played. | v9.4.0 |
 | Matchups player drilldowns showed different live points than the player's row, left plays late in a half off the scoring chart, and grouped a fumble and a first down together as Other scoring. | v9.3.8 |
