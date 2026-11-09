@@ -30223,6 +30223,60 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   text-align: right;
 }
 
+/* A team card's started game: line score, then headline stats. */
+.global-search-live__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 2px 8px 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.global-search-linescore {
+  display: flex;
+  flex-direction: column;
+}
+
+.global-search-linescore__row {
+  display: grid;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-secondary);
+}
+
+.global-search-linescore__row > span:not(:first-child) {
+  text-align: right;
+}
+
+.global-search-linescore__head {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+
+.global-search-linescore__total {
+  font-weight: 700;
+  color: var(--color-label);
+}
+
+.global-search-highlights .global-search-compare__row {
+  padding: 4px 0;
+  min-height: 26px;
+}
+
+.global-search-highlights__head .global-search-compare__value {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-label-tertiary);
+}
+
 /* ── Compare card ── two value columns under a side header ──────────────── */
 
 .global-search-compare__head,

@@ -9,13 +9,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { buildLiveAnswer, getLiveRequest } from '../utils/globalSearch/answers/live.js';
+import {
+  attachGameHighlights,
+  buildLiveAnswer,
+  gamesNeedingDetail,
+  getLiveRequest,
+} from '../utils/globalSearch/answers/live.js';
 import { selectThisWeeksGames } from '../utils/globalSearch/suggestions.js';
 import { KIND_NFL_TEAM } from '../utils/globalSearch/entities/record.js';
 import { canonicalTeam } from '../utils/nflPlays/fieldSpots.js';
 import {
   LIVE_STATE_ERROR,
   LIVE_STATE_OK,
+  loadLiveGameDetail,
   loadLiveWeek,
 } from '../utils/globalSearch/live/liveSource.js';
 
@@ -57,7 +63,7 @@ export default function useLiveSearchAnswer({ slots, groups, index, leagueId }) 
     return names;
   }, [index]);
 
-  return useMemo(() => {
+  const base = useMemo(() => {
     const result = requestKey && loaded.key === requestKey ? loaded.result : null;
     if (!result) return { answer: null, unavailable: false };
     if (result.state === LIVE_STATE_ERROR) return { answer: null, unavailable: true };
@@ -67,4 +73,29 @@ export default function useLiveSearchAnswer({ slots, groups, index, leagueId }) 
       unavailable: false,
     };
   }, [index, loaded, request, requestKey, teamNames, week]);
+
+  // A team card's started games get their box score in a second, smaller
+  // request each. The score shows first; the highlights fill in under it.
+  const detailIds = gamesNeedingDetail(base.answer).map((game) => game.gameId);
+  const detailKey = detailIds.join(',');
+  const [details, setDetails] = useState({ key: null, byId: {} });
+
+  useEffect(() => {
+    if (!detailKey) return undefined;
+    const controller = new AbortController();
+    const ids = detailKey.split(',');
+    Promise.all(ids.map((gameId) => loadLiveGameDetail({ gameId, signal: controller.signal })))
+      .then((payloads) => {
+        const byId = {};
+        ids.forEach((gameId, position) => { if (payloads[position]) byId[gameId] = payloads[position]; });
+        setDetails({ key: detailKey, byId });
+      })
+      .catch(() => { /* Aborted by a newer query. */ });
+    return () => controller.abort();
+  }, [detailKey]);
+
+  return useMemo(() => {
+    if (!base.answer || !detailKey || details.key !== detailKey) return base;
+    return { ...base, answer: attachGameHighlights(base.answer, details.byId) };
+  }, [base, detailKey, details]);
 }

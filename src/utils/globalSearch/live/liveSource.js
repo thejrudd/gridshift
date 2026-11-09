@@ -13,6 +13,7 @@
 // score" reads one week's games once.
 
 import { getLiveGames, getLiveStatus, startLiveSession } from '../../../api/liveApi.js';
+import { getStatisticsScoresGameDetail } from '../../../api/statisticsScoresApi.js';
 import { normalizeBdlScoreboardGame } from '../../balldontlieNflScoreboard.js';
 
 export const LIVE_STATE_OFF = 'off';
@@ -24,6 +25,7 @@ const STATUS_TTL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 4000;
 
 const gamesCache = new Map();
+const detailCache = new Map();
 const statusCache = new Map();
 const autoSessionAttempted = new Set();
 
@@ -102,9 +104,34 @@ export async function loadLiveWeek({ leagueId, season, week, signal } = {}) {
   }
 }
 
+/**
+ * One game's box score — team and player totals, no play-by-play — from the
+ * Scores detail endpoint on GridShift's own server. Only called once
+ * loadLiveWeek has confirmed live data is on. Null when it cannot be read; the
+ * card then shows the score without highlights.
+ */
+export async function loadLiveGameDetail({ gameId, signal } = {}) {
+  if (!gameId) return null;
+  const key = String(gameId);
+  const cached = detailCache.get(key);
+  if (cached && Date.now() - cached.at < GAMES_TTL_MS) return cached.detail;
+  try {
+    const detail = await withTimeout(
+      getStatisticsScoresGameDetail(gameId, { phase: 'regular', signal, includePlays: false }),
+      signal,
+    );
+    detailCache.set(key, { at: Date.now(), detail });
+    return detail;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    return null;
+  }
+}
+
 // Test seam: the caches are module state.
 export function resetLiveSourceCache() {
   gamesCache.clear();
+  detailCache.clear();
   statusCache.clear();
   autoSessionAttempted.clear();
 }

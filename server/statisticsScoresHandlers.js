@@ -987,6 +987,9 @@ export function createStatisticsScoresRouter({
       const payload = await fetchStatisticsScoresGameDetail({
         gameId: req.params.gameId,
         phase: req.query.phase,
+        // `plays=0` skips play-by-play for callers that only need the box
+        // score — global search's live card reads team and player totals.
+        includePlays: req.query.plays !== '0',
         fetcher,
         env,
         gateway,
