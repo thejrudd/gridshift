@@ -287,49 +287,97 @@ export async function fetchPlayerGameLogRaw(fetchImpl, { playerId, teamId, seaso
     const rawItems = logData.events?.items ?? [];
     const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
 
-    // Extract ESPN numeric competitor ID from any regular-season stats $ref
-    // e.g. ".../competitors/25/roster/..." → "25"  (25 = SEA's ESPN team ID)
-    let espnCompetitorId = null;
-    for (const item of items) {
-      const m = (item.statistics?.$ref ?? '').match(/competitors\/(\d+)\/roster/);
-      if (m) { espnCompetitorId = m[1]; break; }
-    }
-
-    // Step 2: Resolve the actual team abbreviation for this season.
-    // The competitor ID in the stats $ref URL is ESPN's persistent numeric team ID.
-    // Fetching /teams/{id} returns the abbreviation directly (unlike the competitor endpoint,
-    // which wraps team data in a $ref pointer and would silently return undefined).
-    let actualAbbrev = abbrev;
-    if (espnCompetitorId) {
-      const lookup = await lookupEspnTeamAbbrev(fetchImpl, espnCompetitorId);
-      if (lookup.failed) incomplete = true;
-      actualAbbrev = lookup.abbrev ?? abbrev;
-    }
-    if (!actualAbbrev) return { games: [], incomplete };
-
-    // Step 3: Fetch the correct team's schedule (reg + post) in parallel
-    const [schedRes, postSchedRes] = await Promise.all([
-      fetchImpl(`${ESPN_BASE}/teams/${toEspnTeamId(actualAbbrev)}/schedule?season=${season}&seasontype=2`),
-      fetchImpl(`${ESPN_BASE}/teams/${toEspnTeamId(actualAbbrev)}/schedule?season=${season}&seasontype=3`),
-    ]);
-    if (isTransientFailure(schedRes) || isTransientFailure(postSchedRes)) incomplete = true;
-
-    // Build metadata maps using the resolved team abbreviation
-    const regMeta  = schedRes.ok      ? buildMetaMap(await schedRes.json(),      actualAbbrev, false) : {};
-    const postMeta = postSchedRes.ok  ? buildMetaMap(await postSchedRes.json(),  actualAbbrev, true)  : {};
-
-    // Regular-season per-game stats (via eventlog $refs), including inactive/DNP games
-    const regGamesRaw = await Promise.all(items.map(async (item) => {
-      // Get event ID from stats $ref or event $ref (inactive games may lack stats $ref)
+    // Each game's ESPN team ID comes from its stats $ref
+    // (".../competitors/25/roster/..." → "25", SEA) or, for a game without
+    // stats, the item's own team reference. It is set at game time, so a
+    // player traded mid-season carries a different ID after the trade.
+    const parsedItems = items.map((item) => {
       const statsRef = item.statistics?.$ref;
       const eventRef = item.event?.$ref ?? '';
       const eventId = statsRef?.match(/events\/(\d+)/)?.[1]
-        ?? eventRef.match(/events\/(\d+)/)?.[1];
+        ?? eventRef.match(/events\/(\d+)/)?.[1]
+        ?? null;
+      const competitorId = statsRef?.match(/competitors\/(\d+)\/roster/)?.[1]
+        ?? (item.teamId != null ? String(item.teamId) : null)
+        ?? extractTeamIdFromRef(item.team?.$ref);
+      return { item, statsRef, eventId, competitorId };
+    });
+
+    // Step 2: Resolve every team the player appeared for this season.
+    // Fetching /teams/{id} returns the abbreviation directly (unlike the competitor endpoint,
+    // which wraps team data in a $ref pointer and would silently return undefined).
+    const competitorIds = [...new Set(parsedItems.map(p => p.competitorId).filter(Boolean))];
+    const abbrevByCompetitor = new Map();
+    await Promise.all(competitorIds.map(async (competitorId) => {
+      const lookup = await lookupEspnTeamAbbrev(fetchImpl, competitorId);
+      if (lookup.failed) incomplete = true;
+      const resolved = lookup.abbrev ?? abbrev;
+      if (resolved) abbrevByCompetitor.set(competitorId, resolved);
+    }));
+    const teamAbbrevs = [...new Set(competitorIds.map(id => abbrevByCompetitor.get(id)).filter(Boolean))];
+    if (teamAbbrevs.length === 0 && abbrev) teamAbbrevs.push(abbrev);
+    if (teamAbbrevs.length === 0) return { games: [], incomplete };
+
+    // Step 3: Fetch each team's schedule (reg + post) in parallel
+    const schedules = await Promise.all(teamAbbrevs.map(async (teamAbbrev) => {
+      const [schedRes, postSchedRes] = await Promise.all([
+        fetchImpl(`${ESPN_BASE}/teams/${toEspnTeamId(teamAbbrev)}/schedule?season=${season}&seasontype=2`),
+        fetchImpl(`${ESPN_BASE}/teams/${toEspnTeamId(teamAbbrev)}/schedule?season=${season}&seasontype=3`),
+      ]);
+      if (isTransientFailure(schedRes) || isTransientFailure(postSchedRes)) incomplete = true;
+      return [teamAbbrev, {
+        reg:  schedRes.ok     ? buildMetaMap(await schedRes.json(),     teamAbbrev, false) : {},
+        post: postSchedRes.ok ? buildMetaMap(await postSchedRes.json(), teamAbbrev, true)  : {},
+      }];
+    }));
+    const metaByTeam = new Map(schedules);
+
+    // Played games use their own team's schedule. Week numbers from those
+    // games then place a game without a team ID (inactive, or a matchup
+    // between his two teams) with the team he was on at the time.
+    const findRegMeta = (eventId, teamAbbrev) => {
+      const own = teamAbbrev ? metaByTeam.get(teamAbbrev)?.reg?.[eventId] : null;
+      if (own) return { teamAbbrev, meta: own };
+      for (const [candidate, { reg }] of metaByTeam) {
+        if (reg[eventId]) return { teamAbbrev: candidate, meta: reg[eventId] };
+      }
+      return { teamAbbrev, meta: null };
+    };
+    const teamWeeks = [];
+    for (const { eventId, competitorId } of parsedItems) {
+      const teamAbbrev = abbrevByCompetitor.get(competitorId);
+      if (!eventId || !teamAbbrev) continue;
+      const week = metaByTeam.get(teamAbbrev)?.reg?.[eventId]?.week;
+      if (week != null) teamWeeks.push({ week, teamAbbrev, competitorId });
+    }
+    teamWeeks.sort((a, b) => a.week - b.week);
+    const teamStintForWeek = (week) => {
+      if (teamWeeks.length === 0) return null;
+      if (week == null) return teamWeeks[teamWeeks.length - 1];
+      let stint = teamWeeks[0];
+      for (const entry of teamWeeks) {
+        if (entry.week > week) break;
+        stint = entry;
+      }
+      return stint;
+    };
+    const teamForEvent = (eventId, competitorId) => {
+      const known = abbrevByCompetitor.get(competitorId);
+      if (known) return known;
+      const candidates = teamAbbrevs.filter(team => metaByTeam.get(team)?.reg?.[eventId]);
+      if (candidates.length <= 1) return candidates[0] ?? teamAbbrevs[0];
+      const stint = teamStintForWeek(metaByTeam.get(candidates[0]).reg[eventId].week);
+      return candidates.includes(stint?.teamAbbrev) ? stint.teamAbbrev : candidates[0];
+    };
+
+    // Regular-season per-game stats (via eventlog $refs), including inactive/DNP games
+    const regGamesRaw = await Promise.all(parsedItems.map(async ({ item, statsRef, eventId, competitorId }) => {
+      // Inactive games may lack a stats $ref, so the event ID can come from the event $ref
       if (!eventId) return null;
+      const { meta } = findRegMeta(eventId, teamForEvent(eventId, competitorId));
 
       if (!item.played) {
         // Include completed games where the player was inactive
-        const meta = regMeta[eventId];
         if (!meta?.completed) return null;
         return { eventId, meta: { ...meta, isInactive: true }, statsJson: null };
       }
@@ -337,8 +385,8 @@ export async function fetchPlayerGameLogRaw(fetchImpl, { playerId, teamId, seaso
       if (!statsRef) return null;
 
       const prior = known.get(eventId);
-      if (prior?.statsJson && regMeta[eventId]?.completed) {
-        return { eventId, meta: regMeta[eventId], statsJson: prior.statsJson };
+      if (prior?.statsJson && meta?.completed) {
+        return { eventId, meta, statsJson: prior.statsJson };
       }
 
       try {
@@ -350,7 +398,7 @@ export async function fetchPlayerGameLogRaw(fetchImpl, { playerId, teamId, seaso
           if (isTransientFailure(res)) incomplete = true;
           return null;
         }
-        return { eventId, meta: regMeta[eventId] ?? {}, statsJson: await res.json() };
+        return { eventId, meta: meta ?? {}, statsJson: await res.json() };
       } catch {
         incomplete = true;
         return null;
@@ -359,21 +407,38 @@ export async function fetchPlayerGameLogRaw(fetchImpl, { playerId, teamId, seaso
 
     const regGames = regGamesRaw.filter(Boolean);
 
-    // Insert synthetic BYE rows for missing week numbers between 1 and the highest week played
+    // Insert synthetic BYE rows for weeks up to the highest week played that his
+    // team for that week had no game. A week his team did play that ESPN does not
+    // list for him (before he joined, or off the roster) gets no row at all.
     const coveredWeeks = new Set(regGames.map(g => g.meta?.week).filter(w => w != null));
     const maxWeek = coveredWeeks.size > 0 ? Math.max(...coveredWeeks) : 0;
+    const teamPlayedWeek = (teamAbbrev, week) => Object.values(metaByTeam.get(teamAbbrev)?.reg ?? {})
+      .some(meta => meta.week === week);
     for (let w = 1; w <= maxWeek; w++) {
-      if (!coveredWeeks.has(w)) {
-        regGames.push({
-          eventId: `bye_${w}`,
-          meta: { week: w, opponent: 'BYE', result: '-', score: '', myTeam: actualAbbrev, isBye: true },
-          statsJson: null,
-        });
-      }
+      if (coveredWeeks.has(w)) continue;
+      // A gap right after a trade can be the new team's bye (traded, then the
+      // old team plays without him while the new team rests).
+      const previousTeam = teamStintForWeek(w)?.teamAbbrev ?? teamAbbrevs[0];
+      const nextTeam = teamWeeks.find(entry => entry.week > w)?.teamAbbrev ?? previousTeam;
+      const weekTeam = [previousTeam, nextTeam].find(team => !teamPlayedWeek(team, w));
+      if (!weekTeam) continue;
+      regGames.push({
+        eventId: `bye_${w}`,
+        meta: { week: w, opponent: 'BYE', result: '-', score: '', myTeam: weekTeam, isBye: true },
+        statsJson: null,
+      });
     }
 
     // Sort regular-season games by week number
     regGames.sort((a, b) => (a.meta?.week ?? 99) - (b.meta?.week ?? 99));
+
+    // Postseason games belong to the team he finished the regular season with.
+    const finalStint = teamStintForWeek(null)
+      ?? (competitorIds.length > 0
+        ? { competitorId: competitorIds[competitorIds.length - 1], teamAbbrev: abbrevByCompetitor.get(competitorIds[competitorIds.length - 1]) }
+        : null);
+    const espnCompetitorId = finalStint?.competitorId ?? null;
+    const postMeta = metaByTeam.get(finalStint?.teamAbbrev)?.post ?? {};
 
     // Postseason per-game stats (constructed URL — eventlog can't be filtered by seasontype)
     const postGames = espnCompetitorId
