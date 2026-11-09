@@ -31,7 +31,12 @@ load rather than serialized, which is what keeps the artifact small.
 page is keyed on an ESPN id and Sleeper supplies one for only about a third of
 the directory. `build-search-index.mjs` backfills the rest from the 32 ESPN
 rosters, which is why a result opens immediately instead of paying for a network
-lookup on tap.
+lookup on tap. A player with no team — a free agent Sleeper lists without an
+ESPN id, such as Najee Harris — has no roster to match on, so the click-time
+fallback looks them up by name through ESPN's public player search
+(`lookupEspnIdByName` in `playerDrilldown.js`). ESPN does not report position
+there, so only a unique exact name is accepted: two players sharing a name open
+nothing rather than the wrong page.
 
 ## Measurements
 

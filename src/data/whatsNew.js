@@ -675,4 +675,24 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.4.0',
+    title: 'Smarter Search',
+    features: [
+      {
+        id: 'search-does-more',
+        name: 'Search does more',
+        description: 'Search remembers what you looked for, compares two players or teams, shows live scores, acts on results, and answers questions about your league\'s history.',
+        supersedes: ['global-search'],
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'matchups' },
+          anchor: '[data-tour="global-search"]',
+          anchorMobile: null,
+          title: 'Search does more',
+          body: 'Press Cmd/Ctrl+K or open Search. Your recent searches and starters wait before you type. Try "jsn vs kupp", "bills score", or "champions", and press → on a result for Trade, Roster, or Matchup.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];
