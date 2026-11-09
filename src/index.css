@@ -17422,6 +17422,157 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   color: var(--color-label);
 }
 
+.companion-heatmap-drilldown-week {
+  margin-bottom: 8px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-sm);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--color-label-secondary);
+}
+
+.companion-heatmap-drilldown-matchup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.companion-heatmap-drilldown-matchup-team {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-lg);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--color-label);
+}
+
+.companion-heatmap-drilldown-matchup-sep {
+  font-size: var(--type-emphasis);
+  font-weight: 600;
+  color: var(--color-label-tertiary);
+}
+
+.companion-heatmap-drilldown-summary {
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+.companion-heatmap-drilldown-stats {
+  margin: 0;
+  border-top: 1px solid var(--color-separator);
+}
+
+.companion-heatmap-drilldown-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.companion-heatmap-drilldown-stat dt {
+  min-width: 0;
+  font-size: var(--type-meta);
+  font-weight: 600;
+  color: var(--color-label-secondary);
+}
+
+.companion-heatmap-drilldown-stat dd {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0;
+}
+
+.companion-heatmap-drilldown-stat-value {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-sm);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label);
+}
+
+.companion-heatmap-drilldown-stat-value small {
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label-secondary);
+}
+
+.companion-heatmap-drilldown-stat-rank {
+  font-size: var(--type-label);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-secondary);
+}
+
+.companion-heatmap-drilldown-schedule {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.companion-heatmap-drilldown-stat dd.companion-heatmap-drilldown-schedule-weeks {
+  display: block;
+  flex: 1 0 100%;
+}
+
+.companion-heatmap-drilldown-schedule-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.companion-heatmap-drilldown-schedule-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 2px;
+  background: var(--color-fill);
+  color: var(--color-label-secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+
+.companion-heatmap-drilldown-schedule-chip span {
+  font-size: var(--type-micro);
+  font-weight: 600;
+  opacity: 0.78;
+}
+
+.companion-heatmap-drilldown-schedule-chip strong {
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-emphasis);
+  font-weight: 800;
+}
+
+.companion-heatmap-drilldown-schedule-chip.is-bye {
+  justify-content: center;
+  color: var(--color-label-tertiary);
+}
+
+.companion-heatmap-drilldown-summary-note {
+  padding-top: 8px;
+  font-size: var(--type-label);
+  color: var(--color-label-tertiary);
+}
+
+.companion-heatmap-drilldown-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .companion-player-preview-section-title {
   padding-bottom: 5px;
   margin-bottom: 8px;

@@ -489,6 +489,14 @@ function formatOrdinalRank(rank) {
   return `${rank}${suffix}`;
 }
 
+// Say which end of the table a rank sits at ("3rd most", "8th fewest") so a
+// reader never has to know whether 1st is good or bad.
+function formatDirectionalRank(rank, count, topWord, bottomWord) {
+  if (rank == null) return null;
+  if (!count || rank <= Math.ceil(count / 2)) return `${formatOrdinalRank(rank)} ${topWord}`;
+  return `${formatOrdinalRank(Math.max(1, count - rank + 1))} ${bottomWord}`;
+}
+
 function HeatmapSortIndicator({ active, dir }) {
   if (!active) return null;
   return <span style={{ marginLeft: '3px', opacity: 0.7 }}>{dir === 'desc' ? '↓' : '↑'}</span>;
@@ -847,10 +855,6 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const skipNextRouteEmitRef = useRef(false);
   const lastScoredLeg = Number(league?.settings?.last_scored_leg);
   const maxFantasyWeek = useMemo(() => getFantasyLeagueMaxWeek(league), [league]);
-  const latestCompletedFantasyWeek = useMemo(() => {
-    const seasonWeeks = Array.from({ length: maxFantasyWeek }, (_, index) => index + 1);
-    return getHeatmapLatestCompletedWeek(scheduleMap, seasonWeeks);
-  }, [maxFantasyWeek, scheduleMap]);
   const leaguePositionFilters = useMemo(
     () => getLeaguePositionFilters(league?.roster_positions),
     [league?.roster_positions],
@@ -1529,19 +1533,32 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     const scheduledOpponent = scheduleMap?.[week]?.[team]?.opp?.toUpperCase();
     const scoringTeam = pointsAllowed ? scheduledOpponent : team;
     if (!scoringTeam) return [];
+    // Count every game a team has finished, including one already final in the
+    // current week, even while other games in that week are still to play.
+    const seasonWeeks = Array.from({ length: maxFantasyWeek }, (_, index) => index + 1);
+    const throughWeekByTeam = new Map();
+    const throughWeekFor = (teamCode) => {
+      if (!teamCode) return null;
+      if (!throughWeekByTeam.has(teamCode)) {
+        throughWeekByTeam.set(teamCode, getHeatmapCompletedGameWeeks(scheduleMap, teamCode, seasonWeeks).at(-1) ?? null);
+      }
+      return throughWeekByTeam.get(teamCode);
+    };
 
-    const results = [];
+    // Every eligible player at the selected positions, league-wide, so each
+    // listed player carries an overall position rank. Rank is set before the
+    // team and unrostered filters below.
+    const pool = [];
     for (const [playerId, player] of Object.entries(players)) {
       if (!isWaiverEligiblePlayerRecord(player)) continue;
-      if (matchupFiltersApply && unrosteredMatchupOnly && (!rosterDataReady || rosteredPlayerIds.has(String(playerId)))) continue;
-      if (player.team?.toUpperCase() !== scoringTeam) continue;
-
       const rawPosition = String(player.position ?? '').toUpperCase();
       const position = viewMode === 'offense' ? rawPosition : normDefPos(rawPosition);
       if (!position || !activePositionSet.has(position)) continue;
       if (activePos !== 'ALL' && position !== activePos) continue;
+      const playerTeam = player.team?.toUpperCase() ?? null;
+      const throughWeek = throughWeekFor(playerTeam);
 
-      const gameRows = latestCompletedFantasyWeek == null
+      const gameRows = throughWeek == null
         ? []
         : buildPlayerFormRows({
             playerId,
@@ -1549,7 +1566,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
             weeklyStats,
             scheduleMap,
             scoringSettings: activeScoringSettings,
-            throughWeek: latestCompletedFantasyWeek,
+            throughWeek,
           });
       const weeklyEntries = new Map((weeklyStats?.[playerId] ?? []).map(entry => [Number(entry.week), entry]));
       const metricValues = gameRows.map(row => {
@@ -1565,16 +1582,43 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       const totalMetric = metricValues.length
         ? metricValues.reduce((total, value) => total + value, 0)
         : null;
-      const avgMetric = metricValues.length ? totalMetric / metricValues.length : null;
+      pool.push({ playerId, player, rawPosition, position, playerTeam, totalMetric, gameCount: metricValues.length });
+    }
+
+    const rankByPlayerId = new Map();
+    const poolByPosition = new Map();
+    for (const entry of pool) {
+      if (entry.totalMetric == null) continue;
+      if (!poolByPosition.has(entry.position)) poolByPosition.set(entry.position, []);
+      poolByPosition.get(entry.position).push(entry);
+    }
+    for (const entries of poolByPosition.values()) {
+      entries.sort((left, right) => right.totalMetric - left.totalMetric);
+      let previousTotal;
+      let previousRank = 0;
+      entries.forEach((entry, index) => {
+        const rank = index > 0 && entry.totalMetric === previousTotal ? previousRank : index + 1;
+        rankByPlayerId.set(entry.playerId, rank);
+        previousTotal = entry.totalMetric;
+        previousRank = rank;
+      });
+    }
+
+    const results = [];
+    for (const { playerId, player, rawPosition, position, playerTeam, totalMetric, gameCount } of pool) {
+      if (playerTeam !== scoringTeam) continue;
+      if (matchupFiltersApply && unrosteredMatchupOnly && (!rosterDataReady || rosteredPlayerIds.has(String(playerId)))) continue;
       const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
       results.push({
         playerId,
         name,
         position: rawPosition,
+        rankPosition: position,
+        positionRank: rankByPlayerId.get(playerId) ?? null,
         team: scoringTeam,
         isRostered: rosteredPlayerIds.has(String(playerId)),
         totalMetric,
-        avgMetric,
+        avgMetric: gameCount ? totalMetric / gameCount : null,
         averageLabel,
         metricLabel,
         fantasyPointsMode,
@@ -1596,7 +1640,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     scheduleMap,
     activePositionSet,
     activePos,
-    latestCompletedFantasyWeek,
+    maxFantasyWeek,
     weeklyStats,
     activeScoringSettings,
     rosteredPlayerIds,
@@ -2340,19 +2384,19 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
               const awayTeam = homeKnown ? (sched.home ? opp : drilldown.team) : null;
               return (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 'var(--type-meta)', color: 'var(--color-label-secondary)', marginBottom: 6 }}>
+                  <div className="companion-heatmap-drilldown-week">
                     Week {drilldown.week}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                    {(awayTeam ?? drilldown.team) && <img src={espnLogoUrl(awayTeam ?? drilldown.team)} width={28} height={28} style={{ objectFit: 'contain' }} alt={awayTeam ?? drilldown.team} />}
-                    <span style={{ fontSize: 'var(--type-emphasis)', fontWeight: 800, color: 'var(--color-label)' }}>
+                  <div className="companion-heatmap-drilldown-matchup">
+                    {(awayTeam ?? drilldown.team) && <img src={espnLogoUrl(awayTeam ?? drilldown.team)} width={40} height={40} style={{ objectFit: 'contain' }} alt="" />}
+                    <span className="companion-heatmap-drilldown-matchup-team">
                       {awayTeam ?? drilldown.team}
                     </span>
-                    <span style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)' }}>{homeKnown ? '@' : 'vs'}</span>
-                    <span style={{ fontSize: 'var(--type-emphasis)', fontWeight: 800, color: 'var(--color-label)' }}>
+                    <span className="companion-heatmap-drilldown-matchup-sep">{homeKnown ? '@' : 'vs'}</span>
+                    <span className="companion-heatmap-drilldown-matchup-team">
                       {homeTeam ?? opp ?? '—'}
                     </span>
-                    {(homeTeam ?? opp) && <img src={espnLogoUrl(homeTeam ?? opp)} width={28} height={28} style={{ objectFit: 'contain' }} alt={homeTeam ?? opp} />}
+                    {(homeTeam ?? opp) && <img src={espnLogoUrl(homeTeam ?? opp)} width={40} height={40} style={{ objectFit: 'contain' }} alt="" />}
                   </div>
                   {/* Vegas odds line — shown directly under the team row */}
                   {statMode === 'vegas_odds' && ODDS_SEASON && awayTeam && homeTeam && (() => {
@@ -2414,6 +2458,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                       </div>
                     );
                   })()}
+                  {!(drilldown.isFutureOpponent && !isGameStatMode && matchupPointsMode && activePos !== 'ALL') && (
                   <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', marginTop: 6 }}>
                     {isGameStatMode
                       ? 'Score'
@@ -2427,6 +2472,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                         </>
                     }
                   </div>
+                  )}
                 </div>
               );
             })()}
@@ -2439,28 +2485,82 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                   const defendingTeam = isFantasyPointsAllowed ? drilldown.team : opponent;
                   const rating = matchupRatings?.[drilldown.week]?.[scoringTeam]?.[activePos];
                   if (!rating || !scoringTeam || !defendingTeam) return null;
+                  const stats = [
+                    {
+                      key: 'scored',
+                      label: `${scoringTeam} ${activePos} scored`,
+                      value: rating.teamAverage,
+                      rank: formatDirectionalRank(rating.teamRank, rating.rankedTeamCount, 'most', 'fewest'),
+                    },
+                    {
+                      key: 'allowed',
+                      label: `${defendingTeam} allowed to ${activePos}`,
+                      value: rating.opponentPointsAllowedAverage,
+                      rank: formatDirectionalRank(rating.opponentPointsAllowedRank, rating.rankedOpponentCount, 'most', 'fewest'),
+                    },
+                  ];
+                  const upcoming = rating.upcomingMatchups ?? [];
+                  const scheduleRank = formatDirectionalRank(rating.scheduleRank, rating.scheduleRankedTeamCount, 'easiest', 'hardest');
                   return (
-                    <div style={{ padding: '0 0 12px', color: 'var(--color-label-secondary)', fontSize: 'var(--type-label)' }}>
-                      <div style={{ fontWeight: 700, color: 'var(--color-label)' }}>
-                        {scoringTeam} {activePos} scored: {rating.teamAverage.toFixed(1)} PPG
+                    <div className="companion-heatmap-drilldown-summary">
+                      <dl className="companion-heatmap-drilldown-stats">
+                        {stats.map(stat => (
+                          <div key={stat.key} className="companion-heatmap-drilldown-stat">
+                            <dt>{stat.label}</dt>
+                            <dd>
+                              <span className="companion-heatmap-drilldown-stat-value">{stat.value.toFixed(1)} <small>PPG</small></span>
+                              {stat.rank && <span className="companion-heatmap-drilldown-stat-rank">{stat.rank}</span>}
+                            </dd>
+                          </div>
+                        ))}
+                        {upcoming.length > 0 && (
+                          <div className="companion-heatmap-drilldown-stat companion-heatmap-drilldown-schedule">
+                            <dt>{scoringTeam} {activePos} upcoming schedule</dt>
+                            <dd>
+                              {scheduleRank && <span className="companion-heatmap-drilldown-stat-value">{scheduleRank}</span>}
+                            </dd>
+                            <dd className="companion-heatmap-drilldown-schedule-weeks">
+                            <ol className="companion-heatmap-drilldown-schedule-strip" aria-label={`${scoringTeam} ${activePos} matchup rank by week`}>
+                              {upcoming.map(game => {
+                                if (game.bye) {
+                                  return (
+                                    <li key={game.week} className="companion-heatmap-drilldown-schedule-chip is-bye">
+                                      <span>W{game.week}</span>
+                                      <strong>BYE</strong>
+                                    </li>
+                                  );
+                                }
+                                const t = game.rank != null && game.rankCount > 1
+                                  ? 1 - (game.rank - 1) / (game.rankCount - 1)
+                                  : null;
+                                const location = game.home === false ? '@' : game.home === true ? 'vs' : '';
+                                return (
+                                  <li
+                                    key={game.week}
+                                    className="companion-heatmap-drilldown-schedule-chip"
+                                    style={t == null ? undefined : { background: heatColor(t), color: '#000' }}
+                                    title={game.rank != null
+                                      ? `Week ${game.week} ${location} ${game.opponent}: ${formatOrdinalRank(game.rank)} most favorable ${activePos} matchup`
+                                      : `Week ${game.week} ${location} ${game.opponent}`}
+                                  >
+                                    <span>W{game.week}</span>
+                                    <strong>{game.rank != null ? `#${game.rank}` : '—'}</strong>
+                                    <span>{location ? `${location === 'vs' ? '' : '@'}${game.opponent}` : game.opponent}</span>
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
+                      <div className="companion-heatmap-drilldown-summary-note">
+                        {matchupWindow === 'recent' ? 'Last 4 completed games' : 'Season to date'}{capMatchupOutliers ? ' · Outliers capped' : ''}{unrosteredMatchupOnly ? ' · Team scoring: unrostered' : ''}
+                        {isFantasyPointsAllowed && <> · Grid rank reflects {drilldown.team}'s matchup</>}
                       </div>
-                      <div style={{ fontWeight: 700, color: 'var(--color-label)' }}>
-                        {defendingTeam} allowed to {activePos}: {rating.opponentPointsAllowedAverage.toFixed(1)} PPG
-                      </div>
-                      <div>{matchupWindow === 'recent' ? 'Last 4 completed games' : 'Season to date'}{capMatchupOutliers ? ' · Outliers capped' : ''}{unrosteredMatchupOnly ? ' · Team scoring: unrostered' : ''}</div>
-                      {isFantasyPointsAllowed && <div>Grid rank reflects {drilldown.team}'s matchup.</div>}
                     </div>
                   );
                 })()}
-                <div style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-tertiary)', padding: '0 0 12px' }}>
-                  No Week {drilldown.week} scores yet.
-                  {statsLoading && !weeklyStats
-                    ? ' Loading selected-stat totals and per-game averages.'
-                    : latestCompletedFantasyWeek != null
-                      ? ` ${activeStatLabel} totals and per-game averages through Week ${latestCompletedFantasyWeek}.`
-                      : ' Selected-stat totals and per-game averages will appear after the first completed week.'}
-                  {matchupFiltersApply && capMatchupOutliers ? ' Player totals show actual scores.' : ''}
-                </div>
                 {futurePlayerNavigationId && (
                   <div aria-live="polite" style={{ fontSize: 'var(--type-label)', color: 'var(--color-label-secondary)', padding: '0 0 10px' }}>
                     Opening {players?.[futurePlayerNavigationId]?.full_name || 'player'} statistics…
@@ -2480,16 +2580,13 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                         : 'No players at this position are listed for this team.'}
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {futureOpponentPlayers.map(({ playerId, name, position, team, isRostered, totalMetric, avgMetric, averageLabel, metricLabel: playerMetricLabel, fantasyPointsMode }) => {
+                  <div className="companion-heatmap-drilldown-player-list">
+                    {futureOpponentPlayers.map(({ playerId, name, position, rankPosition, positionRank, team, isRostered, totalMetric, avgMetric, averageLabel, metricLabel: playerMetricLabel, fantasyPointsMode }) => {
                       const canNav = Boolean(onViewPlayer);
                       const isOpeningStats = futurePlayerNavigationId === playerId;
                       return (
-                        <div
-                          key={playerId}
-                          style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--color-fill)' }}
-                        >
                           <CompanionPlayerRow
+                            key={playerId}
                             player={{ ...(players?.[playerId] ?? {}), id: playerId, name, position, team }}
                             darkMode={darkMode}
                             compact
@@ -2499,9 +2596,9 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                             interactive={canNav}
                             disabled={Boolean(futurePlayerNavigationId)}
                             onClick={canNav ? () => { void handleFuturePlayerStatsClick(playerId); } : undefined}
-                            metaSegments={[
-                              team,
-                            ]}
+                            metaSegments={positionRank != null
+                              ? [`${formatOrdinalRank(positionRank)} ${getPositionFilterLabel(rankPosition)} overall`]
+                              : []}
                             identityAccessory={isRostered ? (
                               <CompanionPlayerLocalContrastText
                                 className="text-[length:var(--type-micro)] font-bold uppercase tracking-[0.12em] leading-none"
@@ -2532,7 +2629,6 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                               borderLeftWidth: 3,
                             }}
                           />
-                        </div>
                       );
                     })}
                   </div>
