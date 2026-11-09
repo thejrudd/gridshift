@@ -15,6 +15,7 @@ import { fetchRoster } from '../playerApi.js';
 import {
   buildStatisticsPlayerMeta,
   findRosterMatchForSleeperPlayer,
+  lookupEspnIdByName,
 } from '../playerDrilldown.js';
 import { KIND_GAME, KIND_PLAYER } from './entities/record.js';
 
@@ -53,9 +54,12 @@ function metaFromEspnId(record, espnId) {
  * takes a Sleeper-shaped player, so the record is adapted to that shape rather
  * than the matching rules being reimplemented here.
  */
-async function lookupEspnIdFromRoster(record, { rosterFetcher = fetchRoster } = {}) {
+async function lookupEspnIdFromRoster(record, { rosterFetcher = fetchRoster, nameLookup = lookupEspnIdByName } = {}) {
   const team = record.meta?.team;
-  if (!team || typeof rosterFetcher !== 'function') return null;
+  // A player with no team — a free agent Sleeper lists without an ESPN id — has
+  // no roster to match on, so the lookup is by name.
+  if (!team) return typeof nameLookup === 'function' ? nameLookup(record.label) : null;
+  if (typeof rosterFetcher !== 'function') return null;
 
   try {
     const roster = await rosterFetcher(team);
@@ -136,6 +140,7 @@ export function routeForGameResult(entry, { now = Date.now() } = {}) {
 export async function resolveResultRoute(entry, {
   mode = 'game',
   rosterFetcher = fetchRoster,
+  nameLookup = lookupEspnIdByName,
   now = Date.now(),
 } = {}) {
   const record = entry?.record;
@@ -158,7 +163,7 @@ export async function resolveResultRoute(entry, {
     return { route: routeForPlayerMeta(playerMeta, { mode }), playerMeta, reason: null };
   }
 
-  const espnId = await lookupEspnIdFromRoster(record, { rosterFetcher });
+  const espnId = await lookupEspnIdFromRoster(record, { rosterFetcher, nameLookup });
   if (!espnId) {
     return { route: null, playerMeta: null, reason: 'no-espn-id' };
   }
