@@ -17,6 +17,7 @@ import { rankResults } from '../../utils/globalSearch/rank.js';
 import { resolveAnswer } from '../../utils/globalSearch/answers/index.js';
 import { buildResultDetail } from '../../utils/globalSearch/detail.js';
 import { buildSuggestionGroups } from '../../utils/globalSearch/suggestions.js';
+import useLiveSearchAnswer from '../../hooks/useLiveSearchAnswer.js';
 
 const GROUP_LIMIT = 6;
 
@@ -50,6 +51,7 @@ export default function GlobalSearchPalette({
   recents = null,
   onRecordSearch,
   onClearRecents,
+  liveLeagueId = null,
 }) {
   const [query, setQuery] = useState('');
   const [rawActiveIndex, setActiveIndex] = useState(0);
@@ -98,7 +100,9 @@ export default function GlobalSearchPalette({
 
   // Answers are additive: a resolver returning null (cold cache, or a query it
   // does not handle) simply means the result list stands on its own.
-  const answer = useMemo(() => {
+  const live = useLiveSearchAnswer({ slots, groups, index, leagueId: liveLeagueId });
+
+  const staticAnswer = useMemo(() => {
     if (!answerData || !groups.length) return null;
     try {
       return resolveAnswer(slots, groups, answerData);
@@ -107,6 +111,9 @@ export default function GlobalSearchPalette({
       return null;
     }
   }, [answerData, groups, slots]);
+
+  // A live question answered live beats any cached reading of it.
+  const answer = live.answer ?? staticAnswer;
 
   const activeDetail = useMemo(() => {
     const record = flatResults[activeIndex]?.record;
@@ -270,6 +277,10 @@ export default function GlobalSearchPalette({
 
         {notice ? (
           <p className="global-search__notice" role="status">{notice}</p>
+        ) : null}
+
+        {hasQuery && live.unavailable && !notice ? (
+          <p className="global-search__notice" role="status">Live scores aren’t available right now.</p>
         ) : null}
 
         <div

@@ -163,6 +163,107 @@ test.describe('recents and suggestions', () => {
   });
 });
 
+// Monday night of week 9 in the bundled 2026 schedule: Buffalo at Minnesota is
+// in progress, the Sunday games are final.
+const LIVE_NOW = new Date('2026-11-10T02:30:00Z');
+
+const LIVE_GAMES = [
+  {
+    id: 9001, week: 9, date: '2026-11-10T01:15:00.000Z', status: '4:12 - 3rd',
+    visitor_team: { abbreviation: 'BUF', full_name: 'Buffalo Bills' },
+    home_team: { abbreviation: 'MIN', full_name: 'Minnesota Vikings' },
+    visitor_team_score: 17, home_team_score: 20,
+  },
+  {
+    id: 9002, week: 9, date: '2026-11-09T01:20:00.000Z', status: 'Final',
+    visitor_team: { abbreviation: 'TB', full_name: 'Tampa Bay Buccaneers' },
+    home_team: { abbreviation: 'CHI', full_name: 'Chicago Bears' },
+    visitor_team_score: 24, home_team_score: 27,
+  },
+];
+
+async function installLiveServer(page, { enabled = true, gamesStatus = 200 } = {}) {
+  const requests = [];
+  await page.route('**/api/live/**', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.pathname);
+    const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (url.pathname === '/api/live/status') {
+      return json({
+        ok: true,
+        live: { enabled, leagueAllowed: enabled, accessCodeRequired: false },
+        session: { enabled },
+      });
+    }
+    if (url.pathname === '/api/live/games') {
+      return gamesStatus === 200
+        ? json({ ok: true, data: LIVE_GAMES })
+        : json({ ok: false, error: 'upstream' }, gamesStatus);
+    }
+    return json({ ok: true, data: [] });
+  });
+  return requests;
+}
+
+test.describe('live answers', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Behaviour is shared across layouts.');
+    await page.clock.setFixedTime(LIVE_NOW);
+    await installTradeFixtures(page);
+  });
+
+  async function start(page) {
+    await page.goto(START_ROUTE);
+    await expect(page.getByRole('button', { name: 'Search GridShift' })).toBeVisible();
+    await expect(page).toHaveURL(SETTLED_ROUTE);
+    await openWithShortcut(page);
+  }
+
+  test('a team score query answers with its game in progress, which opens Scores', async ({ page }) => {
+    await installLiveServer(page);
+    await start(page);
+    await searchInput(page).fill('bills score');
+    const card = palette(page).getByRole('region', { name: 'Search answer' });
+    await expect(card.getByRole('heading', { name: 'Buffalo Bills at Minnesota Vikings' })).toBeVisible();
+    await expect(card).toContainText('Q3 · 4:12');
+    await expect(card.locator('.matchup-live-dot')).toHaveCount(1);
+
+    await card.getByRole('button', { name: /BUF/ }).click();
+    await expect(palette(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/statistics\/scores/);
+  });
+
+  test('live scores lead with the games in progress', async ({ page }) => {
+    await installLiveServer(page);
+    await start(page);
+    await searchInput(page).fill('live scores');
+    const card = palette(page).getByRole('region', { name: 'Search answer' });
+    await expect(card.getByRole('heading', { name: 'Live now' })).toBeVisible();
+    await expect(card.getByRole('listitem').first()).toContainText('BUF');
+    await expect(card.getByRole('listitem').nth(1)).toContainText('Final');
+  });
+
+  test('with live data off on the server there is no live card and no live request', async ({ page }) => {
+    const requests = await installLiveServer(page, { enabled: false });
+    await start(page);
+    await searchInput(page).fill('bills score');
+    await expect(palette(page).getByRole('option').first()).toContainText('Buffalo Bills');
+    await expect(palette(page).getByRole('option', { name: /Scores/ })).toBeVisible();
+    await page.waitForTimeout(800);
+    await expect(palette(page).getByRole('region', { name: 'Search answer' })).toBeHidden();
+    await expect(palette(page).getByText('Live scores aren’t available right now.')).toBeHidden();
+    expect(requests.filter((path) => path !== '/api/live/status')).toEqual([]);
+  });
+
+  test('a failing live server says so and keeps the results', async ({ page }) => {
+    await installLiveServer(page, { gamesStatus: 502 });
+    await start(page);
+    await searchInput(page).fill('bills score');
+    await expect(palette(page).getByText('Live scores aren’t available right now.')).toBeVisible();
+    await expect(palette(page).getByRole('option').first()).toContainText('Buffalo Bills');
+  });
+});
+
 test.describe('mobile', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-mobile', 'Mobile shell entry point.');

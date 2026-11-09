@@ -2844,6 +2844,7 @@ function AppInner() {
             recents={searchRecents}
             onRecordSearch={recordSearch}
             onClearRecents={clearSearchRecents}
+            liveLeagueId={platform === 'sleeper' && hasLeague ? selectedLeagueId : null}
           />
         </Suspense>
       )}
