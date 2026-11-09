@@ -30835,6 +30835,15 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 }
 .companion-roster-position-bar .gs-text-meta { margin: 0; color: inherit; letter-spacing: 0.16em; }
 .companion-roster-position-bar.is-following { margin-top: 16px; }
+.companion-roster-position-bar.is-reserve {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+.companion-roster-position-bar.is-reserve span { color: var(--color-label-secondary); letter-spacing: 0.08em; }
 /* Player names stay on one line; the row's title and accessible name carry
    the full name. */
 .companion-roster-player-row .companion-player-row__identity-label {

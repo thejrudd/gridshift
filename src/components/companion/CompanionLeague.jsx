@@ -98,12 +98,10 @@ function formatLeagueRankTitle(rank) {
 }
 
 function getLeagueMetaSegments(player) {
-  const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
   return [
     player.position,
     player.team,
     player.isKeeper ? 'Keeper' : null,
-    showReserveMeta ? 'IR' : null,
   ].filter(Boolean);
 }
 
@@ -365,7 +363,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
 
 function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
-    platform, season, selectedLeagueId,
+    platform, season, selectedLeagueId, league,
     leagueUsers, rosters, myRoster, getUserDisplayName,
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
@@ -470,9 +468,25 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
     marginRight: `-${headerTracking}em`,
   };
 
+  // IR players get their own section after the position groups.
+  const reservePlayers = useMemo(() => (
+    rosterPlayers
+      .filter(p => p.isReserve)
+      .sort((a, b) => (
+        (POSITION_ORDER.indexOf(a.position) + 1 || 99) - (POSITION_ORDER.indexOf(b.position) + 1 || 99)
+        || (b.pts ?? -1) - (a.pts ?? -1)
+      ))
+  ), [rosterPlayers]);
+  const reserveSlotCount = useMemo(() => {
+    const fromSettings = Number(league?.settings?.reserve_slots);
+    if (Number.isFinite(fromSettings) && fromSettings > 0) return fromSettings;
+    return (league?.roster_positions ?? []).filter(slot => slot === 'IR').length;
+  }, [league]);
+
   const grouped = useMemo(() => {
     const groups = {};
     for (const p of rosterPlayers) {
+      if (p.isReserve) continue;
       const pos = POSITION_ORDER.includes(p.position) ? p.position : 'Other';
       if (!groups[pos]) groups[pos] = [];
       groups[pos].push(p);
@@ -623,21 +637,29 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
         resetKey={selectedRosterId ?? ''}
         skeleton={<SkeletonRows count={rosterSkeletonCount} height="4rem" className="mx-2 sm:mx-4" />}
       >
-        {players && selectedRoster && POSITION_ORDER.filter(pos => grouped[pos]?.length).flatMap((pos, groupIndex) => {
+        {players && selectedRoster && [
+          ...POSITION_ORDER.filter(pos => grouped[pos]?.length).map(pos => ({ key: pos, players: grouped[pos] })),
+          ...(reservePlayers.length ? [{ key: 'IR', players: reservePlayers, isReserve: true }] : []),
+        ].flatMap(({ key: pos, players: groupPlayers, isReserve }, groupIndex) => {
           const isOpponent = selectedRosterId !== myRosterData?.roster_id;
           const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
           return [
             <div
               key={`${pos}-heading`}
-              className={`companion-roster-position-bar mx-2 sm:mx-4${groupIndex > 0 ? ' is-following' : ''}`}
-              style={{
+              className={`companion-roster-position-bar mx-2 sm:mx-4${groupIndex > 0 ? ' is-following' : ''}${isReserve ? ' is-reserve' : ''}`}
+              style={isReserve ? undefined : {
                 background: POSITION_COLORS[pos] ?? 'var(--color-label-tertiary)',
                 color: POSITION_COLORS[pos] ? pickReadableForeground([POSITION_COLORS[pos]]) : 'var(--color-label)',
               }}
             >
-              <h2 className="gs-text-meta">{pos}</h2>
+              <h2 className="gs-text-meta">{isReserve ? 'Injured Reserve' : pos}</h2>
+              {isReserve && reserveSlotCount > 0 && (
+                <span className="gs-text-meta" aria-label={`${groupPlayers.length} of ${reserveSlotCount} slots used`}>
+                  {groupPlayers.length}/{reserveSlotCount}
+                </span>
+              )}
             </div>,
-            ...grouped[pos].map(player => (
+            ...groupPlayers.map(player => (
               <LeagueResponsivePlayerRow
                 key={player.id}
                 player={player}
