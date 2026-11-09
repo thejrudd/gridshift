@@ -343,6 +343,64 @@ test.describe('result actions', () => {
   });
 });
 
+const HISTORY_TRANSACTIONS = {
+  3: [
+    {
+      transaction_id: 'search-trade', type: 'trade', status: 'complete', status_updated: Date.UTC(2026, 8, 21), leg: 3,
+      roster_ids: [1, 2], adds: { 106: 2, 203: 1 }, drops: { 106: 1, 203: 2 },
+    },
+    {
+      transaction_id: 'search-waiver', type: 'waiver', status: 'complete', status_updated: Date.UTC(2026, 8, 23), leg: 3,
+      adds: { 305: 1 }, drops: { 105: 1 },
+    },
+  ],
+};
+
+test.describe('league history answers', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Behaviour is shared across layouts.');
+    await installTradeFixtures(page, { transactionsByRound: HISTORY_TRANSACTIONS });
+  });
+
+  test('before League History has been opened, history questions only offer its pages', async ({ page }) => {
+    await page.goto(START_ROUTE);
+    await expect(page).toHaveURL(SETTLED_ROUTE);
+    await openWithShortcut(page);
+    await searchInput(page).fill('recent transactions');
+    await expect(palette(page).getByRole('option', { name: /League activity/ })).toBeVisible();
+    await expect(palette(page).getByRole('region', { name: 'Search answer' })).toBeHidden();
+  });
+
+  test('once League History has loaded, search answers from it without fetching', async ({ page }) => {
+    await page.goto('/league/history');
+    await expect(page.getByRole('heading', { name: 'Lifetime leaderboard' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Search GridShift' })).toBeVisible();
+
+    const historyRequests = [];
+    page.on('request', (request) => {
+      if (/\/v1\/league\/.+\/(transactions|matchups|winners_bracket)/.test(request.url())) historyRequests.push(request.url());
+    });
+
+    await openWithShortcut(page);
+    const card = palette(page).getByRole('region', { name: 'Search answer' });
+
+    await searchInput(page).fill('recent transactions');
+    await expect(card.getByRole('heading', { name: 'Recent transactions' })).toBeVisible();
+    await expect(card.getByRole('listitem').first()).toContainText('adds Third Bench Runner');
+
+    await searchInput(page).fill('head to head partner team');
+    await expect(card.getByRole('heading', { name: 'You vs Partner Team' })).toBeVisible();
+
+    await searchInput(page).fill('bench runner trades');
+    await expect(card.getByRole('heading', { name: 'Bench Runner trades' })).toBeVisible();
+    await expect(card).toContainText('Partner Team gets Bench Runner');
+
+    await card.getByRole('button', { name: 'Open trade history' }).click();
+    await expect(page).toHaveURL(/\/trade\/history/);
+    expect(historyRequests).toEqual([]);
+  });
+});
+
 test.describe('mobile', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-mobile', 'Mobile shell entry point.');

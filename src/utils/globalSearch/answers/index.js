@@ -12,6 +12,7 @@
 
 import { resolveCompareAnswer } from './compare.js';
 import { resolveFantasyAnswer } from './fantasyLookup.js';
+import { resolveHistoryAnswer } from './history.js';
 import { resolveLeadersAnswer } from './leaders.js';
 import { resolvePlayerStatAnswer } from './playerStat.js';
 import { resolveStandingsAnswer } from './standings.js';
@@ -30,7 +31,14 @@ export function resolveAnswer(slots, groups = [], data = {}) {
 
   // "X vs Y" is a question about two things at once; every other resolver
   // reads one top result and would answer about only one side of it.
-  if (slots.compare) return resolveCompareAnswer(slots, groups, data);
+  // "me vs dana" is head to head from league history, ahead of a season compare.
+  if (slots.compare) {
+    return resolveHistoryAnswer(slots, groups, data) ?? resolveCompareAnswer(slots, groups, data);
+  }
+
+  // The connected league's history: champions, head to head, trades, moves.
+  const history = resolveHistoryAnswer(slots, groups, data);
+  if (history) return history;
 
   // Standings is a table about a competition, so it needs no result at all —
   // "afc standings" names nothing the index holds.
