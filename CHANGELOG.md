@@ -1530,3 +1530,16 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Fumbles in play-by-play** - A fumble by a player whose abbreviated name matches a teammate's is charged to the right player, a run that ends in a lost fumble keeps its yards instead of the defense's return, and a catch or run that ends in a fumble gets the yards the official stats credit.
 - **Live totals and first downs** - A play whose carries and yards Sleeper has already counted is no longer held out as pending when Sleeper credits a first down differently, so live totals no longer run ahead of Sleeper.
 - **Position strength uses this season** - The scoring guide's Position strength switches from last season's results to this season's once four games have been played.
+
+## v9.3.9 - Matchup Cards & Stat Lines
+*2026-11-08*
+
+- **Stat lines on phone matchup cards** - On phones, each starter's card shows their stat line once their game starts, attempts first in the same order as Sleeper (`16/26, 242 YDS, 1 PASS TD`, `5/8 REC, 43 YDS`), and the kickoff day and time in your own time zone before it. Stats come from the live feed, with Sleeper's stat line as the fallback, and follow the replay when you rewind.
+- **Live game status on every card** - A player whose game is live shows a red live dot and the game clock (`● Q2 2:37`), on phones and desktop, bench included. Finished games show the final score (`W 33-10 @ BAL`).
+- **Points breakdown in the player drilldown** - For live and finished games, tapping a player opens the drilldown with Where the points came from right under the score, led by volume stats such as completions and attempts, carries, and catches and targets. On phones the Game Flow chart sits above it; on desktop the chart matches its height.
+- **Roomier phone matchup cards** - Phone cards drop the player photo for the name, the position beside it, the game line and the stat line. The position chip sits over the seam between the two cards, as on Sleeper, and paired cards stay the same height.
+- **Compact phone header** - On phones the replay bar fits on one row and the scorecards are tighter, so the win chance chart starts about 100px higher.
+- **Chart heading** - Win chance and Lead are now the chart's heading rather than a separate title and switch, and replaying shows the score as Live score.
+- **Smoother phone scrolling** - Matchups no longer leaves cards blank for a moment while scrolling on phones during live games.
+- **Hover card stats** - The desktop starter hover card counts every snap, including carries for no gain, incompletions and targets, and the browser's name tooltip no longer covers it.
+- **Self-hosted down page** - Self-hosted deployments behind a Cloudflare tunnel can show a GridShift page instead of Cloudflare's error page when the server is unreachable. See the self-hosting guide.

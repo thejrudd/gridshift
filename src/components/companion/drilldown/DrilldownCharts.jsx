@@ -398,12 +398,16 @@ const clockAt = (minute) => {
 
 /* Scoring pace (live) and game flow (final): cumulative estimated play points
    on the game clock with a scrub readout that snaps only near a play. */
-export function PaceChart({ pace, ariaLabel }) {
-  const [ref, width, compact] = useChartWidth();
+// `fill`: the chart grows to its container's height (the desktop hero, where
+// it sits beside the points breakdown). The container keeps the normal height
+// as its minimum, and the SVG is laid over it so it never feeds that height.
+export function PaceChart({ pace, ariaLabel, fill = false }) {
+  const [ref, width, compact, boxHeight] = useChartWidth();
   const [scrub, setScrub] = useState(null);
   const capture = useRef(false);
   if (!pace) return null;
-  const H = compact ? 176 : width < 520 ? 210 : 250;
+  const baseH = compact ? 176 : width < 520 ? 210 : 250;
+  const H = fill ? Math.max(baseH, boxHeight) : baseH;
   const L = 26;
   const R = 52;
   const T = compact ? 18 : 24;
@@ -460,7 +464,7 @@ export function PaceChart({ pace, ariaLabel }) {
   const cy = scrub ? (scrub.mark ? scrub.mark.py : y(scrub.value)) : 0;
 
   return (
-    <div className="pdd-chart" ref={ref}>
+    <div className={`pdd-chart${fill ? ' is-fill' : ''}`} ref={ref} style={fill ? { minHeight: baseH } : undefined}>
       <svg
         className="pdd-svg pdd-scrub"
         width={width}

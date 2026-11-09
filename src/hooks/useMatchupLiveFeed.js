@@ -82,7 +82,7 @@ import { buildSharedDemoScoringEvents, limitPlayByPlayGames } from '../utils/liv
 import { getBigPlayThreshold } from '../utils/liveFeedFilters.js';
 import { buildSlateAxis } from '../utils/matchupSlateAxis.js';
 import { resolveFantasyLiveAvailability, getLiveConfigurationMessage } from '../utils/fantasyLiveAvailability.js';
-import { LIVE_SANDBOX_ENABLED, isLiveMode, subscribeToRewind, useLiveSandbox } from '../dev/liveSandbox';
+import { LIVE_SANDBOX_ENABLED, subscribeToRewind, useLiveSandbox } from '../dev/liveSandbox';
 import { traceLiveMilestone, traceLiveWork } from '../utils/liveLoadTrace.js';
 
 const LIVE_REFRESH_MS = 5000;
@@ -296,7 +296,6 @@ export default function useMatchupLiveFeed({
   // league always reads the real routes.
   const liveSource = sandbox ? sandboxAwareLiveSource : realLiveApi;
   const connectedBase = useSleeperBase();
-  const connectedLiveMode = isLiveMode();
   const connectedPreseasonScoring = sandbox?.mode === 'preseason'
     && connectedBase.selectedLeagueId
     && connectedBase.league?.scoring_settings
@@ -345,7 +344,11 @@ export default function useMatchupLiveFeed({
   // Server mock plays (a dev setting) stand in for a live feed only. A finished
   // week always has real play-by-play, so it never uses them: mock plays are a
   // handful of big plays per player and would hide every small one.
-  const demoFeedEnabled = !sandbox && !connectedLiveMode && !historical && isMockPlayByPlayEnabled(liveStatus);
+  // With the dev sandbox enabled, the connected league on screen always reads
+  // real plays, whatever mode the sandbox panel is in. The mode is stored per
+  // origin, so a phone on the LAN address could sit in Replay while viewing the
+  // connected league and quietly draw a chart from fabricated plays.
+  const demoFeedEnabled = !sandbox && !LIVE_SANDBOX_ENABLED && !historical && isMockPlayByPlayEnabled(liveStatus);
   const reconcilerEnabled = sandbox ? Boolean(sandbox.replay) : !demoFeedEnabled;
   const sessionWeek = enabled && platform === 'sleeper' && liveWeek
     ? (historical ? pickedWeek : requestedWeek == null || pickedWeek === liveWeek ? liveWeek : null)
@@ -726,8 +729,9 @@ export default function useMatchupLiveFeed({
     return map;
   }, [espnIdOverrides, matchupStarterIds, players]);
 
-  const sideSummaries = useMemo(() => (
-    (currentMatchup?.rows ?? []).map((matchupRow, index) => {
+  const sideSummaries = useMemo(() => {
+    const finalGameIdSet = new Set(liveGames.filter((game) => isFinalGame(game)).map((game) => String(game.id)));
+    return (currentMatchup?.rows ?? []).map((matchupRow, index) => {
       const sleeperPlayerPoints = matchupRow?.players_points ?? {};
       const rows = getStarterIds(matchupRow).map((id) => {
         const player = starterPlayersById.get(id) ?? null;
@@ -760,6 +764,11 @@ export default function useMatchupLiveFeed({
             sleeperPoints,
             sleeperDerivedPoints,
             suppressFallback: sandboxReplay,
+            // A finished game's official points include what the provider's
+            // stat line cannot score (long-play bonuses, first downs). Only
+            // reached when the reconciler has not scored this player (the
+            // mock-play demo feed, or before reconciliation runs).
+            preferAuthoritative: bdlRow?.gameId != null && finalGameIdSet.has(String(bdlRow.gameId)),
           }),
         };
       }).filter(Boolean);
@@ -771,8 +780,8 @@ export default function useMatchupLiveFeed({
         rows,
         total,
       };
-    })
-  ), [activeScoringSettings, currentMatchup, reconciliation, sandboxReplay, sleeperStatsByPlayer, starterPlayersById, statIndex, week]);
+    });
+  }, [activeScoringSettings, currentMatchup, liveGames, reconciliation, sandboxReplay, sleeperStatsByPlayer, starterPlayersById, statIndex, week]);
 
   const leftSummary = sideSummaries[0] ?? null;
   const rightSummary = sideSummaries[1] ?? null;
