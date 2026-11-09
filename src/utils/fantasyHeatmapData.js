@@ -173,12 +173,70 @@ export function buildHeatmapMatchupRatings({
           teamAverage: offenseAveragesByPosition.get(position).get(team),
           opponentPointsAllowedAverage: allowedAveragesByPosition.get(position).get(scheduleWeek[team].opp.toUpperCase()),
           composite: composites.get(team),
+          rankedTeamCount: offenseRanks.size,
+          rankedOpponentCount: favorableDefenseRanks.size,
+          rankedMatchupCount: matchupRanks.size,
         };
       }
     }
   }
 
+  attachUpcomingSchedules(ratings, { scheduleMap, teams, positions, weeks });
   return ratings;
+}
+
+/**
+ * Attach each team's remaining schedule, built from the same weekly matchup
+ * ranks the Heatmap shows, plus a rank of how favorable that schedule is.
+ *
+ * Weekly ranks are scaled to 0 (best) – 1 (worst) before averaging, because a
+ * bye-heavy week ranks fewer teams. 1st is the easiest remaining schedule.
+ */
+function attachUpcomingSchedules(ratings, { scheduleMap, teams, positions, weeks }) {
+  const weekList = (weeks ?? []).map(Number).filter(Number.isFinite).sort((left, right) => left - right);
+  const scheduleWeek = week => scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? {};
+
+  for (const week of weekList) {
+    if (!ratings[week]) continue;
+    for (const position of positions ?? []) {
+      const schedules = new Map();
+      const scores = new Map();
+      for (const team of teams ?? []) {
+        const games = [];
+        for (const futureWeek of weekList) {
+          if (futureWeek < week) continue;
+          const weekGames = scheduleWeek(futureWeek);
+          const entry = weekGames?.[team] ?? weekGames?.[String(team)] ?? null;
+          if (!entry) {
+            if (Object.keys(weekGames ?? {}).length) games.push({ week: futureWeek, bye: true });
+            continue;
+          }
+          if (!entry.opp || isFinalScheduleGame(entry)) continue;
+          const rating = ratings[futureWeek]?.[team]?.[position];
+          games.push({
+            week: futureWeek,
+            opponent: entry.opp.toUpperCase(),
+            home: entry.home ?? null,
+            rank: rating?.rank ?? null,
+            rankCount: rating?.rankedMatchupCount ?? null,
+          });
+        }
+        schedules.set(team, games);
+        const scaled = games
+          .filter(game => game.rank != null && game.rankCount)
+          .map(game => (game.rankCount > 1 ? (game.rank - 1) / (game.rankCount - 1) : 0));
+        if (scaled.length) scores.set(team, scaled.reduce((total, value) => total + value, 0) / scaled.length);
+      }
+      const scheduleRanks = rankAscendingValues(scores);
+      for (const team of Object.keys(ratings[week])) {
+        const rating = ratings[week][team]?.[position];
+        if (!rating) continue;
+        rating.upcomingMatchups = schedules.get(team) ?? [];
+        rating.scheduleRank = scheduleRanks.get(team) ?? null;
+        rating.scheduleRankedTeamCount = scheduleRanks.size;
+      }
+    }
+  }
 }
 
 export function sortHeatmapRowsByMatchupRank(rows, matchupRatings, week, position, direction = 'asc') {

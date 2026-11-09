@@ -335,3 +335,38 @@ describe('Fantasy Heatmap future matchup ratings', () => {
     );
   });
 });
+
+describe('Fantasy Heatmap upcoming schedule rank', () => {
+  // Week 2: A-B is already final while C-D is still to play.
+  const scheduleMap = {
+    1: { A: { opp: 'B', completed: true }, B: { opp: 'A', completed: true }, C: { opp: 'D', completed: true }, D: { opp: 'C', completed: true } },
+    2: { A: { opp: 'B', completed: true }, B: { opp: 'A', completed: true }, C: { opp: 'D' }, D: { opp: 'C' } },
+    3: { A: { opp: 'C' }, B: { opp: 'D' }, C: { opp: 'A' }, D: { opp: 'B' } },
+  };
+  const positionTable = {
+    A: { WR: { 1: 10, 2: 30 } },
+    B: { WR: { 1: 20, 2: 10 } },
+    C: { WR: { 1: 30 } },
+    D: { WR: { 1: 40 } },
+  };
+  const ratings = buildHeatmapMatchupRatings({
+    positionTable, scheduleMap, teams: ['A', 'B', 'C', 'D'], positions: ['WR'], weeks: [1, 2, 3],
+  });
+
+  it('counts a team game that is already final in a week other teams have not finished', () => {
+    assert.equal(ratings[3].A.WR.teamAverage, 20);
+    assert.equal(ratings[3].D.WR.opponentPointsAllowedAverage, 20);
+  });
+
+  it('lists remaining weekly matchup ranks and ranks the schedule from them', () => {
+    // Week 2: D #1, C #2. Week 3: A and D tie at #1, B and C tie at #3.
+    assert.deepEqual(ratings[2].C.WR.upcomingMatchups.map(game => [game.week, game.opponent, game.rank]), [[2, 'D', 2], [3, 'A', 3]]);
+    assert.equal(ratings[2].D.WR.upcomingMatchups.length, 2);
+    // A has already played Week 2, so only Week 3 counts toward its schedule.
+    assert.deepEqual(ratings[3].A.WR.upcomingMatchups.map(game => game.week), [3]);
+    assert.equal(ratings[3].A.WR.scheduleRank, 1);
+    assert.equal(ratings[3].C.WR.scheduleRank, 3);
+    assert.equal(ratings[2].D.WR.scheduleRank, 1);
+    assert.equal(ratings[3].A.WR.scheduleRankedTeamCount, 4);
+  });
+});

@@ -1561,3 +1561,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-11-09*
 
 - **Roster link from player stats** - Opening another team's roster from a player's Statistics page no longer flips back and forth between that roster and yours.
+
+## v9.4.2 - Heatmap Matchup Details
+*2026-11-09*
+
+- **Flatter matchup details** - Opening an upcoming matchup on the Heatmap shows a cleaner sheet: a larger week and matchup header, player rows without the extra box around each one, and none of the repeated captions.
+- **Clearer matchup ranks** - The scored and allowed lines say which way each rank counts, such as "1st most" or "8th fewest", so a rank never has to be read as good or bad.
+- **Upcoming schedule** - Matchup details show the team's remaining weeks for the position, each with its Heatmap matchup rank and color, and rank the whole schedule from easiest to hardest. Bye weeks are marked.
+- **Player position ranks** - Each player row shows where the player ranks at their position across the league this season, such as "5th WR overall", in place of the team.
+- **This week's finished games count** - Team and player averages include a game that has already finished this week, even while other games that week are still to play.
