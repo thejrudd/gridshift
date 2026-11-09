@@ -693,6 +693,19 @@ export const WHATS_NEW = [
           placement: 'auto',
         }],
       },
+      {
+        id: 'matchup-player-cards',
+        name: 'Matchup player cards',
+        description: 'Every matchup card shows the player\'s position, game, and stat line, or kickoff before the game starts.',
+        steps: [{
+          route: { activeTab: 'fantasy', companionView: 'matchups' },
+          anchor: '[data-tour="matchup-player-card"]',
+          anchorMobile: null,
+          title: 'Matchup player cards',
+          body: 'Each starter shows their position, their game with the live clock or final score, and their stat line once it kicks off.',
+          placement: 'auto',
+        }],
+      },
     ],
   },
 ];
