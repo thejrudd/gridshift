@@ -65,6 +65,10 @@ function createSlots(raw) {
     operator: null,
     week: null,
     season: null,
+    // "jsn vs kupp": each side parsed on its own, since a comparison names two
+    // things and requiring every name term on one record would match nothing.
+    // Null unless the query has a compare operator with something on both sides.
+    compare: null,
     // Words that were read as a team ("washington"), kept so ranking can try the
     // other reading — a player's surname — when the team reading finds nobody.
     teamWords: [],
@@ -173,7 +177,7 @@ function matchPhraseAt(words, i, slots) {
  * lets ranking decide on the evidence: a real player named Moss outscores a
  * superlative with no stat attached to it.
  */
-export function parseGlobalQuery(query) {
+export function parseGlobalQuery(query, { splitCompare = true } = {}) {
   const raw = String(query ?? '');
   const slots = createSlots(raw);
   const words = expandGluedWeekTokens(raw.toLowerCase().trim())
@@ -233,7 +237,39 @@ export function parseGlobalQuery(query) {
     if (word.length >= 2) pushUnique(slots.nameTerms, word);
   }
 
+  if (splitCompare && slots.operator === 'compare') slots.compare = splitComparison(words);
+
   return slots;
+}
+
+/**
+ * Parse each side of the first compare operator separately. Only an exactly
+ * typed operator splits — a typo that corrected into "vs" is too weak a signal
+ * to cut a query in half.
+ */
+// A side that is only the user ("me vs dana", "my team vs dana") stands for
+// the user's own fantasy team. "me" is otherwise a stopword, so without this the
+// side parses as empty and the query stops being a comparison at all.
+const SELF_SIDE_WORDS = new Set(['me', 'i', 'my', 'mine', 'us', 'our', 'team']);
+
+function parseSide(sideWords) {
+  const side = parseGlobalQuery(sideWords.join(' '), { splitCompare: false });
+  if (!isEmptyQuery(side)) return side;
+  if (sideWords.length && sideWords.every((word) => SELF_SIDE_WORDS.has(word))) {
+    return { ...side, scope: 'self' };
+  }
+  return side;
+}
+
+function splitComparison(words) {
+  const at = words.findIndex((word) => lookupPhrase(word)?.type === 'operator');
+  if (at <= 0 || at >= words.length - 1) return null;
+  const left = parseSide(words.slice(0, at));
+  const right = parseSide(words.slice(at + 1));
+  const usable = (side) => !isEmptyQuery(side) || side.scope === 'self';
+  if (!usable(left) || !usable(right)) return null;
+  if (left.scope === 'self' && right.scope === 'self' && isEmptyQuery(right) && isEmptyQuery(left)) return null;
+  return { left, right };
 }
 
 /**

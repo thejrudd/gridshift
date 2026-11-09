@@ -15,6 +15,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Free agents whom Sleeper lists with no team and no ESPN id, such as Najee Harris, were found by Search but could not open their Statistics page from Search, Rankings, or Rosters. | v9.4.0 |
+| Statistics player game logs showed no team, opponent, or result for games a player played after a mid-season trade, took bye weeks and playoff games from his first team of the season, and filled weeks before his first game with byes even when his team played. | v9.4.0 |
 | Matchups player drilldowns showed different live points than the player's row, left plays late in a half off the scoring chart, and grouped a fumble and a first down together as Other scoring. | v9.3.8 |
 | Matchups hover cards showed the clock of the player's last play instead of the game clock, so a game at halftime read as still in the second quarter. | v9.3.8 |
 | International games showed the home team's stadium and weather instead of the neutral site where they were played. | v9.3.8 |

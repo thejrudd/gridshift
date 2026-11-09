@@ -161,6 +161,7 @@ export default function GlobalSearchResultRow({
   darkMode = false,
   onSelect,
   onRoute,
+  focusedAction = null,
   id,
 }) {
   const { record } = entry;
@@ -169,7 +170,7 @@ export default function GlobalSearchResultRow({
     ? formatPlayerMeasurements(record.meta, { compact: true })
     : null;
   const hasDetail = active
-    && Boolean(detail?.facts?.length || detail?.stats || detail?.fantasy);
+    && Boolean(detail?.facts?.length || detail?.stats || detail?.fantasy || detail?.actions?.length);
 
   return (
     <div className={`global-search-row-shell${active ? ' is-active' : ''}`}>
@@ -201,7 +202,9 @@ export default function GlobalSearchResultRow({
 
       {/* Rendered only while active. The height is not animated — see the
           interaction note in GlobalSearchPalette. */}
-      {hasDetail ? <GlobalSearchDetail detail={detail} onRoute={onRoute} /> : null}
+      {hasDetail ? (
+        <GlobalSearchDetail detail={detail} onRoute={onRoute} focusedAction={focusedAction} />
+      ) : null}
     </div>
   );
 }

@@ -64,6 +64,34 @@ function LeaderRows({ rows, onSelectPlayer }) {
 }
 
 /**
+ * League history rows: a season or week in the rank column, who on the first
+ * line, what happened on the second. Each opens the history page it came from.
+ */
+function HistoryRows({ rows, onRoute }) {
+  return (
+    <ol className="global-search-answer__rows">
+      {rows.map((row) => (
+        <li key={row.key}>
+          <button
+            type="button"
+            className="global-search-answer__row global-search-history__row"
+            onClick={() => onRoute?.(row.route)}
+          >
+            <span className="global-search-answer__rank global-search-history__when">{row.rank}</span>
+            <span className="global-search-answer__row-text">
+              <span className="global-search-answer__row-label">{row.label}</span>
+              {row.sublabel ? (
+                <span className="global-search-answer__row-sublabel global-search-history__detail">{row.sublabel}</span>
+              ) : null}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
  * A standings table.
  *
  * Built from divs with ARIA table roles and a shared grid template rather than
@@ -116,6 +144,191 @@ function StandingsRows({ columns, rows, onSelectRow }) {
   );
 }
 
+/**
+ * Two things side by side: a header naming each side, then one row per value
+ * with the better side marked. Each side's name opens it.
+ *
+ * Div table roles and a shared grid template, like StandingsRows, so the two
+ * value columns stay aligned and the label column takes what is left.
+ */
+function CompareRows({ sides, rows, onSelectPlayer, onRoute }) {
+  const template = 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)';
+  const openSide = (side) => {
+    if (side.sleeperId) onSelectPlayer?.(side.sleeperId);
+    else if (side.route) onRoute?.(side.route);
+  };
+
+  return (
+    <div className="global-search-answer__table global-search-compare" role="table">
+      <div className="global-search-compare__head" role="row" style={{ gridTemplateColumns: template }}>
+        <span role="columnheader" aria-label="Value" />
+        {sides.map((side) => (
+          <span key={side.label} role="columnheader" className="global-search-compare__side">
+            {side.sleeperId || side.route ? (
+              <button
+                type="button"
+                className="global-search-compare__side-button"
+                onClick={() => openSide(side)}
+              >
+                <span className="global-search-answer__row-label">{side.label}</span>
+                {side.sublabel ? (
+                  <span className="global-search-answer__row-sublabel">{side.sublabel}</span>
+                ) : null}
+              </button>
+            ) : (
+              <>
+                <span className="global-search-answer__row-label">{side.label}</span>
+                {side.sublabel ? (
+                  <span className="global-search-answer__row-sublabel">{side.sublabel}</span>
+                ) : null}
+              </>
+            )}
+          </span>
+        ))}
+      </div>
+      {rows.length ? (
+        <div role="rowgroup">
+          {rows.map((entry) => (
+            <div
+              key={entry.key}
+              role="row"
+              className="global-search-compare__row"
+              style={{ gridTemplateColumns: template }}
+            >
+              <span role="rowheader" className="global-search-compare__label">{entry.label}</span>
+              {['left', 'right'].map((side) => (
+                <span
+                  key={side}
+                  role="cell"
+                  className={`global-search-compare__value${entry.leader === side ? ' is-leader' : ''}`}
+                >
+                  {entry[side]}
+                  {entry.leader === side ? <span className="sr-only"> (better)</span> : null}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Points by quarter under a started game: one column per period and the total,
+ * so the shape of the game reads at a glance.
+ */
+function LineScore({ game }) {
+  const { lineScore } = game;
+  const template = `2.75rem repeat(${lineScore.periods.length}, minmax(1.5rem, 1fr)) 2rem`;
+  const line = (side, teamId, scores, total) => (
+    <div role="row" className="global-search-linescore__row" style={{ gridTemplateColumns: template }}>
+      <span role="rowheader">{teamId}</span>
+      {scores.map((score, index) => (
+        <span role="cell" key={`${side}-${lineScore.periods[index]}-${index}`}>{score ?? ''}</span>
+      ))}
+      <span role="cell" className="global-search-linescore__total">{total ?? ''}</span>
+    </div>
+  );
+  return (
+    <div role="table" aria-label="Score by quarter" className="global-search-linescore">
+      <div role="row" className="global-search-linescore__row global-search-linescore__head" style={{ gridTemplateColumns: template }}>
+        <span role="columnheader" aria-label="Team" />
+        {lineScore.periods.map((period, index) => (
+          <span role="columnheader" key={`${period}-${index}`}>{period}</span>
+        ))}
+        <span role="columnheader">T</span>
+      </div>
+      {line('away', game.awayId, lineScore.away, game.awayScore)}
+      {line('home', game.homeId, lineScore.home, game.homeScore)}
+    </div>
+  );
+}
+
+/**
+ * The game's headline team stats, away and home, with the better side marked
+ * the same way the compare card marks it.
+ */
+function GameHighlights({ game }) {
+  const template = 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr)';
+  return (
+    <div role="table" aria-label="Game highlights" className="global-search-compare global-search-highlights">
+      <div role="row" className="global-search-compare__row global-search-highlights__head" style={{ gridTemplateColumns: template }}>
+        <span role="columnheader" aria-label="Stat" />
+        <span role="columnheader" className="global-search-compare__value">{game.awayId}</span>
+        <span role="columnheader" className="global-search-compare__value">{game.homeId}</span>
+      </div>
+      {game.highlights.map((stat) => (
+        <div key={stat.label} role="row" className="global-search-compare__row" style={{ gridTemplateColumns: template }}>
+          <span role="rowheader" className="global-search-compare__label">{stat.label}</span>
+          {['away', 'home'].map((side) => (
+            <span key={side} role="cell" className={`global-search-compare__value${stat.leader === side ? ' is-leader' : ''}`}>
+              {stat[side]}
+              {stat.leader === side ? <span className="sr-only"> (better)</span> : null}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A scoreboard: each game as away and home with their scores and the game's
+ * state. A game in progress carries the shared live dot. Each row opens the
+ * game, on Scores once it has kicked off.
+ */
+function LiveGameRows({ games, onRoute, detailed = false }) {
+  return (
+    <ol className="global-search-answer__rows global-search-live">
+      {games.map((game) => {
+        const content = (
+          <>
+            <span className="global-search-live__teams">
+              {[
+                ['away', game.awayId, game.awayLogoId, game.awayScore],
+                ['home', game.homeId, game.homeLogoId, game.homeScore],
+              ].map(([side, teamId, logoId, score]) => {
+                const other = side === 'away' ? game.homeScore : game.awayScore;
+                const leading = score != null && other != null && score > other;
+                return (
+                  <span key={side} className={`global-search-live__team${leading ? ' is-leading' : ''}`}>
+                    <img src={`/logos/${logoId}.png`} alt="" className="global-search-live__logo" loading="lazy" />
+                    <span className="global-search-live__abbr">{teamId}</span>
+                    <span className="global-search-live__score">{score ?? ''}</span>
+                  </span>
+                );
+              })}
+            </span>
+            <span className="global-search-live__status">
+              {game.inProgress ? <span className="matchup-live-dot" aria-hidden="true" /> : null}
+              <span>{game.statusLabel}</span>
+            </span>
+          </>
+        );
+        const detail = detailed && game.started && (game.lineScore || game.highlights) ? (
+          <div className="global-search-live__detail">
+            {game.lineScore ? <LineScore game={game} /> : null}
+            {game.highlights ? <GameHighlights game={game} /> : null}
+          </div>
+        ) : null;
+        return (
+          <li key={game.key}>
+            {game.route ? (
+              <button type="button" className="global-search-answer__row global-search-live__row" onClick={() => onRoute?.(game.route)}>
+                {content}
+              </button>
+            ) : (
+              <div className="global-search-answer__row global-search-live__row">{content}</div>
+            )}
+            {detail}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute }) {
   // A team's leaders card carries its whole qualifying group and shows the top
   // five, because five is the answer and the rest is the list.
@@ -130,7 +343,8 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
 
   const expanded = expandedFor != null && expandedFor === answer.title;
   const collapseAfter = answer.collapseAfter ?? null;
-  const rows = answer.rows ?? null;
+  // A compare card's rows are its own value lines, drawn by CompareRows.
+  const rows = answer.kind === 'compare' ? null : (answer.rows ?? answer.games ?? null);
   const hiddenCount = rows && collapseAfter && !expanded
     ? Math.max(0, rows.length - collapseAfter)
     : 0;
@@ -146,12 +360,24 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
       </header>
 
       {answer.values ? <StatValues values={answer.values} /> : null}
+      {answer.kind === 'compare' ? (
+        <CompareRows
+          sides={answer.sides}
+          rows={answer.rows}
+          onSelectPlayer={onSelectPlayer}
+          onRoute={onRoute}
+        />
+      ) : null}
       {visibleRows && answer.columns ? (
         <StandingsRows
           columns={answer.columns}
           rows={visibleRows}
           onSelectRow={(row) => onRoute?.(rowRoute(row))}
         />
+      ) : visibleRows && answer.kind === 'historyRows' ? (
+        <HistoryRows rows={visibleRows} onRoute={onRoute} />
+      ) : visibleRows && answer.kind === 'liveGames' ? (
+        <LiveGameRows games={visibleRows} onRoute={onRoute} detailed={!answer.collapseAfter} />
       ) : visibleRows ? (
         <LeaderRows rows={visibleRows} onSelectPlayer={onSelectPlayer} />
       ) : null}

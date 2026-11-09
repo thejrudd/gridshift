@@ -323,6 +323,16 @@ function nameReadingOf(slots) {
  * Rank records against parsed slots and group the result by kind.
  */
 export function rankResults(index, slots, { groupLimit = DEFAULT_GROUP_LIMIT } = {}) {
+  if (slots.compare) return rankComparison(index, slots.compare, groupLimit);
+
+  // Schedule order, unless the query singled out one week — see
+  // orderGamesChronologically.
+  return groupResults(scoreWithReadings(index, slots), groupLimit, {
+    chronologicalGames: typeof slots.week !== 'number',
+  });
+}
+
+function scoreWithReadings(index, slots) {
   let scored = scoreRecords(index, slots);
 
   if (slots.teamWords?.length && slots.nameTerms.length) {
@@ -334,12 +344,54 @@ export function rankResults(index, slots, { groupLimit = DEFAULT_GROUP_LIMIT } =
     }
     scored = [...byRecord.values()].sort(compareScored);
   }
+  return scored;
+}
 
-  // Schedule order, unless the query singled out one week — see
-  // orderGamesChronologically.
-  return groupResults(scored, groupLimit, {
-    chronologicalGames: typeof slots.week !== 'number',
+const COMPARE_SIDES = ['left', 'right'];
+
+/**
+ * "jsn vs kupp", "bills vs chiefs": rank each side on its own and alternate them,
+ * so the best match for each side leads its group rather than one side's
+ * weaker matches crowding the other side out. Each entry carries the side it
+ * came from (`compareSide`), which is how the compare answer finds its pair.
+ *
+ * Two named teams keep only the games they play each other: "bills vs chiefs"
+ * is asking about that matchup, not each team's whole season.
+ */
+function rankComparison(index, compare, groupLimit) {
+  const merged = new Map();
+
+  COMPARE_SIDES.forEach((side, sideIndex) => {
+    const rankByKind = new Map();
+    for (const entry of scoreWithReadings(index, compare[side])) {
+      const kind = entry.record.kind;
+      const sideRank = rankByKind.get(kind) ?? 0;
+      rankByKind.set(kind, sideRank + 1);
+      const existing = merged.get(entry.record);
+      if (existing && existing.score >= entry.score) continue;
+      merged.set(entry.record, {
+        ...entry,
+        compareSide: side,
+        order: sideRank * COMPARE_SIDES.length + sideIndex,
+      });
+    }
   });
+
+  let entries = [...merged.values()];
+
+  const leftTeams = compare.left.teams;
+  const rightTeams = compare.right.teams;
+  if (leftTeams.length === 1 && rightTeams.length === 1 && leftTeams[0] !== rightTeams[0]) {
+    const pair = new Set([leftTeams[0].toUpperCase(), rightTeams[0].toUpperCase()]);
+    entries = entries.filter((entry) => {
+      if (entry.record.kind !== KIND_GAME || entry.record.meta?.isWeekIndex) return true;
+      const { awayTeam, homeTeam } = entry.record.meta ?? {};
+      return pair.has(awayTeam) && pair.has(homeTeam);
+    });
+  }
+
+  entries.sort((left, right) => left.order - right.order || compareScored(left, right));
+  return groupResults(entries, groupLimit, { chronologicalGames: true });
 }
 
 /**

@@ -21,9 +21,17 @@ import {
   SLICE_PLAYERS,
   SLICE_STATIC,
   isSliceStale,
+  readRecents,
   readSlice,
+  writeRecents,
   writeSlice,
 } from '../utils/globalSearch/persist.js';
+import {
+  addRecentPick,
+  addRecentQuery,
+  emptyRecents,
+  normalizeRecents,
+} from '../utils/globalSearch/recents.js';
 
 const INDEX_URL = '/search-index.v1.json';
 
@@ -79,6 +87,7 @@ export default function useGlobalSearch({
   const [open, setOpen] = useState(false);
   const [base, setBase] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | loading | ready | error
+  const [recents, setRecents] = useState(emptyRecents);
   const loadStartedRef = useRef(false);
 
   // Loading is kicked off from the open handler rather than an effect: it is a
@@ -87,6 +96,19 @@ export default function useGlobalSearch({
     if (loadStartedRef.current) return;
     loadStartedRef.current = true;
     setStatus('loading');
+    // Recents load alongside the index. Something recorded before the read
+    // returns wins over the stored copy rather than being overwritten by it.
+    readRecents().then((stored) => {
+      if (!stored) return;
+      setRecents((current) => {
+        const loaded = normalizeRecents(stored);
+        if (!current.queries.length && !current.picks.length) return loaded;
+        return normalizeRecents({
+          queries: [...current.queries, ...loaded.queries],
+          picks: [...current.picks, ...loaded.picks],
+        });
+      });
+    });
     loadBaseSlices()
       .then((loaded) => {
         setBase(loaded);
@@ -152,7 +174,41 @@ export default function useGlobalSearch({
     });
   }, [base, livePlayerRecords, leagueRecords]);
 
-  return { open, openSearch, closeSearch, toggleSearch, index, status };
+  // ── Recents ───────────────────────────────────────────────────────────────
+  // Recorded when a result or answer is opened, never per keystroke. Writes are
+  // fire-and-forget; storage failing means fewer recents, not a broken palette.
+  const updateRecents = useCallback((update) => {
+    setRecents((current) => {
+      const next = update(current);
+      if (next !== current) writeRecents(next);
+      return next;
+    });
+  }, []);
+
+  const recordSearch = useCallback(({ query = '', record = null } = {}) => {
+    updateRecents((current) => {
+      let next = current;
+      if (query) next = addRecentQuery(next, query);
+      if (record) next = addRecentPick(next, record);
+      return next;
+    });
+  }, [updateRecents]);
+
+  const clearRecents = useCallback(() => {
+    updateRecents(() => emptyRecents());
+  }, [updateRecents]);
+
+  return {
+    open,
+    openSearch,
+    closeSearch,
+    toggleSearch,
+    index,
+    status,
+    recents,
+    recordSearch,
+    clearRecents,
+  };
 }
 
 // Re-exported for callers that need the static slice without the network.

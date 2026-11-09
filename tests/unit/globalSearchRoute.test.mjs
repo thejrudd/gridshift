@@ -62,9 +62,25 @@ test('an unresolvable player reports a reason instead of failing silently', asyn
 
   const noTeam = await resolveResultRoute({ record: NO_TEAM }, {
     rosterFetcher: async () => SEA_ROSTER,
+    nameLookup: async () => null,
   });
   assert.equal(noTeam.route, null);
   assert.equal(noTeam.reason, 'no-espn-id');
+});
+
+test('a player with no team is found by name, with no roster fetched', async () => {
+  // Regression: Najee Harris was searchable but would not open — Sleeper lists
+  // him with no team and no ESPN id, so there was no roster to match him on.
+  let rosterFetched = false;
+  let lookedUp = null;
+  const result = await resolveResultRoute({ record: NO_TEAM }, {
+    rosterFetcher: async () => { rosterFetched = true; return SEA_ROSTER; },
+    nameLookup: async (name) => { lookedUp = name; return '4241457'; },
+  });
+  assert.equal(lookedUp, 'Free Agent');
+  assert.equal(rosterFetched, false);
+  assert.equal(result.route.statisticsPlayerId, '4241457');
+  assert.equal(result.reason, null);
 });
 
 test('a failed roster fetch degrades to a reason rather than throwing', async () => {

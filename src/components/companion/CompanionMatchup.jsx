@@ -91,6 +91,8 @@ import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 
 const TOTAL_WEEKS = 18;
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+// Desktop cards hold three lines (name, game, stat line) beside the photo.
+const MATCHUP_CARD_MIN_HEIGHT = 78;
 const NO_PLAYER_PLAYS = Object.freeze([]);
 // The page holds its skeleton for the live layer's first answer, at most this
 // long, so the masthead, chart and rows arrive as one beat (docs/Loading Motion.md).
@@ -2605,6 +2607,7 @@ function CompanionMatchupView({
                 key={i}
                 mine={slot.mine}
                 opp={slot.opp}
+                tourAnchor={i === 0}
                 mineLineupUnavailable={myLineupUnavailable}
                 oppLineupUnavailable={opponentLineupUnavailable}
                 slotPos={slot.slotPos}
@@ -3552,7 +3555,7 @@ function MatchupProgressBar({ player, align }) {
   );
 }
 
-function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false, statLineFor = null, gameStatusFor = null }) {
+function HeadToHeadRow({ mine, opp, bench, slotPos, tourAnchor = false, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false, statLineFor = null, gameStatusFor = null }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
@@ -3564,11 +3567,15 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
     <div className="px-1.5 sm:px-4" style={{ opacity: bench ? 0.72 : 1 }}>
       <div className="matchup-h2h-grid">
       {/* My player — left */}
-        <div className="matchup-row-cell" data-hover-player={!bench && mine?.id ? mine.id : undefined}>
+        <div
+          className="matchup-row-cell"
+          data-hover-player={!bench && mine?.id ? mine.id : undefined}
+          data-tour={tourAnchor ? 'matchup-player-card' : undefined}
+        >
           <MatchupPlayerRow
             player={mine}
             lineupUnavailable={mineLineupUnavailable}
-            statLine={isCompactPhone ? statLineFor?.(mine) ?? null : null}
+            statLine={statLineFor?.(mine) ?? null}
             gameStatus={gameStatusFor?.(mine) ?? null}
             darkMode={darkMode}
             compact={isCompactPhone}
@@ -3609,7 +3616,7 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
         <MatchupPlayerRow
           player={opp}
           lineupUnavailable={oppLineupUnavailable}
-            statLine={isCompactPhone ? statLineFor?.(opp) ?? null : null}
+            statLine={statLineFor?.(opp) ?? null}
             gameStatus={gameStatusFor?.(opp) ?? null}
           darkMode={darkMode}
           compact={isCompactPhone}
@@ -3679,7 +3686,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       <div
         className={`flex min-w-0 items-center px-3${isRight ? ' justify-end text-right' : ''}`}
         style={{
-          minHeight: compact ? 52 : 70,
+          minHeight: compact ? 52 : MATCHUP_CARD_MIN_HEIGHT,
           border: '1px solid var(--color-separator)',
           background: 'var(--color-fill)',
           color: 'var(--color-label-secondary)',
@@ -3697,7 +3704,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       <div
         className="min-w-0"
         style={{
-          minHeight: compact ? 52 : 70,
+          minHeight: compact ? 52 : MATCHUP_CARD_MIN_HEIGHT,
           border: '1px solid var(--color-separator)',
           background: 'var(--color-fill)',
         }}
@@ -3710,7 +3717,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       <div
         className="flex min-w-0 items-center px-3"
         style={{
-          minHeight: compact ? 52 : 70,
+          minHeight: compact ? 52 : MATCHUP_CARD_MIN_HEIGHT,
           border: '1px solid var(--color-separator)',
           background: 'var(--color-fill)',
           color: 'var(--color-label-secondary)',
@@ -3730,14 +3737,10 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   const projMin = player.projection?.min ?? null;
   const projMax = player.projection?.max ?? null;
 
-  // Keep the phone name line clear; position, game and injury status use the
-  // existing metadata line without changing the avatar/identity/score grid.
-  // Phones drop the player's own team once the game has a result; every live
-  // row drops it so the live dot and clock fit (desktop shows the team logo).
-  // Phones carry the position beside the name, leaving this line to the game.
-  const matchupMeta = [compact ? null : player.position, getGameLabel(player, { includeTeam: !compact, dropTeamLive: gameStatus?.state === 'live' })]
-    .filter(Boolean)
-    .join(' ');
+  // Every card carries the position beside the name, leaving this line to the
+  // game. Phones drop the player's own team once the game has a result; every
+  // live row drops it so the live dot and clock fit (desktop shows the team logo).
+  const matchupMeta = getGameLabel(player, { includeTeam: !compact, dropTeamLive: gameStatus?.state === 'live' });
   const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} Overall` : null;
   const actualScore = !isBye && player.gameStarted ? (weekPts ?? 0) : null;
   const finalGame = isPlayerGameFinal(player);
@@ -3803,10 +3806,10 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
           }}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
+          <PlayerStatusBadge status={player.availabilityStatus} compact={compact} responsiveCompact={!compact} localContrast={false} />
         </button>
       )
-      : <PlayerStatusBadge status={player.availabilityStatus} compact={compact} localContrast={false} />
+      : <PlayerStatusBadge status={player.availabilityStatus} compact={compact} responsiveCompact={!compact} localContrast={false} />
     : null;
   const rowAccent = player.teamTheme?.accent ?? 'var(--color-separator)';
   const metricColumn = hasMetricSlot ? `minmax(${compact ? 36 : 54}px, auto)` : 'auto';
@@ -3814,9 +3817,11 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   // column, so the team logo and score columns stay aligned across every row.
   const gridTemplate = compact
     ? `minmax(0, 1fr) ${metricColumn}`
+    // Narrow desktop cards shrink the photo and give the logo's track to the
+    // name (see .matchup-row-cell in src/index.css).
     : isTeamDefense
-      ? `44px minmax(0, 1fr) ${metricColumn}`
-      : `44px minmax(0, 1fr) 36px ${metricColumn}`;
+      ? `var(--matchup-avatar-track, 44px) minmax(0, 1fr) ${metricColumn}`
+      : `var(--matchup-avatar-track, 44px) minmax(0, 1fr) var(--matchup-logo-track, 36px) ${metricColumn}`;
   const scoreFontSize = `${Math.max(compact ? 12 : 14, Math.min(compact ? 15 : 17, nameFontSize + 3))}px`;
 
   return (
@@ -3829,7 +3834,8 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       showAccentRail={false}
       className={`companion-matchup-player-row${isTeamDefense ? ' is-team-defense' : ''}`}
       useTeamLogoAsAvatar={isTeamDefense}
-      // Phones drop the photo so the name, game and stat line get the width.
+      // Three lines on every card: name with position, game, then the stat
+      // line (or kickoff). Phones drop the photo so those lines get the width.
       showAvatar={!compact}
       // A live game leads its game line with the live dot and clock; a final
       // one already starts with its result, and an upcoming one shows its
@@ -3851,7 +3857,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
           {index < statLine.length - 1 ? ',' : ''}
         </span>
       )) : null}
-      showPosition={compact}
+      showPosition
       positionPlacement="identity"
       showTeamLogo={!compact && !isTeamDefense}
       metaSegments={[matchupMeta, ...detailSegments, ...(compact && injuryStatus ? [injuryStatus] : [])]}
@@ -3876,13 +3882,13 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         borderLeftWidth: isRight ? 1 : 4,
         borderLeftColor: isRight ? 'var(--color-separator)' : rowAccent,
         borderRight: isRight ? `4px solid ${rowAccent}` : undefined,
-        minHeight: compact ? 56 : 70,
+        minHeight: compact ? 56 : MATCHUP_CARD_MIN_HEIGHT,
         // Phones: the seam side clears the slot chip that overlaps it, and the
         // content sits 1px high so the injury badge's 44px hit area stays inside
         // the card.
         padding: compact
           ? (isRight ? '5px 7px 7px 16px' : '5px 16px 7px 7px')
-          : isRight ? '10px 12px' : '10px 18px 10px 12px',
+          : isRight ? '9px 12px' : '9px 18px 9px 12px',
         '--matchup-player-name-size': `${nameFontSize}px`,
         '--matchup-player-score-size': scoreFontSize,
       }}
@@ -3925,11 +3931,11 @@ function MatchupSkeletonRow() {
   return (
     <div className="px-1.5 sm:px-4">
       <div className="matchup-h2h-grid">
-        <Skeleton className="h-[68px] w-full rounded-lg" />
+        <Skeleton className="h-[56px] min-[481px]:h-[78px] w-full rounded-lg" />
         <div className="matchup-h2h-slot">
           <Skeleton className="h-4 w-7 rounded" />
         </div>
-        <Skeleton className="h-[68px] w-full rounded-lg" />
+        <Skeleton className="h-[56px] min-[481px]:h-[78px] w-full rounded-lg" />
       </div>
     </div>
   );

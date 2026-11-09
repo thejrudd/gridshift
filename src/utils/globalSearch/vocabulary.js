@@ -387,7 +387,49 @@ export const INTENT_PATTERNS = [
   ['projected',      { type: 'intent', val: 'projection' }],
   ['defense',        { type: 'intent', val: 'defenseVs'  }],
   ['defenses',       { type: 'intent', val: 'defenseVs'  }],
+  // Live game state. Answered only on a server with live data enabled; without
+  // it these words still reach the Scores and Live replay destinations.
+  ['live',           { type: 'intent', val: 'live'       }],
+  ['live score',     { type: 'intent', val: 'live'       }],
+  ['live scores',    { type: 'intent', val: 'live'       }],
+  ['score',          { type: 'intent', val: 'live'       }],
+  ['scores',         { type: 'intent', val: 'live'       }],
+  ['playing now',    { type: 'intent', val: 'live'       }],
+  ['right now',      { type: 'intent', val: 'live'       }],
+  ['in progress',    { type: 'intent', val: 'live'       }],
+  ['winning',        { type: 'intent', val: 'live'       }],
+  // The connected league's own history. Answered from League History data
+  // already stored on the device; otherwise these reach its destinations.
+  ['champion',       { type: 'intent', val: 'champions'  }],
+  ['champions',      { type: 'intent', val: 'champions'  }],
+  ['championship',   { type: 'intent', val: 'champions'  }],
+  ['championships',  { type: 'intent', val: 'champions'  }],
+  ['title',          { type: 'intent', val: 'champions'  }],
+  ['titles',         { type: 'intent', val: 'champions'  }],
+  ['head to head',   { type: 'intent', val: 'headToHead' }],
+  ['h2h',            { type: 'intent', val: 'headToHead' }],
+  ['rivalry',        { type: 'intent', val: 'headToHead' }],
+  ['record against', { type: 'intent', val: 'headToHead' }],
+  ['all time record',{ type: 'intent', val: 'headToHead' }],
+  ['trades',         { type: 'intent', val: 'trades'     }],
+  ['traded',         { type: 'intent', val: 'trades'     }],
+  ['trade history',  { type: 'intent', val: 'trades'     }],
+  ['transactions',   { type: 'intent', val: 'transactions' }],
+  ['transaction',    { type: 'intent', val: 'transactions' }],
+  ['recent moves',   { type: 'intent', val: 'transactions' }],
+  ['adds and drops', { type: 'intent', val: 'transactions' }],
+  ['adds',           { type: 'intent', val: 'transactions' }],
+  ['drops',          { type: 'intent', val: 'transactions' }],
 ];
+
+// Words that are never a correction target. A live word reached by correction
+// would turn a name search into a live question: "love" is one edit from
+// "live", and "jordan love" must stay a search for Jordan Love.
+// History words are short and close to surnames in the same way.
+const UNCORRECTABLE = new Set([
+  'live', 'score', 'scores', 'winning',
+  'title', 'titles', 'adds', 'drops', 'trades', 'traded',
+]);
 
 // ── Commands ────────────────────────────────────────────────────────────────
 // Verbs the palette performs rather than navigates to. `val` is the command id
@@ -483,7 +525,9 @@ export function lookupPhrase(phrase) {
 // phrase ("ward" → "card", from "wild card") is noise — the fragment carries no
 // meaning by itself.
 export const CORRECTION_DICTIONARY = Object.freeze([
-  ...new Set(GLOBAL_PATTERNS.map(([phrase]) => phrase).filter((phrase) => !phrase.includes(' '))),
+  ...new Set(GLOBAL_PATTERNS
+    .map(([phrase]) => phrase)
+    .filter((phrase) => !phrase.includes(' ') && !UNCORRECTABLE.has(phrase))),
 ]);
 
 // Correction dictionary for a word being matched as part of a multi-word phrase.

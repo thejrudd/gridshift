@@ -1543,3 +1543,17 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Smoother phone scrolling** - Matchups no longer leaves cards blank for a moment while scrolling on phones during live games.
 - **Hover card stats** - The desktop starter hover card counts every snap, including carries for no gain, incompletions and targets, and the browser's name tooltip no longer covers it.
 - **Self-hosted down page** - Self-hosted deployments behind a Cloudflare tunnel can show a GridShift page instead of Cloudflare's error page when the server is unreachable. See the self-hosting guide.
+
+## v9.4.0 - Smarter Search
+*2026-11-09*
+
+- **Recent searches and suggestions** - Before you type, Search shows your recent searches and the results you opened, your starters, and this week's games. Recents stay on this device and can be cleared.
+- **Compare in Search** - "jsn vs kupp" or "bills vs chiefs" finds both sides and lines them up in a card: players by position rank, fantasy points, per-game average and games; NFL and fantasy teams by record and points. The better side of each line is marked. Two teams list only the games they play each other.
+- **Live scores in Search** - On servers with live data, "bills score", "live scores" and "jsn live" show the score, clock and a live dot. A team's game adds points by quarter and its headline stats: total, passing and rushing yards, turnovers, sacks, third down and time of possession. Each game opens its Scores page.
+- **Actions on results** - The selected result offers what you can do with it: trade for a player from his owner or trade away your own, open his roster or matchup, open a team's schedule or the standings, or a fantasy team's matchup. Press → to reach them from the keyboard.
+- **League history in Search** - Ask for "champions", "2023 champion", "head to head dana" or "me vs dana", "trades with dana", "jsn trades", or "recent transactions" and get the answer from League History, once it has been opened on the device.
+- **Search corrections** - Search no longer says it is showing results for a corrected word when the results matched what you typed, and words like "love" and "adds" are no longer corrected into a different question.
+- **Free agents open from Search** - A free agent whom Sleeper lists with no team, such as Najee Harris, now opens their Statistics page from Search, Rankings and Rosters instead of saying no stats page is available.
+- **Game logs after mid-season trades** - Statistics player game logs show the team, opponent and result for games after a mid-season trade, and only show byes when the player's team had no game.
+- **Desktop matchup cards** - Desktop matchup cards show, beside the photo, the name with the position beside it, the game, then the stat line once the game starts or the kickoff day and time before it. In narrow windows the cards drop the team logo and then the photo, so names and games stay whole.
+

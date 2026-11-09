@@ -15,7 +15,9 @@ import GlobalSearchResultRow from './GlobalSearchResultRow.jsx';
 import { isEmptyQuery, parseGlobalQuery } from '../../utils/globalSearch/parseIntent.js';
 import { rankResults } from '../../utils/globalSearch/rank.js';
 import { resolveAnswer } from '../../utils/globalSearch/answers/index.js';
-import { buildResultDetail } from '../../utils/globalSearch/detail.js';
+import { actionOptionId, buildResultDetail } from '../../utils/globalSearch/detail.js';
+import { buildSuggestionGroups } from '../../utils/globalSearch/suggestions.js';
+import useLiveSearchAnswer from '../../hooks/useLiveSearchAnswer.js';
 
 const GROUP_LIMIT = 6;
 
@@ -46,9 +48,17 @@ export default function GlobalSearchPalette({
   notice = null,
   onClearNotice,
   resolvingId = null,
+  recents = null,
+  onRecordSearch,
+  onClearRecents,
+  liveLeagueId = null,
 }) {
   const [query, setQuery] = useState('');
   const [rawActiveIndex, setActiveIndex] = useState(0);
+  // Which of the active row's actions the keyboard is on, stored against the
+  // row it belongs to so moving to another row — by key, pointer, or a new
+  // query — leaves the actions without an effect to reset it.
+  const [actionFocus, setActionFocus] = useState({ row: null, position: null });
   const inputRef = useRef(null);
   const listRef = useRef(null);
   // Suppresses hover-driven selection while the arrow keys are driving, so a
@@ -66,11 +76,24 @@ export default function GlobalSearchPalette({
     return rankResults(index, slots, { groupLimit: GROUP_LIMIT });
   }, [index, slots]);
 
+  const hasQuery = Boolean(query.trim());
+  const fantasyLeague = answerData?.fantasyLeague ?? null;
+
+  // Before anything is typed: what was opened last, your starters, and this
+  // week's games. Same shape as typed results, so they render, expand and
+  // keyboard-navigate identically.
+  const suggestionGroups = useMemo(() => {
+    if (hasQuery) return [];
+    return buildSuggestionGroups({ index, recents, fantasyLeague });
+  }, [fantasyLeague, hasQuery, index, recents]);
+
+  const visibleGroups = hasQuery ? groups : suggestionGroups;
+
   // Flattened in render order, so arrow keys move across group boundaries the
   // way the list reads.
   const flatResults = useMemo(
-    () => groups.flatMap((group) => group.results),
-    [groups],
+    () => visibleGroups.flatMap((group) => group.results),
+    [visibleGroups],
   );
 
   // Clamped during render rather than reset in an effect: the result list can
@@ -81,7 +104,9 @@ export default function GlobalSearchPalette({
 
   // Answers are additive: a resolver returning null (cold cache, or a query it
   // does not handle) simply means the result list stands on its own.
-  const answer = useMemo(() => {
+  const live = useLiveSearchAnswer({ slots, groups, index, leagueId: liveLeagueId });
+
+  const staticAnswer = useMemo(() => {
     if (!answerData || !groups.length) return null;
     try {
       return resolveAnswer(slots, groups, answerData);
@@ -91,24 +116,99 @@ export default function GlobalSearchPalette({
     }
   }, [answerData, groups, slots]);
 
+  // A live question answered live beats any cached reading of it.
+  const answer = live.answer ?? staticAnswer;
+
   const activeDetail = useMemo(() => {
     const record = flatResults[activeIndex]?.record;
     if (!record) return null;
     return buildResultDetail(record, { index, answerData });
   }, [activeIndex, answerData, flatResults, index]);
 
-  const correction = slots.corrections?.[0] ?? null;
+  const activeActions = useMemo(() => activeDetail?.actions ?? [], [activeDetail]);
+  const focusedAction = actionFocus.row === activeIndex
+    && actionFocus.position != null
+    && actionFocus.position < activeActions.length
+    ? actionFocus.position
+    : null;
+
+  // A typo note only for a correction the results actually used. A word that
+  // corrects into the vocabulary is also kept as typed ("target" → "targets",
+  // "moss" → "most"); when the top result matched it as typed, announcing the
+  // correction would describe a search that did not happen.
+  const topTokens = flatResults[0]?.record?.tokens ?? [];
+  const corrections = slots.compare
+    ? [...slots.compare.left.corrections, ...slots.compare.right.corrections]
+    : (slots.corrections ?? []);
+  const correction = hasQuery
+    ? corrections.find(({ from }) => !topTokens.includes(from)) ?? null
+    : null;
 
   const handleSelect = useCallback((entry) => {
     if (!entry) return;
+    onRecordSearch?.({ query, record: entry.record });
     if (entry.record.command) {
       onCommand?.(entry.record.command);
       return;
     }
     onNavigate?.(entry);
-  }, [onCommand, onNavigate]);
+  }, [onCommand, onNavigate, onRecordSearch, query]);
+
+  // Opening something from an answer card remembers the question that led there.
+  const recordQuery = useCallback(() => {
+    onRecordSearch?.({ query });
+  }, [onRecordSearch, query]);
+
+  const handleAnswerSelectPlayer = useCallback((sleeperId) => {
+    recordQuery();
+    onSelectPlayerId?.(sleeperId);
+  }, [onSelectPlayerId, recordQuery]);
+
+  const handleAnswerRoute = useCallback((route) => {
+    recordQuery();
+    onRoute?.(route);
+  }, [onRoute, recordQuery]);
+
+  const applyExample = useCallback((text) => {
+    setQuery(text);
+    setActiveIndex(0);
+    inputRef.current?.focus();
+  }, []);
+
+  // A result's action: remembered like the result itself, then routed.
+  const runAction = useCallback((entry, action) => {
+    if (!entry || !action?.route) return;
+    onRecordSearch?.({ query, record: entry.record });
+    onRoute?.(action.route);
+  }, [onRecordSearch, onRoute, query]);
 
   const handleKeyDown = useCallback((event) => {
+    const input = event.currentTarget;
+    const caretAtEnd = input.selectionStart === input.value.length
+      && input.selectionEnd === input.value.length;
+    const intoActions = (event.key === 'ArrowRight' && caretAtEnd)
+      || (event.key === 'Tab' && !event.shiftKey);
+    const outOfActions = (event.key === 'ArrowLeft' && focusedAction != null)
+      || (event.key === 'Tab' && event.shiftKey && focusedAction != null);
+
+    // → or Tab walks into the active result's actions and along them; ← or
+    // Shift+Tab walks back out to the result. Off the end, Tab is left alone.
+    if (intoActions && activeActions.length) {
+      const next = focusedAction == null ? 0 : focusedAction + 1;
+      if (next >= activeActions.length) {
+        if (event.key === 'Tab') event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      setActionFocus({ row: activeIndex, position: next });
+      return;
+    }
+    if (outOfActions) {
+      event.preventDefault();
+      setActionFocus({ row: activeIndex, position: focusedAction > 0 ? focusedAction - 1 : null });
+      return;
+    }
+
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (!flatResults.length) return;
       event.preventDefault();
@@ -126,9 +226,13 @@ export default function GlobalSearchPalette({
     if (event.key === 'Enter') {
       if (!flatResults.length) return;
       event.preventDefault();
+      if (focusedAction != null) {
+        runAction(flatResults[activeIndex], activeActions[focusedAction]);
+        return;
+      }
       handleSelect(flatResults[activeIndex]);
     }
-  }, [activeIndex, flatResults, handleSelect]);
+  }, [activeActions, activeIndex, flatResults, focusedAction, handleSelect, runAction]);
 
   // Keep the whole expanded row in view, detail included.
   useEffect(() => {
@@ -147,7 +251,8 @@ export default function GlobalSearchPalette({
   // result list that looks like the query simply matched nothing.
   const failed = status === 'error';
   const loading = status === 'loading' || status === 'idle';
-  const showGuide = !failed && (!query.trim() || (!groups.length && loading));
+  const showGuide = !failed && (!hasQuery || (!groups.length && loading));
+  const recentQueries = hasQuery ? [] : (recents?.queries ?? []);
   let flatCursor = -1;
 
   return (
@@ -190,7 +295,9 @@ export default function GlobalSearchPalette({
             aria-expanded={flatResults.length > 0}
             aria-controls="global-search-results"
             aria-activedescendant={
-              flatResults.length ? `global-search-option-${activeIndex}` : undefined
+              focusedAction != null
+                ? actionOptionId(focusedAction)
+                : flatResults.length ? `global-search-option-${activeIndex}` : undefined
             }
             autoComplete="off"
             autoCorrect="off"
@@ -222,6 +329,10 @@ export default function GlobalSearchPalette({
           <p className="global-search__notice" role="status">{notice}</p>
         ) : null}
 
+        {hasQuery && live.unavailable && !notice ? (
+          <p className="global-search__notice" role="status">Live scores aren’t available right now.</p>
+        ) : null}
+
         <div
           className="global-search__results"
           id="global-search-results"
@@ -229,20 +340,41 @@ export default function GlobalSearchPalette({
           aria-label="Search results"
           ref={listRef}
         >
-          {showGuide ? (
-            <GlobalSearchGuide onExample={(example) => {
-              setQuery(example);
-              setActiveIndex(0);
-              inputRef.current?.focus();
-            }}
-            />
+          {recentQueries.length ? (
+            <div className="global-search__recent-queries">
+              <div className="global-search__group-label global-search__recent-queries-label">
+                <span>Recent searches</span>
+                <button
+                  type="button"
+                  className="global-search__recent-clear"
+                  onClick={() => {
+                    onClearRecents?.();
+                    inputRef.current?.focus();
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="global-search-guide__chips">
+                {recentQueries.map(({ text }) => (
+                  <button
+                    key={text}
+                    type="button"
+                    onClick={() => applyExample(text)}
+                    className="global-search-guide__chip"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
 
-          {!showGuide && !failed && answer ? (
+          {hasQuery && !failed && answer ? (
             <GlobalSearchAnswerCard
               answer={answer}
-              onSelectPlayer={onSelectPlayerId}
-              onRoute={onRoute}
+              onSelectPlayer={handleAnswerSelectPlayer}
+              onRoute={handleAnswerRoute}
             />
           ) : null}
 
@@ -252,13 +384,13 @@ export default function GlobalSearchPalette({
             </p>
           ) : null}
 
-          {!showGuide && !failed && !groups.length ? (
+          {hasQuery && !showGuide && !failed && !groups.length ? (
             <p className="global-search__empty">
               No matches for “{query.trim()}”.
             </p>
           ) : null}
 
-          {!showGuide && !failed && groups.map((group) => (
+          {!failed && (hasQuery ? !showGuide : true) && visibleGroups.map((group) => (
             <div key={group.kind} className="global-search__group">
               <div className="global-search__group-label">{group.label}</div>
               {group.results.map((entry) => {
@@ -278,18 +410,21 @@ export default function GlobalSearchPalette({
                       detail={position === activeIndex ? activeDetail : null}
                       darkMode={darkMode}
                       onSelect={handleSelect}
-                      onRoute={onRoute}
+                      onRoute={(route) => runAction(entry, { route })}
+                      focusedAction={position === activeIndex ? focusedAction : null}
                     />
                   </div>
                 );
               })}
             </div>
           ))}
+          {showGuide ? <GlobalSearchGuide onExample={applyExample} /> : null}
         </div>
 
         <div className="global-search__footer">
           <span><kbd>↑</kbd><kbd>↓</kbd> to move</span>
           <span><kbd>↵</kbd> to open</span>
+          {activeActions.length ? <span><kbd>→</kbd> for actions</span> : null}
           <span><kbd>esc</kbd> to close</span>
         </div>
       </div>

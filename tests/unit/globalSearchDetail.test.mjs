@@ -7,7 +7,7 @@ import { buildPlayerRecords } from '../../src/utils/globalSearch/entities/player
 import { buildCommandRecords } from '../../src/utils/globalSearch/entities/commands.js';
 import { buildAppViewRecords } from '../../src/utils/globalSearch/entities/appViews.js';
 import { buildFantasyTeamRecords } from '../../src/utils/globalSearch/entities/fantasyTeams.js';
-import { KIND_PLAYER } from '../../src/utils/globalSearch/entities/record.js';
+import { KIND_NFL_TEAM, KIND_PLAYER } from '../../src/utils/globalSearch/entities/record.js';
 import { buildFantasyOwnership } from '../../src/utils/fantasyOwnership.js';
 
 const SCHEDULE_DATA = {
@@ -98,8 +98,8 @@ test('commands and destinations have no detail at all', () => {
   const [command] = buildCommandRecords();
   const [view] = buildAppViewRecords();
 
-  assert.deepEqual(buildResultDetail(command, { index }), { facts: [], stats: null, fantasy: null });
-  assert.deepEqual(buildResultDetail(view, { index }), { facts: [], stats: null, fantasy: null });
+  assert.deepEqual(buildResultDetail(command, { index }), { facts: [], stats: null, fantasy: null, actions: [] });
+  assert.deepEqual(buildResultDetail(view, { index }), { facts: [], stats: null, fantasy: null, actions: [] });
 });
 
 test('a fantasy team shows its manager only when that adds something', () => {
@@ -146,7 +146,7 @@ test('detail never fetches, so a missing index degrades to what the record knows
 });
 
 test('detail tolerates a missing record', () => {
-  assert.deepEqual(buildResultDetail(null, { index }), { facts: [], stats: null, fantasy: null });
+  assert.deepEqual(buildResultDetail(null, { index }), { facts: [], stats: null, fantasy: null, actions: [] });
 });
 
 // ── Fantasy ownership ───────────────────────────────────────────────────────
@@ -168,20 +168,46 @@ const OWNERSHIP = buildFantasyOwnership({
 const player = recordOf(KIND_PLAYER, (record) => record.label === 'Indexed Receiver');
 
 test('a rostered player names the team that holds them', () => {
-  const { fantasy } = buildResultDetail(player, {
+  const { fantasy, actions } = buildResultDetail(player, {
     index,
     answerData: { fantasyOwnership: OWNERSHIP },
   });
   assert.equal(fantasy.label, 'Turf Monsters');
   assert.equal(fantasy.isMine, false);
-  assert.deepEqual(fantasy.actions.map((action) => action.key), ['roster', 'matchup']);
-  assert.equal(fantasy.actions[0].route.leagueRosterId, '1');
-  assert.equal(fantasy.actions[1].route.matchupRosterId, '1');
+  assert.deepEqual(actions.map((action) => action.key), ['roster', 'matchup']);
+  assert.equal(actions[0].route.leagueRosterId, '1');
+  assert.equal(actions[1].route.matchupRosterId, '1');
+});
+
+test('where Trade is available, a rostered player can be traded for from their owner', () => {
+  const { actions } = buildResultDetail(player, {
+    index,
+    answerData: { fantasyOwnership: OWNERSHIP, tradeAvailable: true },
+  });
+  assert.deepEqual(actions.map((action) => action.label), ['Trade for', 'Roster', 'Matchup']);
+  assert.deepEqual(actions[0].route, {
+    activeTab: 'trade',
+    tradeView: 'agent',
+    tradePlayerId: player.meta.sleeperId,
+    tradeSide: 'get',
+    tradePartnerRosterId: '1',
+  });
+});
+
+test('your own player is offered to trade away, with no partner preset', () => {
+  const mine = { ...player, meta: { ...player.meta, sleeperId: '2' } };
+  const { actions } = buildResultDetail(mine, {
+    index,
+    answerData: { fantasyOwnership: OWNERSHIP, tradeAvailable: true },
+  });
+  assert.equal(actions[0].label, 'Trade away');
+  assert.equal(actions[0].route.tradeSide, 'give');
+  assert.equal(actions[0].route.tradePartnerRosterId, undefined);
 });
 
 test('your own roster is named as yours rather than by team name', () => {
   const mine = { ...player, meta: { ...player.meta, sleeperId: '2' } };
-  const { fantasy } = buildResultDetail(mine, {
+  const { fantasy, actions } = buildResultDetail(mine, {
     index,
     answerData: { fantasyOwnership: OWNERSHIP },
   });
@@ -189,17 +215,17 @@ test('your own roster is named as yours rather than by team name', () => {
   assert.equal(fantasy.isMine, true);
   // A player stashed on IR is still owned — it is the ownership, not the
   // lineup slot, that decides who you would be trading with.
-  assert.equal(fantasy.actions[0].route.leagueRosterId, '2');
+  assert.equal(actions[0].route.leagueRosterId, '2');
 });
 
 test('an unrostered player is a free agent, with nowhere to go', () => {
   const nobody = { ...player, meta: { ...player.meta, sleeperId: '404' } };
-  const { fantasy } = buildResultDetail(nobody, {
+  const { fantasy, actions } = buildResultDetail(nobody, {
     index,
-    answerData: { fantasyOwnership: OWNERSHIP },
+    answerData: { fantasyOwnership: OWNERSHIP, tradeAvailable: true },
   });
   assert.equal(fantasy.label, 'Free agent');
-  assert.deepEqual(fantasy.actions, []);
+  assert.deepEqual(actions, []);
 });
 
 test('with no league connected the palette says nothing about ownership', () => {
@@ -208,3 +234,12 @@ test('with no league connected the palette says nothing about ownership', () => 
   const { fantasy } = buildResultDetail(player, { index, answerData: {} });
   assert.equal(fantasy, null);
 });
+
+test('an NFL team offers its schedule and the standings', () => {
+  const team = recordOf(KIND_NFL_TEAM, () => true);
+  const { actions } = buildResultDetail(team, { index });
+  assert.deepEqual(actions.map((action) => action.key), ['schedule', 'standings']);
+  assert.equal(actions[0].route.statisticsScheduleMode, 'team');
+  assert.equal(actions[0].route.statisticsScheduleTeamId, team.meta.teamId);
+});
+
