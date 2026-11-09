@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildStatisticsPlayerMetaFromSleeperId,
+  lookupEspnIdByName,
   resolveStatisticsPlayerMetaFromSleeperId,
 } from '../../src/utils/playerDrilldown.js';
 
@@ -71,4 +72,37 @@ test('resolveStatisticsPlayerMetaFromSleeperId returns null when no roster fallb
   });
 
   assert.equal(meta, null);
+});
+
+test('a player with no team resolves by name, so free agents open their stats page', async () => {
+  const meta = await resolveStatisticsPlayerMetaFromSleeperId('7528', {
+    7528: { full_name: 'Najee Harris', espn_id: null, team: null, position: 'RB', years_exp: 5 },
+  }, {}, {
+    fetchRosterFn: async () => { throw new Error('no roster for a player with no team'); },
+    nameLookup: async (name) => (name === 'Najee Harris' ? '4241457' : null),
+  });
+
+  assert.equal(meta.id, '4241457');
+  assert.equal(meta.sleeperId, '7528');
+  assert.equal(meta.displayName, 'Najee Harris');
+  assert.equal(meta.position, 'RB');
+});
+
+test('lookupEspnIdByName accepts only a unique exact name', async () => {
+  const results = [
+    { id: '4241457', displayName: 'Najee Harris' },
+    { id: '3918298', displayName: 'Josh Allen' },
+    { id: '17102', displayName: 'Josh Allen' },
+    { id: '3915239', displayName: 'Josh Hines-Allen' },
+    { id: '555', displayName: 'Marvin Harrison Jr.' },
+  ];
+  const searchFn = async () => results;
+
+  assert.equal(await lookupEspnIdByName('Najee Harris', { searchFn }), '4241457');
+  assert.equal(await lookupEspnIdByName('najée harris', { searchFn }), '4241457', 'accents and case are ignored');
+  assert.equal(await lookupEspnIdByName('Marvin Harrison', { searchFn }), '555', 'a suffix is ignored');
+  assert.equal(await lookupEspnIdByName('Josh Allen', { searchFn }), null, 'two players share the name, so no guess');
+  assert.equal(await lookupEspnIdByName('Nobody Here', { searchFn }), null);
+  assert.equal(await lookupEspnIdByName('', { searchFn }), null);
+  assert.equal(await lookupEspnIdByName('Najee Harris', { searchFn: async () => { throw new Error('offline'); } }), null);
 });

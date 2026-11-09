@@ -7,7 +7,7 @@ import {
   getLiveLeague,
   getWinnersBracket,
 } from '../api/sleeperApi.js';
-import { cachedFetch } from './playerCache.js';
+import { cachedFetch, peekCached } from './playerCache.js';
 import { getNflRegularSeasonStartTimestamp } from './nflSeason.js';
 import { getOfficialMatchupRowPoints } from './liveScoringFeed.js';
 
@@ -1104,16 +1104,27 @@ function shouldCacheLeagueHistorySnapshot(snapshot, completed) {
       || bracketHasEvidence(snapshot?.losersBracket));
 }
 
+// Historical snapshots used to cache a transient empty bracket forever. Keep one
+// generation for both paths so that the first load after that fix cannot reuse
+// the poisoned permanent entry.
+function leagueHistoryCacheKey(league, season) {
+  return `league-history:v2:${league?.league_id}:${season}`;
+}
+
 export function getLeagueHistorySnapshot({ league, season, completed = false }) {
   const ttl = completed ? Infinity : CURRENT_LEAGUE_HISTORY_TTL;
-  // Historical snapshots used to cache a transient empty bracket forever.
-  // Keep one generation for both paths so that the first load after this fix
-  // cannot reuse that poisoned permanent entry.
-  const cacheVersion = 'v2';
   return cachedFetch(
-    `league-history:${cacheVersion}:${league?.league_id}:${season}`,
+    leagueHistoryCacheKey(league, season),
     () => fetchLeagueHistorySnapshot({ league, season, completed }),
     ttl,
     (snapshot) => shouldCacheLeagueHistorySnapshot(snapshot, completed),
   );
+}
+
+/**
+ * A season snapshot League History already stored on this device, or null.
+ * Never fetches; a current season's copy may be a few minutes old.
+ */
+export function peekLeagueHistorySnapshot({ league, season }) {
+  return peekCached(leagueHistoryCacheKey(league, season));
 }

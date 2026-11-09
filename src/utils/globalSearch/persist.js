@@ -115,14 +115,43 @@ export function isSliceStale(entry, ttl = PLAYER_SLICE_TTL) {
 }
 
 /**
- * Drop everything. Used when the record shape changes under a cache the version
- * check cannot distinguish.
+ * Drop every cached record slice. Used when the record shape changes under a
+ * cache the version check cannot distinguish. Recent searches are kept.
  */
 export async function clearSlices() {
   try {
     const db = await openDb();
     const transaction = db.transaction(STORE, 'readwrite');
-    await requestToPromise(transaction.objectStore(STORE).clear());
+    const store = transaction.objectStore(STORE);
+    await Promise.all([SLICE_STATIC, SLICE_PLAYERS].map((key) => requestToPromise(store.delete(key))));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Recent searches ────────────────────────────────────────────────────────
+// Kept in the same database under its own key, and deliberately *not* tied to
+// the app or schema version: an upgrade rebuilds the record cache, but it must
+// not forget what the user searched for. Device-local only.
+
+const RECENTS_KEY = 'recents';
+
+export async function readRecents() {
+  try {
+    const db = await openDb();
+    const transaction = db.transaction(STORE, 'readonly');
+    return (await requestToPromise(transaction.objectStore(STORE).get(RECENTS_KEY))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeRecents(recents) {
+  try {
+    const db = await openDb();
+    const transaction = db.transaction(STORE, 'readwrite');
+    await requestToPromise(transaction.objectStore(STORE).put(recents, RECENTS_KEY));
     return true;
   } catch {
     return false;

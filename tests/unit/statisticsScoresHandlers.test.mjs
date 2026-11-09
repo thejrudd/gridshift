@@ -705,3 +705,27 @@ test('Statistics Scores detail serves archived plays without breaking request ac
   assert.equal(Number.isFinite(result.accounting.pageCount), true);
   assert.equal(Number.isFinite(result.accounting.upstreamRequests), true);
 });
+
+test('Statistics Scores detail without plays requests only the game and its box score', async () => {
+  const paths = [];
+  const result = await fetchStatisticsScoresGameDetail({
+    gameId: 887768,
+    phase: 'regular',
+    includePlays: false,
+    env: { ...TEST_BDL_ENV },
+    fetcher: async (url) => {
+      paths.push(new URL(url).pathname);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => new URL(url).pathname.includes('/games/')
+          ? { data: { id: 887768, status: 'Final' } }
+          : { data: [], meta: null },
+      };
+    },
+  });
+
+  assert.equal(result.game.id, 887768);
+  assert.deepEqual(result.plays, []);
+  assert.ok(paths.every((path) => !path.includes('/plays')), `no play-by-play request: ${paths.join(', ')}`);
+});

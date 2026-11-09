@@ -492,6 +492,7 @@ function AppInner() {
     changeSeason,
     seasonSwitching,
     league,
+    linkedLeagueHistory,
     linkedLeagueSeasonOptions,
     scoringOverridePaused,
     activeScoringSettings,
@@ -529,6 +530,9 @@ function AppInner() {
     closeSearch,
     index: searchIndex,
     status: searchStatus,
+    recents: searchRecents,
+    recordSearch,
+    clearRecents: clearSearchRecents,
   } = useGlobalSearch({ league: searchLeague, sleeperPlayers, espnIdOverrides });
   const [searchNotice, setSearchNotice] = useState(null);
   const [searchResolvingId, setSearchResolvingId] = useState(null);
@@ -1823,6 +1827,14 @@ function AppInner() {
   // Declared here rather than beside the rest of the search state because it
   // depends on the hydrated prediction schedule built just above — referencing
   // that earlier would hit the temporal dead zone on every render.
+  const searchLeagueHistory = useMemo(() => {
+    if (platform !== 'sleeper' || !hasLeague || !linkedLeagueHistory?.length) return null;
+    return {
+      entries: linkedLeagueHistory.filter((entry) => Number(entry.season) <= Number(season)),
+      players: sleeperPlayers ?? {},
+    };
+  }, [hasLeague, linkedLeagueHistory, platform, season, sleeperPlayers]);
+
   const searchAnswerData = useMemo(() => ({
     weeklyStats,
     players: sleeperPlayers,
@@ -1840,6 +1852,11 @@ function AppInner() {
     // The league's own active week, so "last week" means the most recently
     // completed one rather than a calendar guess.
     currentWeek: currentFantasyWeek,
+    // Result actions offer Trade only where the Trade tab itself works.
+    tradeAvailable: hasLeague && !tradeDisabled,
+    // The league's linked seasons, for history answers read from what League
+    // History already stored — search never loads history itself.
+    leagueHistory: searchLeagueHistory,
   }), [
     activeScoringSettings,
     currentFantasyWeek,
@@ -1853,7 +1870,9 @@ function AppInner() {
     rosters,
     scheduleData?.teams,
     searchFantasyOwnership,
+    searchLeagueHistory,
     sleeperPlayers,
+    tradeDisabled,
     weeklyStats,
   ]);
 
@@ -2838,6 +2857,10 @@ function AppInner() {
             notice={searchNotice}
             onClearNotice={() => setSearchNotice(null)}
             resolvingId={searchResolvingId}
+            recents={searchRecents}
+            onRecordSearch={recordSearch}
+            onClearRecents={clearSearchRecents}
+            liveLeagueId={platform === 'sleeper' && hasLeague ? selectedLeagueId : null}
           />
         </Suspense>
       )}

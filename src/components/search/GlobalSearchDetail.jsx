@@ -4,11 +4,14 @@
 // rather than shown empty, so the panel never reserves space for data that is
 // not coming.
 
-export default function GlobalSearchDetail({ detail, onRoute }) {
+import { actionOptionId } from '../../utils/globalSearch/detail.js';
+
+export default function GlobalSearchDetail({ detail, onRoute, focusedAction = null }) {
   const facts = detail?.facts ?? [];
   const stats = detail?.stats ?? null;
   const fantasy = detail?.fantasy ?? null;
-  if (!facts.length && !stats && !fantasy) return null;
+  const actions = detail?.actions ?? [];
+  if (!facts.length && !stats && !fantasy && !actions.length) return null;
 
   return (
     <div className="global-search-detail">
@@ -44,22 +47,27 @@ export default function GlobalSearchDetail({ detail, onRoute }) {
         </div>
       ) : null}
 
-      {/* Who rosters this player in the connected league, and the two places
-          that fact leads. The buttons stop their click from reaching the result
-          row behind them: the row's own job is still the stats page. */}
-      {fantasy ? (
+      {/* Who rosters this player, and what can be done from here. The buttons
+          stop their click from reaching the result row behind them: the row's
+          own job is still its primary destination. From the keyboard, → moves
+          into them and ← back out — see GlobalSearchPalette. */}
+      {fantasy || actions.length ? (
         <div className="global-search-detail__fantasy">
-          <span
-            className={`global-search-detail__owner${fantasy.isMine ? ' is-mine' : ''}`}
-          >
-            <span className="global-search-detail__owner-dot" aria-hidden="true" />
-            {fantasy.label}
-          </span>
-          {fantasy.actions.map((action) => (
+          {fantasy ? (
+            <span
+              className={`global-search-detail__owner${fantasy.isMine ? ' is-mine' : ''}`}
+            >
+              <span className="global-search-detail__owner-dot" aria-hidden="true" />
+              {fantasy.label}
+            </span>
+          ) : null}
+          {actions.map((action, position) => (
             <button
               key={action.key}
+              id={actionOptionId(position)}
               type="button"
-              className="global-search-detail__action"
+              tabIndex={-1}
+              className={`global-search-detail__action${focusedAction === position ? ' is-focused' : ''}`}
               onClick={(event) => {
                 event.stopPropagation();
                 onRoute?.(action.route);

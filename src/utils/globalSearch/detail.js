@@ -121,50 +121,70 @@ function gameFacts(index, team) {
 }
 
 /**
- * Where a player sits in the connected league, and the two places that leads.
+ * Where a player sits in the connected league.
  *
  * Returns null with no league rather than a "free agent" line: with no rosters
  * to check, every player looks unowned, and stating that would be a claim the
  * data does not support.
  */
-function fantasyDetail(record, answerData) {
+function fantasyOwnerOf(record, answerData) {
   const ownership = answerData?.fantasyOwnership;
   if (!ownership?.size) return null;
-
   const sleeperId = record.meta?.sleeperId;
   if (!sleeperId) return null;
+  return { owner: findFantasyOwner(ownership, sleeperId) ?? null, sleeperId };
+}
 
-  const owner = findFantasyOwner(ownership, sleeperId);
-  if (!owner) return { label: 'Free agent', isMine: false, actions: [] };
+function fantasyDetail(ownership) {
+  if (!ownership) return null;
+  const { owner } = ownership;
+  if (!owner) return { label: 'Free agent', isMine: false };
+  return { label: owner.isMine ? 'On your roster' : owner.label, isMine: owner.isMine };
+}
 
-  return {
-    label: owner.isMine ? 'On your roster' : owner.label,
-    isMine: owner.isMine,
-    // Both destinations exist for every rostered player, and both are one tap
-    // from here. The row's own Enter still opens the stats page — these are
-    // additive, not a replacement for the result's primary destination.
-    actions: [
-      {
-        key: 'roster',
-        label: owner.isMine ? 'My roster' : 'Roster',
-        route: {
-          activeTab: 'fantasy',
-          companionView: 'rosters',
-          leagueSubview: 'roster',
-          leagueRosterId: String(owner.rosterId),
+const rosterRoute = (rosterId) => ({
+  activeTab: 'fantasy',
+  companionView: 'rosters',
+  leagueSubview: 'roster',
+  leagueRosterId: String(rosterId),
+});
+
+const matchupRoute = (rosterId) => ({
+  activeTab: 'fantasy',
+  companionView: 'matchups',
+  matchupRosterId: String(rosterId),
+});
+
+/**
+ * What can be done with a rostered player besides opening their stats page,
+ * which stays the row's own job: trade for them (or away), and the roster and
+ * matchup that ownership leads to. Trade is offered only where the Trade tab
+ * itself is available, by the same rule the Statistics page uses.
+ */
+function playerActions(ownership, answerData) {
+  const owner = ownership?.owner;
+  if (!owner) return [];
+  const actions = [];
+  if (answerData?.tradeAvailable) {
+    actions.push({
+      key: 'trade',
+      label: owner.isMine ? 'Trade away' : 'Trade for',
+      route: owner.isMine
+        ? { activeTab: 'trade', tradeView: 'agent', tradePlayerId: ownership.sleeperId, tradeSide: 'give' }
+        : {
+          activeTab: 'trade',
+          tradeView: 'agent',
+          tradePlayerId: ownership.sleeperId,
+          tradeSide: 'get',
+          tradePartnerRosterId: String(owner.rosterId),
         },
-      },
-      {
-        key: 'matchup',
-        label: 'Matchup',
-        route: {
-          activeTab: 'fantasy',
-          companionView: 'matchups',
-          matchupRosterId: String(owner.rosterId),
-        },
-      },
-    ],
-  };
+    });
+  }
+  actions.push(
+    { key: 'roster', label: owner.isMine ? 'My roster' : 'Roster', route: rosterRoute(owner.rosterId) },
+    { key: 'matchup', label: 'Matchup', route: matchupRoute(owner.rosterId) },
+  );
+  return actions;
 }
 
 function playerDetail(record, index, answerData) {
@@ -191,7 +211,13 @@ function playerDetail(record, index, answerData) {
     }
   }
 
-  return { facts, stats, fantasy: fantasyDetail(record, answerData) };
+  const ownership = fantasyOwnerOf(record, answerData);
+  return {
+    facts,
+    stats,
+    fantasy: fantasyDetail(ownership),
+    actions: playerActions(ownership, answerData),
+  };
 }
 
 function nflTeamDetail(record, index) {
@@ -200,7 +226,23 @@ function nflTeamDetail(record, index) {
   if (division) facts.push({ label: 'Division', value: division });
   else if (conference) facts.push({ label: 'Conference', value: conference });
   if (teamId) facts.push(...gameFacts(index, teamId));
-  return { facts, stats: null, fantasy: null };
+  // The row opens the team page; these are the two other places a team leads.
+  const actions = teamId
+    ? [
+      {
+        key: 'schedule',
+        label: 'Schedule',
+        route: {
+          activeTab: 'statistics',
+          statisticsView: 'schedule',
+          statisticsScheduleMode: 'team',
+          statisticsScheduleTeamId: teamId,
+        },
+      },
+      { key: 'standings', label: 'Standings', route: { activeTab: 'statistics', statisticsView: 'standings' } },
+    ]
+    : [];
+  return { facts, stats: null, fantasy: null, actions };
 }
 
 function gameDetail(record, index) {
@@ -212,14 +254,14 @@ function gameDetail(record, index) {
     // much football is in it.
     const games = teamGamesInWeek(index, week);
     if (games) facts.push({ label: 'Games', value: String(games) });
-    return { facts, stats: null, fantasy: null };
+    return { facts, stats: null, fantasy: null, actions: [] };
   }
 
   if (awayTeam && homeTeam) facts.push({ label: 'Matchup', value: `${awayTeam} at ${homeTeam}` });
   const when = formatKickoff(kickoff);
   if (when) facts.push({ label: 'Kickoff', value: when });
   if (network) facts.push({ label: 'Watch', value: network });
-  return { facts, stats: null, fantasy: null };
+  return { facts, stats: null, fantasy: null, actions: [] };
 }
 
 function fantasyTeamDetail(record, answerData) {
@@ -251,17 +293,27 @@ function fantasyTeamDetail(record, answerData) {
     facts,
     stats: values.length ? { label: 'This season', values } : null,
     fantasy: null,
+    // The row opens the roster; the matchup is the other place a team leads.
+    actions: [{ key: 'matchup', label: 'Matchup', route: matchupRoute(rosterId) }],
   };
+}
+
+// The DOM id of an action button on the active result, which the search field
+// names as its active descendant while the keyboard is on that action.
+export function actionOptionId(position) {
+  return `global-search-action-${position}`;
 }
 
 /**
  * Build the detail model for a result.
  *
- * Returns `{ facts, stats, fantasy }`, each possibly empty or null — callers
- * render whatever is present rather than reserving space for what is missing.
+ * Returns `{ facts, stats, fantasy, actions }`, each possibly empty or null —
+ * callers render whatever is present rather than reserving space for what is
+ * missing. `actions` are the result's secondary destinations; the row's own
+ * Enter or tap still opens its primary one.
  */
 export function buildResultDetail(record, { index = null, answerData = null } = {}) {
-  if (!record) return { facts: [], stats: null, fantasy: null };
+  if (!record) return { facts: [], stats: null, fantasy: null, actions: [] };
 
   switch (record.kind) {
     case KIND_PLAYER: return playerDetail(record, index, answerData);
@@ -272,6 +324,6 @@ export function buildResultDetail(record, { index = null, answerData = null } = 
     // one would only echo the label back, so they do not expand at all.
     case KIND_APP_VIEW:
     case KIND_COMMAND:
-    default: return { facts: [], stats: null, fantasy: null };
+    default: return { facts: [], stats: null, fantasy: null, actions: [] };
   }
 }

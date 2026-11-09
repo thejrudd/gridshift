@@ -29675,6 +29675,49 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   opacity: 0.6;
 }
 
+/* ── Recent searches (empty state) ────────────────────────────────────────── */
+
+.global-search__recent-queries {
+  padding-bottom: 10px;
+}
+
+.global-search__recent-queries .global-search-guide__chips {
+  padding: 0 16px;
+}
+
+.global-search__recent-queries-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.global-search__recent-clear {
+  margin: -6px -8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-label-secondary);
+  transition: opacity 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search__recent-clear:hover {
+  color: var(--color-label);
+}
+
+.global-search__recent-clear:active {
+  opacity: 0.6;
+}
+
+@media (pointer: coarse) {
+  .global-search__recent-clear {
+    min-height: 44px;
+    margin: -16px -8px;
+  }
+}
+
 /* ── Triggers ─────────────────────────────────────────────────────────────── */
 
 /* Inset pill: icon and shortcut hint sit on the same vertical lines as the
@@ -30054,6 +30097,15 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   color: var(--color-label);
 }
 
+/* Reached with → from the search field: the row stays the listbox's active
+   option, and the action it will run on Enter is marked like a focused control. */
+.global-search-detail__action.is-focused {
+  background: var(--color-fill);
+  color: var(--color-label);
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 @media (pointer: coarse) {
   .global-search-detail__action {
     min-height: 44px;
@@ -30123,6 +30175,223 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-label);
+}
+
+/* ── League history rows ── season or week, who, and what happened ───────── */
+
+.global-search-history__row {
+  align-items: flex-start;
+}
+
+.global-search-history__when {
+  min-width: 2.75rem;
+  padding-top: 1px;
+}
+
+/* What moved in a trade can run long; two lines, then the history page. */
+.global-search-history__detail {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.35;
+}
+
+/* ── Live scoreboard card ─────────────────────────────────────────────────── */
+
+.global-search-live__row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.global-search-live__row:not(button):hover {
+  background: transparent;
+}
+
+.global-search-live__teams {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.global-search-live__team {
+  display: grid;
+  grid-template-columns: 18px 2.75rem 2rem;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-label-secondary);
+}
+
+.global-search-live__team.is-leading {
+  font-weight: 700;
+  color: var(--color-label);
+}
+
+.global-search-live__logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.global-search-live__score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-search-live__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-secondary);
+  text-align: right;
+}
+
+/* A team card's started game: line score, then headline stats. */
+.global-search-live__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 2px 8px 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-separator);
+}
+
+.global-search-linescore {
+  display: flex;
+  flex-direction: column;
+}
+
+.global-search-linescore__row {
+  display: grid;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-secondary);
+}
+
+.global-search-linescore__row > span:not(:first-child) {
+  text-align: right;
+}
+
+.global-search-linescore__head {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-label-tertiary);
+}
+
+.global-search-linescore__total {
+  font-weight: 700;
+  color: var(--color-label);
+}
+
+.global-search-highlights .global-search-compare__row {
+  padding: 4px 0;
+  min-height: 26px;
+}
+
+.global-search-highlights__head .global-search-compare__value {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-label-tertiary);
+}
+
+/* ── Compare card ── two value columns under a side header ──────────────── */
+
+.global-search-compare__head,
+.global-search-compare__row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+}
+
+.global-search-compare__head {
+  align-items: end;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.global-search-compare__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 0;
+  text-align: right;
+}
+
+.global-search-compare__side-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  max-width: 100%;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  text-align: right;
+  transition: background 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.global-search-compare__side-button:hover {
+  background: var(--color-fill);
+}
+
+.global-search-compare__side .global-search-answer__row-label,
+.global-search-compare__side .global-search-answer__row-sublabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-compare__row {
+  min-height: 30px;
+}
+
+.global-search-compare__row + .global-search-compare__row {
+  border-top: 1px solid var(--color-separator);
+}
+
+.global-search-compare__label {
+  font-size: 0.75rem;
+  color: var(--color-label-secondary);
+}
+
+.global-search-compare__value {
+  justify-self: end;
+  padding: 1px 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label-secondary);
+}
+
+/* The better value: full-strength text with a decorative signature underline.
+   Screen readers get "(better)" from the visually hidden suffix. */
+.global-search-compare__value.is-leader {
+  font-weight: 700;
+  color: var(--color-label);
+  box-shadow: inset 0 -2px 0 var(--color-signature);
+}
+
+@media (pointer: coarse) {
+  .global-search-compare__side-button {
+    min-height: 44px;
+    justify-content: center;
+  }
 }
 
 @media (pointer: coarse) {
@@ -30629,3 +30898,128 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   .matchup-live-tabs { margin-top: 4px; }
 }
 
+
+/* Desktop matchup cards (above 480px): the phone card's three lines beside the
+   photo — the name with its inline position chip and any status badge, the game
+   line, then the stat line once the game has started or the local kickoff
+   before it. Every line is a step larger than on phones for desk-distance
+   reading. A narrow card lets its stat line wrap between segments; the paired
+   card stretches to match. */
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity {
+  line-height: 1.15;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__position--inline {
+  display: inline-flex;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: var(--type-micro);
+  letter-spacing: 0.04em;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__meta {
+  margin-top: 4px;
+  line-height: 1.2;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__detail {
+  margin-top: 3px;
+  font-size: var(--type-micro);
+  line-height: 1.3;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-matchup-stat-line__value {
+  font-size: var(--type-label);
+}
+
+/* Team defense names truncate as a block; keep the DEF chip on the name line. */
+.companion-player-row.companion-matchup-player-row.is-team-defense:not(.is-compact) .companion-player-row__identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Each desktop card's cell is a size container: a narrow card (a 1024px window
+   with the sidebar open, a tablet) drops the team logo and its track, shrinks
+   the photo, keeps the game line whole by dropping rank, weather and range, and
+   shortens the status badge, so the name and stat line keep the width. */
+@media (min-width: 481px) {
+  .matchup-row-cell {
+    container: matchup-card / inline-size;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__meta-item:not(.companion-player-row__meta-item ~ .companion-player-row__meta-item) {
+    flex-shrink: 0;
+  }
+}
+
+@container matchup-card (max-width: 400px) {
+  .companion-player-row.companion-matchup-player-row {
+    --matchup-avatar-track: 36px;
+    --matchup-logo-track: 0px;
+    gap: 8px;
+  }
+
+  .companion-player-row.companion-matchup-player-row .companion-player-row__avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .companion-player-row.companion-matchup-player-row .companion-player-row__team-logo,
+  .companion-player-row.companion-matchup-player-row .companion-player-row__team-logo-spacer,
+  .companion-player-row.companion-matchup-player-row .companion-player-row__meta-item + .companion-player-row__meta-item {
+    display: none;
+  }
+
+  .companion-matchup-player-row .player-status-badge.is-responsive-compact .player-status-badge__label,
+  .companion-matchup-player-row .player-status-badge.is-responsive-compact .player-status-badge__detail {
+    display: none;
+  }
+
+  .companion-matchup-player-row .player-status-badge.is-responsive-compact .player-status-badge__compact-label {
+    display: inline;
+  }
+}
+
+/* Cards narrower still (a window just above phone width) drop the photo like
+   the phone card, and the game line may shorten rather than run under the
+   score. */
+@container matchup-card (max-width: 260px) {
+  .companion-player-row.companion-matchup-player-row {
+    --matchup-avatar-track: 0px;
+  }
+
+  /* Collapsed in place, not removed, so the name keeps its grid track. */
+  .companion-player-row.companion-matchup-player-row .companion-player-row__avatar {
+    width: 0;
+    height: 0;
+    visibility: hidden;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__meta-item {
+    flex-shrink: 1;
+  }
+
+  /* Names wrap between words, as on phones, rather than truncating. */
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity,
+  .companion-player-row.companion-matchup-player-row.is-team-defense:not(.is-compact) .companion-player-row__identity {
+    display: block;
+    white-space: normal;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity-label,
+  .companion-player-row.companion-matchup-player-row.is-team-defense:not(.is-compact) .companion-player-row__identity-label {
+    display: inline;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__position--inline,
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity-accessory {
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+}

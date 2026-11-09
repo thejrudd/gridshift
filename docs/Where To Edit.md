@@ -45,12 +45,20 @@ Read first: [[Global Search]] (measurements, the load-bearing matching rules, an
 | `src/utils/globalSearch/correct.js` | Bounded typo correction |
 | `src/utils/globalSearch/tokenIndex.js` | Exact / prefix / trigram indexes |
 | `src/utils/globalSearch/rank.js` | Slot filtering, scoring, grouping |
-| `src/utils/globalSearch/persist.js` | IndexedDB record cache |
+| `src/utils/globalSearch/persist.js` | IndexedDB record cache and device-local recents |
+| `src/utils/globalSearch/recents.js` | Recent queries and opened results |
+| `src/utils/globalSearch/suggestions.js` | Empty-palette groups: recent, your starters, this week's games |
 | `src/utils/globalSearch/resolveRoute.js` | Result to route object |
+| `src/utils/globalSearch/detail.js` | Expanded result facts and result actions |
 | `src/utils/globalSearch/entities/*.js` | Per-source record adapters |
 | `src/utils/globalSearch/answers/*.js` | Inline answer resolvers (read-only over existing engines) |
-| `src/hooks/useGlobalSearch.js` | Open state, Cmd/Ctrl+K, index lifecycle |
-| `src/components/search/*.jsx` | Palette, result row, answer card, guide |
+| `src/utils/globalSearch/answers/compare.js` | "X vs Y" compare card |
+| `src/utils/globalSearch/answers/live.js` | Live scoreboard card and box-score highlights |
+| `src/utils/globalSearch/answers/history.js` | Champions, head to head, trades, transactions from stored League History |
+| `src/utils/globalSearch/live/liveSource.js` | The one search request: live gate, `/api/live` games, box score |
+| `src/hooks/useGlobalSearch.js` | Open state, Cmd/Ctrl+K, index lifecycle, recents |
+| `src/hooks/useLiveSearchAnswer.js` | Live answer request lifecycle for the palette |
+| `src/components/search/*.jsx` | Palette, result row, expanded detail and actions, answer card, guide |
 | `scripts/build-search-index.mjs` | Generates `public/search-index.v1.json` at `prebuild` |
 
 `src/utils/parseSearchQuery.js` re-exports `SEARCH_PATTERNS` from the shared vocabulary; the player browser and global search must not drift apart.
@@ -290,9 +298,10 @@ Snap percentages are an optional game-log enrichment from nflverse's PFR snap-co
 - **ESPN politeness** lives in `playerDataUpstream.js`: at most 2 concurrent requests server-wide (`GRIDSHIFT_PLAYER_DATA_UPSTREAM_CONCURRENCY`), a minimum gap between request starts, in-flight coalescing per key, and a circuit breaker that stops all ESPN calls after a 429/403 or a run of 5xx/timeouts and backs off exponentially. While it is open the sidecar serves stored data (marked `X-GridShift-Stale`) and the browser falls back to its own ESPN calls.
 - **Career repair is defender-only.** ESPN's career endpoint reports 0 tackles for loss, so `espnPlayerFetch.js` rebuilds it from per-season stats. One athlete lookup decides whether the player is a defender and starts the lookups at their debut season; non-defenders skip it. If that lookup fails it runs in full. On the server those per-season lookups are background requests that queue behind the page's own.
 - **Team data is shared.** Team abbreviation lookups and team schedules are the same for every player on a team, so the sidecar fetches them once (permanently for completed seasons, 5 minutes for the current one) and reuses them across players.
+- **Game logs follow mid-season trades.** Each game's team comes from its own eventlog entry (the competitor ID in its stats `$ref`), and every team the player appeared for has its schedule read. Games without a team ID (inactive) go to the team he was on that week. A bye row appears only when his team before or after the gap had no game that week; a week his team played that ESPN does not list for him gets no row; postseason games come from the team he finished the regular season with. Covered by `tests/unit/playerGameLogTrade.test.mjs`.
 - **Incomplete data is never stored.** If any per-game, schedule, or team lookup fails transiently, the response carries `X-GridShift-Incomplete` and is neither persisted server-side nor cached in the browser.
 - **Disk** is bounded by `GRIDSHIFT_PLAYER_DATA_MAX_BYTES` (default 1 GB); least recently read rows are evicted and simply refetched on demand. `/api/health` reports `playerData` rows, bytes, and breaker state.
-- **Browser cache** is IndexedDB (`playerDataCache.js`), not `localStorage`: completed-season entries never expire and survive app-version busts, live entries are wiped on a release, and an expired entry is served if the refresh fails (offline). Bump `PLAYER_DATA_SCHEMA_VERSION` (or the key version) when a payload shape changes; the server keys (`stats_v2_`, `gamelog_v11_`) must change together so old rows are not served.
+- **Browser cache** is IndexedDB (`playerDataCache.js`), not `localStorage`: completed-season entries never expire and survive app-version busts, live entries are wiped on a release, and an expired entry is served if the refresh fails (offline). Bump `PLAYER_DATA_SCHEMA_VERSION` (or the key version) when a payload shape changes; the server keys (`stats_v2_`, `gamelog_v12_`) must change together so old rows are not served.
 - **Profile and roster metadata** uses the `localStorage` cache in `playerCache.js`. Version the `player_profile_*` and `roster_*` keys when normalized bio or roster fields change so cached entries acquire new fields.
 
 | File | Owns |

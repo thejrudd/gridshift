@@ -44,6 +44,20 @@ export async function cachedFetch(key, fetchFn, ttl, shouldCache) {
   return data;
 }
 
+/**
+ * Read a cachedFetch entry without fetching, whatever its age, or null. For
+ * readers that must never trigger a request — global search answers from
+ * whatever an earlier page load already stored.
+ */
+export function peekCached(key) {
+  try {
+    const raw = localStorage.getItem(PREFIX + key);
+    return raw ? JSON.parse(raw)?.data ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
 function clearLocalPlayerCache() {
   Object.keys(localStorage)
     .filter(k => k.startsWith(PREFIX))
