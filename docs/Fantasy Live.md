@@ -55,7 +55,7 @@ Mouse and keyboard only: opened by a pointer event whose `pointerType` is `mouse
 
 **Hover card game line** (`getGameStatLine()` in `src/utils/matchupStatChips.js`). Right now it is the live feed's box line for the starter (`liveBoxLineById`, from each side entry's `detailStats`), so yardage from non-scoring snaps counts. A replay moment sums the scoring plays up to that moment, the only per-moment record, so it can miss non-scoring snaps. Without the live layer it is the week's stat row.
 
-**Final game score.** Once a starter's game is final (`scheduleEntry.completed` with `ptsFor` / `ptsAgainst`), the row's game label shows the result with the player's team's score first: `JAX W 33-10 @ BAL` on desktop, `W 33-10 @ BAL` on phones. A replay moment before that game's final whistle shows the plain matchup (`hideGameResult`).
+**Final game score.** Once a starter's game is final (`scheduleEntry.completed` with `ptsFor` / `ptsAgainst`), the row's game label shows the result with the player's team's score first: `JAX W 33-10 @ BAL` on desktop (the position sits beside the name at every width), `W 33-10 @ BAL` on phones. A replay moment before that game's final whistle shows the plain matchup (`hideGameResult`).
 
 ## Team scoring drilldown
 
