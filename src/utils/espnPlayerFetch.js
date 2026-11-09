@@ -407,17 +407,26 @@ export async function fetchPlayerGameLogRaw(fetchImpl, { playerId, teamId, seaso
 
     const regGames = regGamesRaw.filter(Boolean);
 
-    // Insert synthetic BYE rows for missing week numbers between 1 and the highest week played
+    // Insert synthetic BYE rows for weeks up to the highest week played that his
+    // team for that week had no game. A week his team did play that ESPN does not
+    // list for him (before he joined, or off the roster) gets no row at all.
     const coveredWeeks = new Set(regGames.map(g => g.meta?.week).filter(w => w != null));
     const maxWeek = coveredWeeks.size > 0 ? Math.max(...coveredWeeks) : 0;
+    const teamPlayedWeek = (teamAbbrev, week) => Object.values(metaByTeam.get(teamAbbrev)?.reg ?? {})
+      .some(meta => meta.week === week);
     for (let w = 1; w <= maxWeek; w++) {
-      if (!coveredWeeks.has(w)) {
-        regGames.push({
-          eventId: `bye_${w}`,
-          meta: { week: w, opponent: 'BYE', result: '-', score: '', myTeam: teamStintForWeek(w)?.teamAbbrev ?? teamAbbrevs[0], isBye: true },
-          statsJson: null,
-        });
-      }
+      if (coveredWeeks.has(w)) continue;
+      // A gap right after a trade can be the new team's bye (traded, then the
+      // old team plays without him while the new team rests).
+      const previousTeam = teamStintForWeek(w)?.teamAbbrev ?? teamAbbrevs[0];
+      const nextTeam = teamWeeks.find(entry => entry.week > w)?.teamAbbrev ?? previousTeam;
+      const weekTeam = [previousTeam, nextTeam].find(team => !teamPlayedWeek(team, w));
+      if (!weekTeam) continue;
+      regGames.push({
+        eventId: `bye_${w}`,
+        meta: { week: w, opponent: 'BYE', result: '-', score: '', myTeam: weekTeam, isBye: true },
+        statsJson: null,
+      });
     }
 
     // Sort regular-season games by week number

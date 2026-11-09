@@ -19,13 +19,13 @@ const SCHEDULES = {
 };
 const ABBREV = { 10: 'TEN', 3: 'CHI' };
 
-function createFetch({ chiPlayoffs = [] } = {}) {
+function createFetch({ chiPlayoffs = [], omitEvents = [], games = GAMES, schedules = SCHEDULES } = {}) {
   const calls = [];
   const respond = (url) => {
     if (/eventlog/.test(url)) {
       return {
         events: {
-          items: GAMES.map((g) => ({
+          items: games.filter((g) => !omitEvents.includes(g.id)).map((g) => ({
             played: g.played,
             event: { $ref: `${CORE}/events/${g.id}?lang=en` },
             ...(g.played
@@ -40,7 +40,7 @@ function createFetch({ chiPlayoffs = [] } = {}) {
     match = url.match(/teams\/(\w+)\/schedule\?season=\d+&seasontype=(\d)/);
     if (match) {
       const team = match[1].toUpperCase();
-      const events = match[2] === '2' ? SCHEDULES[match[1]] : (match[1] === 'chi' ? chiPlayoffs : []);
+      const events = match[2] === '2' ? schedules[match[1]] : (match[1] === 'chi' ? chiPlayoffs : []);
       return {
         events: events.map((e) => ({
           id: e.id,
@@ -85,6 +85,32 @@ describe('player game log: mid-season trade', () => {
     assert.equal(byWeek[10].meta.isInactive, true);
     assert.equal(byWeek[10].meta.opponent, 'vs MIN', 'an inactive game uses the team he was on');
     assert.deepEqual(games.map((g) => g.meta.week), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  it('does not call a week his team played a bye when ESPN lists no game for him', async () => {
+    const { fetchImpl } = createFetch({ omitEvents: [401, 402] });
+    const { games } = await fetchPlayerGameLogRaw(fetchImpl, { playerId: '99', teamId: 'CHI', season: 2026 });
+    const weeks = games.map((g) => g.meta.week);
+    assert.ok(!weeks.includes(1) && !weeks.includes(2), 'TEN played weeks 1 and 2, so they are not byes');
+    assert.equal(games.find((g) => g.meta.week === 9).meta.isBye, true, 'CHI week 9 is still a bye');
+  });
+
+  it("shows the new team's bye when the old team plays the week after the trade", async () => {
+    // Traded after week 7: TEN plays week 8 without him while CHI rests, then he plays for CHI in week 9.
+    const games = [
+      ...GAMES.filter((g) => g.week <= 7),
+      { id: 409, week: 9, team: 3, played: true },
+    ];
+    const schedules = {
+      ten: [...SCHEDULES.ten, { id: 508, week: 8, opp: 'JAX' }],
+      chi: [...SCHEDULES.chi.filter((e) => e.week <= 7), { id: 409, week: 9, opp: 'TB' }],
+    };
+    const { fetchImpl } = createFetch({ games, schedules });
+    const { games: log } = await fetchPlayerGameLogRaw(fetchImpl, { playerId: '99', teamId: 'CHI', season: 2026 });
+    const week8 = log.find((g) => g.meta.week === 8);
+    assert.equal(week8.meta.isBye, true);
+    assert.equal(week8.meta.myTeam, 'CHI');
+    assert.equal(log.find((g) => g.meta.week === 9).meta.myTeam, 'CHI');
   });
 
   it('takes postseason games from the team he finished with', async () => {
