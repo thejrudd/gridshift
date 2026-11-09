@@ -58,7 +58,7 @@ Use `CompanionPlayerRow` for player rows in:
 - Companion League
 - Companion Rankings
 - Companion Waiver
-- Companion Matchup player rows. On phones (≤480px) each card has no headshot: the name with an inline position chip (`showPosition` with `positionPlacement="identity"`) and any status badge flowing after it, then the game line without the position (`SEA v. KC` / `PIT @ NO`, the result once final, `W 33-10 @ NO`, or the live dot and clock while live, `● Q2 2:37 @ NE`), then the stat line once the game has started or the local kickoff day and time before it (see Narrow Core names below); rank and weather stay desktop-only. Every live row, phone or desktop, leads its game line with the live dot and game clock and drops the player's own team. The name line wraps between words rather than truncating, and the inline injury link sets `min-height: 0` so the global coarse-pointer 44px button rule cannot make injured rows taller (its `::before` keeps the 44px hit area).
+- Companion Matchup player rows. On phones (≤480px) each card has no headshot: the name with an inline position chip (`showPosition` with `positionPlacement="identity"`) and any status badge flowing after it, then the game line without the position (`SEA v. KC` / `PIT @ NO`, the result once final, `W 33-10 @ NO`, or the live dot and clock while live, `● Q2 2:37 @ NE`), then the stat line once the game has started or the local kickoff day and time before it (see Narrow Core names below); rank and weather stay desktop-only. Desktop cards (above 480px) carry the same three lines beside the photo and team logo in a 78px card (`MATCHUP_CARD_MIN_HEIGHT`): the name with its inline position chip and status badge, the game line followed by rank, weather and the pregame range, then the stat line or kickoff (11px labels, 12px numbers). Each desktop card cell is a `matchup-card` size container: at 400px or narrower the team logo and its track drop, the photo shrinks to 36px, the line keeps only the game, and the status badge shows its short label; at 260px or narrower the photo collapses and names wrap like phones. A narrow card's stat line wraps between segments and its paired card stretches to match. Every live row, phone or desktop, leads its game line with the live dot and game clock and drops the player's own team. The name line wraps between words rather than truncating, and the inline injury link sets `min-height: 0` so the global coarse-pointer 44px button rule cannot make injured rows taller (its `::before` keeps the 44px hit area).
 - Matchup preview "Who decided it" / movers cards (`PreviewPlayerCard` in `MatchupPreviewModal.jsx`): the shared row with the position folded into the meta line; the projection chip is a `CompanionPlayerStatus` with `localContrast={false}` on a theme-surface backing so its semantic tone stays readable on any team gradient. "Where the rosters lead" stays the mirrored number/bar comparison.
 - Heatmap player drilldown/performer lists
 - Trade roster picker, roster browse, and Upgrade Finder mover rows
@@ -146,8 +146,9 @@ cards sit edge to edge (`.matchup-h2h-grid`, 2px seam) and the slot badge is a
 26×22 opaque chip centered over the seam, overlapping both cards' inner edges
 like Sleeper's; each card pads 16px on the seam side to clear it, and the chip
 keeps a 44×44 hit area (`.companion-matchup-slot-badge.is-compact::before`, above
-both cards at `z-index: 2`). The stat line is the smallest text on the card (9px
-labels, 10px numbers, under an 11px game line and a 10–12px name); targets come
+both cards at `z-index: 2`). On phones the stat line is the smallest text on the card (9px
+labels, 10px numbers, under an 11px game line and a 10–12px name; desktop
+cards use 11px labels and 12px numbers); targets come
 from BALLDONTLIE, then Sleeper, for display only. Each card reads its plays from
 one per-update grouping by player (`livePlaysByPlayer`), never by scanning the
 week's feed per card. `detail` is an optional `CompanionPlayerRow` line under the meta
