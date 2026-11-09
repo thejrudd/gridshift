@@ -116,6 +116,76 @@ function StandingsRows({ columns, rows, onSelectRow }) {
   );
 }
 
+/**
+ * Two things side by side: a header naming each side, then one row per value
+ * with the better side marked. Each side's name opens it.
+ *
+ * Div table roles and a shared grid template, like StandingsRows, so the two
+ * value columns stay aligned and the label column takes what is left.
+ */
+function CompareRows({ sides, rows, onSelectPlayer, onRoute }) {
+  const template = 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)';
+  const openSide = (side) => {
+    if (side.sleeperId) onSelectPlayer?.(side.sleeperId);
+    else if (side.route) onRoute?.(side.route);
+  };
+
+  return (
+    <div className="global-search-answer__table global-search-compare" role="table">
+      <div className="global-search-compare__head" role="row" style={{ gridTemplateColumns: template }}>
+        <span role="columnheader" aria-label="Value" />
+        {sides.map((side) => (
+          <span key={side.label} role="columnheader" className="global-search-compare__side">
+            {side.sleeperId || side.route ? (
+              <button
+                type="button"
+                className="global-search-compare__side-button"
+                onClick={() => openSide(side)}
+              >
+                <span className="global-search-answer__row-label">{side.label}</span>
+                {side.sublabel ? (
+                  <span className="global-search-answer__row-sublabel">{side.sublabel}</span>
+                ) : null}
+              </button>
+            ) : (
+              <>
+                <span className="global-search-answer__row-label">{side.label}</span>
+                {side.sublabel ? (
+                  <span className="global-search-answer__row-sublabel">{side.sublabel}</span>
+                ) : null}
+              </>
+            )}
+          </span>
+        ))}
+      </div>
+      {rows.length ? (
+        <div role="rowgroup">
+          {rows.map((entry) => (
+            <div
+              key={entry.key}
+              role="row"
+              className="global-search-compare__row"
+              style={{ gridTemplateColumns: template }}
+            >
+              <span role="rowheader" className="global-search-compare__label">{entry.label}</span>
+              {['left', 'right'].map((side) => (
+                <span
+                  key={side}
+                  role="cell"
+                  className={`global-search-compare__value${entry.leader === side ? ' is-leader' : ''}`}
+                >
+                  {entry[side]}
+                  {entry.leader === side ? <span className="sr-only"> (better)</span> : null}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute }) {
   // A team's leaders card carries its whole qualifying group and shows the top
   // five, because five is the answer and the rest is the list.
@@ -130,7 +200,8 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
 
   const expanded = expandedFor != null && expandedFor === answer.title;
   const collapseAfter = answer.collapseAfter ?? null;
-  const rows = answer.rows ?? null;
+  // A compare card's rows are its own value lines, drawn by CompareRows.
+  const rows = answer.kind === 'compare' ? null : (answer.rows ?? null);
   const hiddenCount = rows && collapseAfter && !expanded
     ? Math.max(0, rows.length - collapseAfter)
     : 0;
@@ -146,6 +217,14 @@ export default function GlobalSearchAnswerCard({ answer, onSelectPlayer, onRoute
       </header>
 
       {answer.values ? <StatValues values={answer.values} /> : null}
+      {answer.kind === 'compare' ? (
+        <CompareRows
+          sides={answer.sides}
+          rows={answer.rows}
+          onSelectPlayer={onSelectPlayer}
+          onRoute={onRoute}
+        />
+      ) : null}
       {visibleRows && answer.columns ? (
         <StandingsRows
           columns={answer.columns}

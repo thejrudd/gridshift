@@ -78,6 +78,23 @@ test.describe('desktop', () => {
     await expect(page.locator('html')).toHaveClass(/dark/);
   });
 
+  test('compares two teams side by side and opens either one', async ({ page }) => {
+    await openWithShortcut(page);
+    await searchInput(page).fill('seahawks vs bills');
+    const card = palette(page).getByRole('region', { name: 'Search answer' });
+    await expect(card.getByRole('heading', { name: 'Seattle Seahawks vs Buffalo Bills' })).toBeVisible();
+    // Only the two teams' own games are listed, never either team's whole season.
+    const games = palette(page).getByRole('option').filter({ hasText: / at / });
+    for (const label of await games.allInnerTexts()) {
+      expect(label).toMatch(/Seattle Seahawks/);
+      expect(label).toMatch(/Buffalo Bills/);
+    }
+
+    await card.getByRole('button', { name: /Buffalo Bills/ }).click();
+    await expect(palette(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/statistics\/team\/buf$/);
+  });
+
   test('reports a query with no matches', async ({ page }) => {
     await openWithShortcut(page);
     await searchInput(page).fill('zzqxv');

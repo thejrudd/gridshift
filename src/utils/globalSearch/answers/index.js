@@ -10,6 +10,7 @@
 // each step down is a broader reading of the same query, so the narrowest one
 // that fires is the one the user most likely meant.
 
+import { resolveCompareAnswer } from './compare.js';
 import { resolveFantasyAnswer } from './fantasyLookup.js';
 import { resolveLeadersAnswer } from './leaders.js';
 import { resolvePlayerStatAnswer } from './playerStat.js';
@@ -26,6 +27,10 @@ export function resolveAnswer(slots, groups = [], data = {}) {
   const topOf = (kind) => groups.find((group) => group.kind === kind)?.results?.[0]?.record ?? null;
   const topFantasyTeam = topOf('fantasyTeam');
   const topPlayer = topOf('player');
+
+  // "X vs Y" is a question about two things at once; every other resolver
+  // reads one top result and would answer about only one side of it.
+  if (slots.compare) return resolveCompareAnswer(slots, groups, data);
 
   // Standings is a table about a competition, so it needs no result at all —
   // "afc standings" names nothing the index holds.
