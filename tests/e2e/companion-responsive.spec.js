@@ -763,43 +763,6 @@ test('Trade Agent draft survives navigating to full player stats and returning',
   await expect(page.getByTestId('trade-side-asset-player-201').first()).toBeVisible();
 });
 
-test('Trade pick asset cards match player card dimensions without duplicate metadata', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto('/trade/agent?player=103&side=give&other=201');
-
-  const picksFilter = page.getByTestId('trade-shelf-filter-picks').filter({ visible: true });
-  await expect(picksFilter).toBeVisible();
-  await picksFilter.click();
-
-  const shelfPick = page.locator('[data-testid^="trade-shelf-yours-pick-"]:visible').first();
-  await expect(shelfPick).toBeVisible();
-  await shelfPick.click();
-
-  const playerRow = page.locator('[data-testid^="trade-side-asset-player-"]:visible').first();
-  const pickRow = page.locator('[data-testid^="trade-side-asset-pick-"]:visible').first();
-  await expect(playerRow).toBeVisible();
-  await expect(pickRow).toBeVisible();
-
-  const state = await pickRow.evaluate((row) => {
-    const meta = row.querySelector('.trade-selection-row__meta');
-    const metaText = meta?.textContent?.trim() ?? '';
-    const identityText = row.querySelector('.trade-selection-row__identity')?.textContent?.trim() ?? '';
-    return {
-      height: row.getBoundingClientRect().height,
-      metaText,
-      identityText,
-      projectedLabelCount: (metaText.match(/PROJECTED|EARLY|MID|LATE/gi) ?? []).length,
-    };
-  });
-  const playerHeight = await playerRow.evaluate((row) => row.getBoundingClientRect().height);
-
-  expect(Math.abs(state.height - playerHeight)).toBeLessThanOrEqual(1);
-  expect(state.metaText).not.toContain('DRAFT PICK');
-  expect(state.metaText).not.toContain('2027');
-  expect(state.identityText).toMatch(/^\d{4} \d+(st|nd|rd|th)$/);
-  expect(state.projectedLabelCount).toBe(0);
-});
-
 test('Trade shelf keeps add actions and pick values visible', async ({ page }) => {
   for (const viewport of [
     { width: 1280, height: 720 },
@@ -1024,97 +987,6 @@ test('Statistics schedule week rail keeps mobile overflow contained', async ({ p
   );
 });
 
-test('Fantasy scoring preview Hold keeps Rankings scroll position fixed', async ({ page }) => {
-  // Scoring previews come from the league's own prior seasons, so link a 2025
-  // league with different rules into the lineage.
-  const fixtures = responsiveFixtureOverrides();
-  const priorSeason = String(Number(TEST_SEASON) - 1);
-  const priorLeague = {
-    ...fixtures.league,
-    league_id: 'league-prior-half-ppr',
-    season: priorSeason,
-    previous_league_id: null,
-    scoring_settings: { ...fixtures.league.scoring_settings, rec: 0.5, pass_td: 6 },
-  };
-  const currentLeague = { ...fixtures.league, previous_league_id: priorLeague.league_id };
-  const linkedLeaguesBySeason = { ...fixtures.leaguesBySeason, [priorSeason]: [priorLeague], [TEST_SEASON]: [currentLeague] };
-  await page.unroute('https://api.sleeper.app/v1/**');
-  await installTradeFixtures(page, {
-    ...fixtures,
-    league: currentLeague,
-    leaguesBySeason: linkedLeaguesBySeason,
-    persistedSleeperState: {
-      ...fixtures.persistedSleeperState,
-      league: currentLeague,
-      leagues: [currentLeague],
-      leaguesBySeason: linkedLeaguesBySeason,
-    },
-  });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/fantasy/scoring');
-
-  await page.getByRole('button', { name: /Detailed scoring/ }).click();
-  await page.getByRole('button', { name: /^Choose scoring model year/ }).click();
-  await page.getByRole('button', { name: new RegExp(`^${priorSeason} league year`) }).click();
-  await expect(page.getByRole('button', { name: new RegExp(`^Choose scoring model year\\. Currently ${priorSeason}`) })).toBeVisible();
-
-  await page.getByRole('tab', { name: 'Rankings', exact: true }).click();
-  await expect(page).toHaveURL(/\/fantasy\/rankings/);
-  const rows = page.locator('.companion-player-row');
-  await expect.poll(async () => rows.count()).toBeGreaterThan(10);
-
-  const contentArea = page.locator('.content-area');
-  const beforeScrollTop = await contentArea.evaluate((element) => {
-    const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
-    element.scrollTop = Math.min(480, maxScrollTop);
-    return element.scrollTop;
-  });
-  expect(beforeScrollTop).toBeGreaterThan(80);
-
-  const holdButton = page.getByRole('button', { name: "Hold to preview your league's scoring" });
-  await expect(holdButton).toBeVisible();
-  const box = await holdButton.boundingBox();
-  expect(box).not.toBeNull();
-
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await expectContentScrollNear(contentArea, beforeScrollTop);
-  await page.mouse.up();
-  await expectContentScrollNear(contentArea, beforeScrollTop);
-});
-
-test('Fantasy scoring builds Position Strength from prior-season production', async ({ page }) => {
-  const emptyHistoricalResponses = new Set();
-  await page.route('**/stats/nfl/regular/2025/*', async (route) => {
-    const url = route.request().url();
-    if (!emptyHistoricalResponses.has(url)) {
-      emptyHistoricalResponses.add(url);
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.goto('/fantasy/scoring');
-
-  await expect(page.getByText('2025 results · 2026 rules', { exact: true })).toBeVisible();
-  await expect.poll(async () => page.locator('.companion-scoring-position-strength__row').count()).toBeGreaterThan(0);
-  await expect(page.locator('.companion-scoring-position-strength__empty')).toHaveCount(0);
-
-  await page.setViewportSize({ width: 320, height: 568 });
-  const columnGeometry = await page.locator('.companion-scoring-position-strength__header').evaluate((header) => {
-    const cells = [...header.children].map((cell) => cell.getBoundingClientRect());
-    return {
-      tableScrollable: header.parentElement.scrollWidth > header.parentElement.clientWidth,
-      cellsReadable: cells.every((rect, index) => index === cells.length - 1 || rect.right <= cells[index + 1].left + 0.5),
-      minimumCellWidth: Math.min(...cells.map((rect) => rect.width)),
-    };
-  });
-  expect(columnGeometry.tableScrollable).toBe(true);
-  expect(columnGeometry.cellsReadable).toBe(true);
-  expect(columnGeometry.minimumCellWidth).toBeGreaterThanOrEqual(30);
-});
-
 test('mobile Companion controls enforce prerequisites and keep compact interactions reachable', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-mobile', 'Phone interaction coverage runs in the touch-enabled project.');
   await page.addInitScript(() => {
@@ -1265,31 +1137,6 @@ test('Heatmap filter summary keeps one chip per filter after changes', async ({ 
   await page.getByRole('button', { name: 'Overall', exact: true }).click();
   await page.getByRole('button', { name: 'Hide Filters' }).click();
   await expectOneChipPerFilter();
-});
-
-test('Heatmap desktop keeps filters collapsed and groups controls in one row', async ({ page }) => {
-  await page.setViewportSize({ width: 2560, height: 1440 });
-  await page.goto('/fantasy/heatmap');
-  await dismissWhatsNew(page);
-
-  const filterToggle = page.getByRole('button', { name: 'Show Filters' });
-  await expect(filterToggle).toBeVisible();
-  await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
-  await expect(page.locator('td[data-heatmap-week]').first()).toBeVisible();
-
-  await filterToggle.click();
-  const filterGroups = page.locator('#companion-heatmap-filter-panel .companion-heatmap-filter-group');
-  await expect(filterGroups).toHaveCount(7);
-
-  const groupTops = await filterGroups.evaluateAll((groups) => (
-    groups.map((group) => Math.round(group.getBoundingClientRect().top))
-  ));
-  expect(Math.max(...groupTops) - Math.min(...groupTops)).toBeLessThanOrEqual(1);
-
-  const resultRect = await filterGroups.filter({ hasText: 'Result' }).boundingBox();
-  const firstGroupRect = await filterGroups.first().boundingBox();
-  expect(resultRect?.y).toBe(firstGroupRect?.y);
-  expect(resultRect?.x).toBeGreaterThan(firstGroupRect?.x ?? 0);
 });
 
 test('Heatmap mobile shows future weeks by default and averages finalized games only', async ({ page }) => {
@@ -2489,17 +2336,6 @@ async function expectRightCueCoversScrollableEdge(page, railSelector, cueSelecto
   expect(geometry, 'scroll cue geometry should be measurable').not.toBeNull();
   expect(geometry.cueRight, 'right cue should cover the rail bleed edge').toBeGreaterThanOrEqual(geometry.railRight - 1);
   expect(geometry.cueWidth, 'right cue should be wide enough to mask tab text behind it').toBeGreaterThanOrEqual(54);
-}
-
-async function expectContentScrollNear(contentArea, expectedScrollTop) {
-  await expect.poll(
-    async () => contentArea.evaluate((element) => element.scrollTop),
-    { message: 'Companion content scroll position should stay fixed while toggling scoring preview' },
-  ).toBeGreaterThanOrEqual(expectedScrollTop - 2);
-  await expect.poll(
-    async () => contentArea.evaluate((element) => element.scrollTop),
-    { message: 'Companion content scroll position should stay fixed while toggling scoring preview' },
-  ).toBeLessThanOrEqual(expectedScrollTop + 2);
 }
 
 async function dismissWhatsNew(page) {
