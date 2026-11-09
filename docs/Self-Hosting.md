@@ -6,6 +6,39 @@ This guide supplements the [README](../README.md). GridShift needs an internet c
 
 The included `docker-compose.yml` describes a deployment behind a Cloudflare tunnel, not a ready-made local port 80 setup. It requires `GRIDSHIFT_SESSION_SECRET`, `GRIDSHIFT_LIVE_COOKIE_SECRET`, and `CLOUDFLARE_TUNNEL_TOKEN` in the Compose environment. Review the file and `.env.example`, provide your own secrets and tunnel configuration, and then run `docker compose up -d --build`. The Compose file does not publish a host port; a direct-access deployment needs an appropriate port mapping and reverse-proxy configuration. Do not commit secrets.
 
+### Down page
+
+When the host or tunnel is down, Cloudflare shows its own error page (error 1033, HTTP 530; or 502 when `cloudflared` cannot reach the app). The optional Worker in `cloudflare/down-page-worker/` serves a GridShift page instead. It works on Cloudflare's Free plan.
+
+- Every request passes straight through to the tunnel. Only a 502, 503, 504 or 530 response, or a failed origin fetch, is replaced.
+- Page loads get the down page with status 503. `/api/` requests keep the origin's error response, or get a JSON `503 {"error":"unavailable"}` when the origin can't be reached.
+- The Worker is deployed with Wrangler, separately from the Docker deploy, and does not depend on the app version.
+
+| File | Owns |
+| --- | --- |
+| `cloudflare/down-page-worker/src/index.js` | Which responses are replaced, page vs API detection, response headers |
+| `cloudflare/down-page-worker/src/downPage.js` | The page's HTML, copy and styles |
+| `cloudflare/down-page-worker/wrangler.toml` | Worker name and route (`gridshiftapp.com/*` for the official deployment) |
+| `tests/unit/downPageWorker.test.mjs` | Pass-through, replacement and API behavior |
+
+#### Changing the page
+
+The page is one self-contained HTML string because the app's stylesheet and fonts are unreachable while it is showing. It cannot import `src/index.css`, so its tokens are copied by hand.
+
+- Keep its colors in step with the light and dark tokens in `src/index.css`. The wordmark mirrors `.sidebar-brand__wordmark`, the heading mirrors `.predictions-empty-state h3`, and the button mirrors `.predictions-empty-state__action`. Update them together if those change.
+- Light and dark follow the visitor's system setting, since the app's saved theme is unavailable.
+- Keep it small and dependency-free. Google Fonts is the only external resource, and the page falls back to system fonts without it.
+- After a change, run `node --test tests/unit/downPageWorker.test.mjs` and deploy again. Redeploying replaces the live Worker within seconds.
+
+#### Deploying
+
+1. For your own hostname, set the `routes` entry in `wrangler.toml` (for example `gridshift.example.com/*`), or add the route in the dashboard after deploying.
+2. Run `npx wrangler login` once, then `npx wrangler deploy --config cloudflare/down-page-worker/wrangler.toml`.
+3. Set the route to fail open: domain > Workers Routes > edit the route > Request limit failure mode. Free-plan Workers allow 100,000 requests a day, and the default fail-closed setting shows an error page past that limit.
+4. Test it: stop the `gridshift` container (502), then stop `cloudflared` (530), and load the site in a private window. Installed copies of the app may load from the service worker's cache instead.
+
+To remove it, delete the route or the Worker in the Cloudflare dashboard, and requests go straight to the tunnel again.
+
 ## Self-hosting without BALLDONTLIE
 
 BALLDONTLIE is optional and its key stays on the server. The matrix describes the current implementation when no key is configured; a configured key also needs the appropriate account capabilities, and provider outages can limit the same features. Other data sources, an internet connection, or the GridShift API sidecar may still be required.

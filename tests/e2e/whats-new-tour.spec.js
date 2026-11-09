@@ -124,13 +124,19 @@ test(HISTORICAL_TOUR_TEST, async ({ page }) => {
   await tour.getByRole('button', { name: 'Next' }).click();
   await expect(tour).toContainText('Trade History');
   await tour.getByRole('button', { name: 'Next' }).click();
-  await expect(tour).toContainText('Browse Every Linked Season');
-  const tradeHistoryContentNext = tour.getByRole('button', { name: 'Next' });
-  if (await tradeHistoryContentNext.isVisible()) await tradeHistoryContentNext.click();
+  // Trade is current-season only, but that is known only once the current
+  // league season loads. If the tour gets there first, History renders and its
+  // "Browse Every Linked Season" step shows; otherwise the step's anchor never
+  // appears and the tour skips it after its 10s anchor timeout. Accept either.
+  const isDraftCopy = (text) => text?.includes('2025 Historical Draft Results') || text?.includes('Review 2025 Draft History');
   await expect.poll(async () => {
     const text = await tour.textContent();
-    return text?.includes('2025 Historical Draft Results') || text?.includes('Review 2025 Draft History');
-  }, { timeout: 10_000 }).toBe(true);
+    return isDraftCopy(text) || text?.includes('Browse Every Linked Season');
+  }, { timeout: 25_000 }).toBe(true);
+  if ((await tour.textContent())?.includes('Browse Every Linked Season')) {
+    await tour.getByRole('button', { name: 'Next' }).click();
+  }
+  await expect.poll(async () => isDraftCopy(await tour.textContent()), { timeout: 25_000 }).toBe(true);
   if ((await tour.textContent())?.includes('2025 Historical Draft Results')) {
     await expect(tour).toContainText('You are viewing 2025 league history, not the current 2026 league year.');
     await expect(tour).toContainText('Results shows the selections recorded for this past season.');

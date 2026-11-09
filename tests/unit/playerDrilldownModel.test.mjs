@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDrilldownStatLine,
+  buildDrilldownVolume,
   buildDrilldownWeeks,
   buildNextWeekPreview,
   buildProjectionBridge,
@@ -203,4 +204,24 @@ test('next-week preview reports a bye and unknown schedules', () => {
   assert.equal(preview.opponent, 'BAL');
   assert.equal(preview.isHome, true);
   assert.equal(preview.bye, false);
+});
+
+test('volume shows the work behind the points for each position', () => {
+  const values = (position, entry) => buildDrilldownVolume(position, entry).map(item => `${item.label} ${item.value}`);
+  // Week 9 2026, Trevor Lawrence.
+  assert.deepEqual(values('QB', { pass_cmp: 16, pass_att: 26, rush_att: 1, rush_yd: -1 }), ['Completions / attempts 16/26', 'Carry 1']);
+  assert.deepEqual(values('RB', { rush_att: 6, rush_yd: 18, rec: 2, rec_tgt: 2 }), ['Carries 6', 'Catches / targets 2/2']);
+  assert.deepEqual(values('RB', { rush_att: 12 }), ['Carries 12']);
+  assert.deepEqual(values('WR', { rec: 5, rec_tgt: 8, rush_att: 0 }), ['Catches / targets 5/8']);
+  assert.deepEqual(values('TE', { rec: 0, rec_tgt: 3 }), ['Catches / targets 0/3']);
+  assert.deepEqual(values('K', { fgm: 2, fga: 3, xpm: 3, xpa: 3 }), ['Field goals made / tried 2/3', 'Extra points made / tried 3/3']);
+});
+
+test('volume leaves out what the stat line does not carry', () => {
+  const values = (position, entry) => buildDrilldownVolume(position, entry).map(item => `${item.label} ${item.value}`);
+  // No targets on the line: catches alone, never "/0".
+  assert.deepEqual(values('WR', { rec: 4 }), ['Catches 4']);
+  assert.deepEqual(values('QB', { pass_yd: 200 }), []);
+  assert.deepEqual(buildDrilldownVolume('LB', { idp_tkl: 7 }), []);
+  assert.deepEqual(buildDrilldownVolume('WR', null), []);
 });

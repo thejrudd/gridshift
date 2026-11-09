@@ -14,10 +14,12 @@ export const statTone = (index, pts = 0) => (pts < 0 ? 'var(--color-accent-red)'
 // width without being a held-close phone screen.
 const COMPACT_DIALOG_WIDTH = 560;
 
-/** `[ref, width, compact]` for a chart drawn at its container's pixel width. */
+/** `[ref, width, compact, height]` for a chart drawn at its container's
+ *  pixel width (height is the container's, for a chart that fills it). */
 export function useChartWidth(fallback = 360) {
   const ref = useRef(null);
   const [width, setWidth] = useState(fallback);
+  const [height, setHeight] = useState(0);
   const [compact, setCompact] = useState(false);
   useEffect(() => {
     const element = ref.current;
@@ -25,6 +27,8 @@ export function useChartWidth(fallback = 360) {
     const update = () => {
       const next = Math.floor(element.clientWidth);
       if (next > 0) setWidth(current => (current === next ? current : next));
+      const nextHeight = Math.floor(element.clientHeight);
+      setHeight(current => (current === nextHeight ? current : nextHeight));
       const dialog = element.closest('.matchup-breakdown-dialog');
       setCompact(Boolean(dialog && dialog.clientWidth <= COMPACT_DIALOG_WIDTH));
     };
@@ -33,6 +37,6 @@ export function useChartWidth(fallback = 360) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  return [ref, width, compact];
+  return [ref, width, compact, height];
 }
 

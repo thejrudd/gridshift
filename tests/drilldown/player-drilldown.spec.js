@@ -196,7 +196,55 @@ for (const theme of THEMES) {
 }
 
 test.describe('hero points breakdown', () => {
-  for (const phase of Object.keys(EXPECTED)) {
+  // Live and final games show the breakdown in the hero, one tap from the
+  // Matchups row; the total is plain text there.
+  for (const phase of ['live', 'final']) {
+    test(`${phase}: shows the breakdown under the total without a tap`, async ({ page }) => {
+      await openDrilldown(page, { phase });
+      const breakdown = page.locator('.pdd-pts');
+      await expect(page.locator('.pdd-big--btn')).toHaveCount(0);
+      // Volume (catches of targets for this receiver) leads the breakdown,
+      // and the table ends on its total. On a phone the breakdown sits below
+      // the chart, so each part is scrolled to before it is hit-tested.
+      const volume = breakdown.locator('.pdd-vol');
+      await expect(volume).toContainText('Catches / targets');
+      await volume.scrollIntoViewIfNeeded();
+      await expectUnobscured(volume, 'volume');
+      const totalRow = breakdown.locator('.pdd-bdt__r.is-total');
+      await expect(totalRow).toContainText('Total');
+      await totalRow.scrollIntoViewIfNeeded();
+      await expectUnobscured(totalRow, 'points breakdown total');
+    });
+  }
+
+  for (const phase of ['live', 'final']) {
+    test(`${phase}: the chart and the breakdown share the hero`, async ({ page }, testInfo) => {
+      await openDrilldown(page, { phase });
+      const box = async (selector) => page.locator(selector).first().boundingBox();
+      const score = await box('.pdd-hero > .pdd-k');
+      const chart = await box('.pdd-hero > .pdd-sec');
+      const breakdown = await box('.pdd-hero > .pdd-pts');
+      const hero = await box('.pdd-hero');
+      if (testInfo.project.name === 'phone') {
+        // One column: score, chart, then a breakdown as wide as the hero.
+        expect(chart.y).toBeGreaterThan(score.y + score.height - 1);
+        expect(breakdown.y).toBeGreaterThan(chart.y + chart.height - 1);
+        expect(Math.abs(breakdown.width - hero.width)).toBeLessThan(2);
+      } else {
+        // Two columns: the chart runs beside score and breakdown to the
+        // breakdown's bottom, and its drawing fills that height.
+        expect(chart.x).toBeGreaterThan(breakdown.x + breakdown.width);
+        expect(Math.abs((chart.y + chart.height) - (breakdown.y + breakdown.height))).toBeLessThan(2);
+        await expect.poll(async () => {
+          const drawn = await box('.pdd-hero .pdd-chart.is-fill svg');
+          const area = await box('.pdd-hero .pdd-chart.is-fill');
+          return Math.abs(drawn.height - area.height);
+        }).toBeLessThan(2);
+      }
+    });
+  }
+
+  for (const phase of ['pregame']) {
     test(`${phase}: opens on hover with a mouse and closes on leave`, async ({ page }, testInfo) => {
       test.skip(testInfo.project.name === 'phone', 'mouse hover');
       await openDrilldown(page, { phase });
@@ -223,7 +271,7 @@ test.describe('hero points breakdown', () => {
 
   test('opens on keyboard focus and closes with Escape', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === 'phone', 'keyboard');
-    await openDrilldown(page, { phase: 'final' });
+    await openDrilldown(page, { phase: 'pregame' });
     const big = page.locator('.pdd-big--btn');
     await page.keyboard.press('Tab');
     for (let index = 0; index < 8 && !(await big.evaluate(el => el === document.activeElement)); index += 1) await page.keyboard.press('Tab');

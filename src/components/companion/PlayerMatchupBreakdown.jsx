@@ -27,6 +27,7 @@ import { buildPlayerMatchupBenchOption } from '../../utils/playerMatchupBenchOpt
 import {
   DRILLDOWN_FORM_WEEKS,
   buildDrilldownStatLine,
+  buildDrilldownVolume,
   buildDrilldownWeeks,
   buildNextWeekPreview,
   buildProjectionBridge,
@@ -482,28 +483,51 @@ function KeyTiles({ tiles }) {
   </div>;
 }
 
-function PointsPopover({ title, line }) {
-  if (!line) return null;
-  // A detail view names every scoring stat; only a season average (no single
-  // stat line to itemize) or points no stat explains fall back to Other.
+// A detail view names every scoring stat; only a season average (no single
+// stat line to itemize) or points no stat explains fall back to Other.
+function breakdownRows(line) {
   const rest = line.extras
     ? [...line.extras, ...(line.unexplained != null ? [{ key: 'other', label: 'Other scoring', value: null, pts: line.unexplained }] : [])]
     : line.other != null ? [{ key: 'other', label: 'Other scoring', value: null, pts: line.other }] : [];
-  const rows = [...line.items.filter(item => item.pts !== 0 || item.value), ...rest];
-  return <div className="pdd-tip pdd-tip--bd" role="dialog" aria-label={title}>
-    <b>{title}</b>
-    <div className="pdd-bdt">
-      {rows.map(row => <span key={row.key} className="pdd-bdt__r">
-        <span>{row.label}</span>
-        <span className="pdd-bdt__s pmd-num">{row.value == null ? '' : formatCount(row.value)}</span>
-        <span className="pdd-bdt__p pmd-num">{row.pts < 0 ? signed(row.pts) : formatNumber(row.pts)}</span>
-      </span>)}
-      <span className="pdd-bdt__r is-total"><span>Total</span><span /><span className="pdd-bdt__p pmd-num">{formatNumber(line.total)}</span></span>
-    </div>
+  return [...line.items.filter(item => item.pts !== 0 || item.value), ...rest];
+}
+
+function BreakdownTable({ line }) {
+  return <div className="pdd-bdt">
+    {breakdownRows(line).map(row => <span key={row.key} className="pdd-bdt__r">
+      <span>{row.label}</span>
+      <span className="pdd-bdt__s pmd-num">{row.value == null ? '' : formatCount(row.value)}</span>
+      <span className="pdd-bdt__p pmd-num">{row.pts < 0 ? signed(row.pts) : formatNumber(row.pts)}</span>
+    </span>)}
+    <span className="pdd-bdt__r is-total"><span>Total</span><span /><span className="pdd-bdt__p pmd-num">{formatNumber(line.total)}</span></span>
   </div>;
 }
 
-function Hero({ model, popover, tiles }) {
+function PointsPopover({ title, line }) {
+  if (!line) return null;
+  return <div className="pdd-tip pdd-tip--bd" role="dialog" aria-label={title}>
+    <b>{title}</b>
+    <BreakdownTable line={line} />
+  </div>;
+}
+
+// Live and final games show the stat line and its points in the hero, one tap
+// from the Matchups row, rather than behind a tap on the total.
+function PointsBreakdown({ title, line, volume = [] }) {
+  if (!line) return null;
+  return <section className="pdd-pts" aria-label={title}>
+    <span className="pmd-eyebrow">{title}</span>
+    {volume.length > 0 && <dl className="pdd-vol" aria-label="Volume">
+      {volume.map(item => <div key={item.key}>
+        <dt>{item.label}</dt>
+        <dd className="pmd-num">{item.value}</dd>
+      </div>)}
+    </dl>}
+    <BreakdownTable line={line} />
+  </section>;
+}
+
+function Hero({ model, popover, hasBreakdown = false, tiles }) {
   const [open, setOpen] = useState(false);
   const pointer = useRef('mouse');
   if (!model) return <div className="pdd-k"><KeyTiles tiles={tiles} /></div>;
@@ -513,7 +537,7 @@ function Hero({ model, popover, tiles }) {
   // keyboard focus opens it, matching the design's tooltip behavior.
   return <div className="pdd-k">
     <span className="pmd-eyebrow">{model.overline}</span>
-    {popover && model.value != null
+    {popover && !hasBreakdown && model.value != null
       ? <button
         type="button"
         className={`${bigClass} pdd-big--btn`}
@@ -929,8 +953,11 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
     },
   ];
   const popoverLine = pastRow ? lineByWeek.get(pastRow.week) : isPregame ? projectedLine : actualLine;
-  const popover = popoverLine
-    ? <PointsPopover line={popoverLine} title={pastRow ? `Where the Week ${pastRow.week} points came from` : isPregame ? 'Where the projection comes from' : phase === 'final' ? 'Where the points came from' : 'Where the live points come from'} />
+  const popover = popoverLine && isPregame
+    ? <PointsPopover line={popoverLine} title={pastRow ? `Where the Week ${pastRow.week} points came from` : 'Where the projection comes from'} />
+    : null;
+  const pointsBreakdown = popoverLine && !isPregame
+    ? <PointsBreakdown line={popoverLine} volume={buildDrilldownVolume(position, weekEntry)} title={phase === 'final' ? 'Where the points came from' : 'Where the points come from'} />
     : null;
 
   /* ── chart beside the hero ── */
@@ -984,7 +1011,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
   } else if (phase === 'live') {
     heroChart = <Section title="Scoring pace" meta={projectedValue != null ? `proj ${formatNumber(projectedValue)}` : null}>
       {pace
-        ? <PaceChart pace={pace} ariaLabel={`${formatNumber(total)} points${projectedValue != null ? ` against a ${formatNumber(projectedValue)} projection` : ''}`} />
+        ? <PaceChart fill pace={pace} ariaLabel={`${formatNumber(total)} points${projectedValue != null ? ` against a ${formatNumber(projectedValue)} projection` : ''}`} />
         : <p className="matchup-performance-note">{timeline.status === 'loading' ? 'Loading the scoring pace…' : 'The scoring pace needs a projection or play data for this game.'}</p>}
       {paceLegend && <Legend items={paceLegend} />}
       {playsLoaded && pace?.unexplained ? <p className="matchup-performance-note">{signed(pace.unexplained)} pts at now are stat updates not matched to a play.</p> : null}
@@ -992,7 +1019,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
   } else if (phase === 'final') {
     heroChart = <Section title="Game flow" meta={projectedValue != null ? `proj ${formatNumber(projectedValue)}` : null}>
       {pace?.marks?.length
-        ? <PaceChart pace={pace} ariaLabel={`Finished with ${formatNumber(total)} points${projectedValue != null ? ` against a ${formatNumber(projectedValue)} projection` : ''}`} />
+        ? <PaceChart fill pace={pace} ariaLabel={`Finished with ${formatNumber(total)} points${projectedValue != null ? ` against a ${formatNumber(projectedValue)} projection` : ''}`} />
         : <p className="matchup-performance-note">{timeline.status === 'loading' ? 'Loading the game flow…' : timeline.message ?? 'Play-by-play is unavailable for this game.'}</p>}
       {pace?.marks?.length > 0 && <Legend items={paceLegend} />}
       {pace?.marks?.length > 0 && pace.unexplained ? <p className="matchup-performance-note">{signed(pace.unexplained)} pts are stat corrections not matched to a play.</p> : null}
@@ -1257,9 +1284,13 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
 
       <div className="pmd-body gridshift-reveal gridshift-reveal--auto" data-game-phase={phase}>
         <div className="pdd-bd">
-          <div className={`pdd-hero${heroChart ? '' : ' is-solo'}`}>
-            <Hero model={heroModel} popover={popover} tiles={tiles} />
+          {/* Score, then the phase chart, then the live/final points
+              breakdown. Narrow: one column in that order. Wide: score over
+              breakdown on the left, the chart beside both at their height. */}
+          <div className={`pdd-hero${heroChart ? '' : ' is-solo'}${pointsBreakdown ? ' has-breakdown' : ''}`}>
+            <Hero model={heroModel} popover={popover} hasBreakdown={Boolean(pointsBreakdown)} tiles={tiles} />
             {heroChart}
+            {pointsBreakdown}
           </div>
           {ringItems.length > 0 && <>
             <div className="pdd-rule" />
