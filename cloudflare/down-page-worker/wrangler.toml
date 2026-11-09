@@ -1,0 +1,9 @@
+name = "gridshift-down-page"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = false
+
+# The hostname the Cloudflare tunnel serves. Self-hosters: replace with yours.
+routes = [
+  { pattern = "gridshiftapp.com/*", zone_name = "gridshiftapp.com" },
+]

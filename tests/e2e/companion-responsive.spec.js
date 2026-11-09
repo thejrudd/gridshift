@@ -2140,9 +2140,10 @@ test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({
   await expect(dstRows).toHaveCount(2);
   await expect(dstRows.locator('.companion-matchup-player-metric--projection')).toHaveCount(2);
   await expect(dstRows.nth(0).locator('.companion-player-row__identity-label')).toHaveText('Washington Commanders');
-  await expect(dstRows.nth(0).locator('.companion-player-row__meta')).toContainText('DEF WAS @ PHI');
+  // A finished game shows its result between the team and the opponent.
+  await expect(dstRows.nth(0).locator('.companion-player-row__meta')).toContainText(/DEF WAS (?:[WLT] \d+-\d+ )?@ PHI/);
   await expect(dstRows.nth(1).locator('.companion-player-row__identity-label')).toHaveText('Cincinnati Bengals');
-  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText('DEF CIN v. TB');
+  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText(/DEF CIN (?:[WLT] \d+-\d+ )?v\. TB/);
 
   const geometry = await dstRows.evaluateAll((rows) => rows.map((row) => {
     const rowRect = row.getBoundingClientRect();
@@ -2420,7 +2421,13 @@ async function expectCompanionIdentityFits(page, route) {
           text: element.textContent?.trim(),
           textOverflow: style.textOverflow,
           whiteSpace: style.whiteSpace,
-          intentionalEllipsis: Boolean(row?.matches('.companion-roster-player-row, .companion-matchup-player-row') && row.getAttribute('title')?.includes(element.textContent?.trim())),
+          // A one-line name may ellipsize when the full name is still available:
+          // Rosters keep it in the title, Matchups (no native title, which would
+          // cover the desktop hover card) in the row's accessible name.
+          intentionalEllipsis: Boolean(
+            (row?.matches('.companion-roster-player-row') && row.getAttribute('title')?.includes(element.textContent?.trim()))
+            || (row?.matches('.companion-matchup-player-row') && row.getAttribute('aria-label')?.includes(element.textContent?.trim())),
+          ),
           clippedByRow: rowRect
             ? rect.left < rowRect.left - 1 || rect.right > rowRect.right + 1
             : false,
@@ -2729,7 +2736,9 @@ for (const width of [320, 390, 430]) {
         expect(row.whitespace, row.name).toBe('nowrap');
         const minimum = selector.includes('roster') ? (width === 320 ? 70 : 120) : (width === 320 ? 35 : 60);
         if (!row.fits) expect(row.width, `${route}: ${row.name}`).toBeGreaterThanOrEqual(minimum);
-        expect(row.fullName).toContain(row.name);
+        // Matchups rows carry no native title (it would cover the desktop hover
+        // card); the accessible name still holds the full name.
+        if (!selector.includes('matchup')) expect(row.fullName).toContain(row.name);
         expect(row.accessibleName).toContain(row.name);
         expect(row.overlap, row.name).toBe(false);
         expect(row.metricsInside, row.name).toBe(true);

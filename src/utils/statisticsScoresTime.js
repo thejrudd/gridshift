@@ -23,3 +23,20 @@ export function formatStatisticsScoresLocalKickoff(value, { timeZone } = {}) {
     ...(timeZone ? { timeZone } : {}),
   }).format(date);
 }
+
+/**
+ * The weekday and time of a kickoff in the browser's local timezone
+ * ("Sun 4:25 PM"), for tight spots such as the phone Matchups card.
+ */
+export function formatLocalKickoffDayTime(value, { timeZone } = {}) {
+  if (value == null || value === '') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
+  }).format(date);
+}

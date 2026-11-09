@@ -2876,6 +2876,7 @@ body {
 .companion-league-switcher__league-list {
   display: grid;
   gap: 10px;
+  container: league-switch-list / inline-size;
 }
 
 .companion-league-switcher__empty {
@@ -3152,29 +3153,6 @@ body {
   .companion-league-switcher__choices {
     gap: 24px;
   }
-
-  .companion-league-switch-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .companion-league-switch-row__select {
-    grid-template-columns: 48px minmax(0, 1fr) auto;
-    gap: 11px;
-    padding: 10px;
-  }
-
-  .companion-league-switch-row__avatar,
-  .companion-league-switch-row__avatar > img,
-  .companion-league-switch-row__avatar-fallback {
-    width: 48px;
-    height: 48px;
-    border-radius: 10px;
-  }
-
-  .companion-league-switch-row__copy {
-    min-width: 72px;
-  }
 }
 
 @media (max-width: 380px) {
@@ -3199,14 +3177,36 @@ body {
     min-height: 32px;
     padding-block: 5px;
   }
+}
 
+/* Sized by the list, not the viewport: the switcher also renders inside
+   narrow panels on wide screens, where viewport queries never fire. */
+@container league-switch-list (max-width: 560px) {
+  .companion-league-switch-row__select {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 11px;
+    padding: 10px;
+  }
+
+  .companion-league-switch-row__avatar,
+  .companion-league-switch-row__avatar > img,
+  .companion-league-switch-row__avatar-fallback {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+  }
+}
+
+/* Too narrow for a side column: move Copy ID under the league so the name
+   and ID keep the full row width. */
+@container league-switch-list (max-width: 480px) {
   .companion-league-switch-row {
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
   }
 
   .companion-league-switch-row__copy {
-    width: calc(100% - 8px);
-    margin: 0 4px 4px;
+    align-self: stretch;
+    margin: 0 6px 6px;
   }
 }
 
@@ -19818,6 +19818,60 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   text-decoration: none;
 }
 
+/* Head-to-head row: my card, the slot badge, their card. Wider screens give
+   the badge its own column; phones (≤480px, matching COMPACT_PHONE_QUERY) put
+   the cards edge to edge with a small opaque chip over the seam, so neither
+   card loses width to a gutter. */
+.matchup-h2h-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.matchup-h2h-slot {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .matchup-h2h-grid { gap: 0.5rem; }
+}
+
+@media (max-width: 480px) {
+  .matchup-h2h-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .matchup-h2h-slot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Phone chip: drawn 26×22 on an opaque surface; the hit area stays 44×44. */
+.companion-matchup-slot-badge.is-compact {
+  position: relative;
+  width: 26px;
+  height: 22px;
+  border-color: var(--color-separator);
+  border-radius: 7px;
+  background: var(--color-bg);
+}
+
+.companion-matchup-slot-badge.is-compact::before {
+  content: '';
+  position: absolute;
+  inset: -12px -10px; /* from the 24×20 padding box out to 44×44 */
+}
+
 .companion-matchup-compare {
   transition:
     background 150ms cubic-bezier(0.32, 0.72, 0, 1),
@@ -20968,9 +21022,11 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   min-width: 36px;
 }
 
-/* A name line pushed to two lines by its chips still fits the 56px card. */
+/* A name line pushed to two lines by its chips still fits the 56px card, and
+   with no stat line under it the injury badge's 44px hit area stays inside the
+   card (which clips it), so the game line sits tight under the name. */
 .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__meta {
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .companion-matchup {
@@ -20988,12 +21044,21 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .matchup-live {
   --matchup-sticky-offset: -16px; /* cancels .content-area pt-4 */
+  --matchup-gutter: 0.5rem; /* side inset of the sticky headers */
+  /* Sticky headers are inset by the gutter, but the lineup rows scroll
+     full-bleed beneath them. Paint the opaque surface out to the screen edge
+     so rows never show through the sides. */
+  --matchup-gutter-fill: calc(-1 * var(--matchup-gutter)) 0 0 var(--color-bg), var(--matchup-gutter) 0 0 var(--color-bg);
   --matchup-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   --matchup-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @media (min-width: 1024px) {
   .matchup-live { --matchup-sticky-offset: -24px; } /* lg:pt-6 */
+}
+
+@media (min-width: 640px) {
+  .matchup-live { --matchup-gutter: 1rem; }
 }
 
 .matchup-live-dot {
@@ -21029,6 +21094,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   padding: 8px 2px;
   border-bottom: 1px solid var(--color-separator);
   background: var(--color-bg);
+  box-shadow: var(--matchup-gutter-fill);
 }
 
 @media (min-width: 640px) {
@@ -21345,6 +21411,10 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .matchup-live-section[data-panel="lineup"] > .matchup-live-label {
+  box-shadow: var(--matchup-gutter-fill);
+}
+
+.matchup-live-section[data-panel="lineup"] > .matchup-live-label {
   margin-inline: 0.5rem;
 }
 
@@ -21419,6 +21489,68 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   color: var(--color-label);
 }
 
+/* Chart heading: the Win chance / Lead switch is the heading itself, set in
+   the section-heading type, with the active view underlined like the tabs. */
+.matchup-chart-switch {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.matchup-chart-switch__option {
+  position: relative;
+  min-height: 32px;
+  padding: 0 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--color-label-tertiary);
+  font-family: var(--matchup-display);
+  font-size: var(--type-emphasis);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 150ms var(--matchup-ease);
+}
+
+.matchup-chart-switch__option::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--color-signature);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.matchup-chart-switch__option[aria-pressed="true"] {
+  color: var(--color-label);
+}
+
+.matchup-chart-switch__option[aria-pressed="true"]::after {
+  transform: scaleX(1);
+}
+
+@media (hover: hover) {
+  .matchup-chart-switch__option:hover:not([aria-pressed="true"]) {
+    color: var(--color-label-secondary);
+  }
+}
+
+.matchup-chart-switch__option:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .matchup-chart-switch__option { min-height: 44px; }
+  /* The taller targets set the row height, so the label needs less air. */
+  .matchup-live-chart-section > .matchup-live-label { padding-top: 6px; }
+}
+
 /* Lineup / Scoring plays tabs under the chart. They stick under the replay
    bar; the panels' own label rows stick under them. */
 .matchup-live {
@@ -21435,6 +21567,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   margin: 12px 0.5rem 0;
   border-bottom: 1px solid var(--color-separator);
   background: var(--color-bg);
+  box-shadow: var(--matchup-gutter-fill);
 }
 
 @media (min-width: 640px) {
@@ -22682,6 +22815,20 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__columns {
   gap: 4px;
+}
+
+/* Matchup scores always sit in the row's last track, so a narrow card that
+   drops the team logo cannot slide its score into the logo's empty slot. */
+.companion-player-row.companion-matchup-player-row .companion-player-row__columns {
+  grid-column: -2 / -1;
+}
+
+/* Every matchup card keeps its position and game line at narrow widths, the
+   same as the team defense card, instead of the shared row hiding it. */
+@container (max-width: 290px) {
+  .companion-player-row.companion-matchup-player-row .companion-player-row__meta {
+    display: flex;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -30312,7 +30459,8 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   width: var(--matchup-avatar-size, 22px);
   height: var(--matchup-avatar-size, 22px);
 }
-.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity {
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__identity,
+.companion-player-row.companion-matchup-player-row.is-compact.is-team-defense .companion-player-row__identity {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -30331,12 +30479,61 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   flex-shrink: 0;
   margin-left: 2px;
 }
+/* The name's line box leaves room for descenders below its capitals, so a
+   box-centered chip reads low; lift it to the capitals' center. */
+.companion-player-row.companion-matchup-player-row.is-compact .companion-player-row__position--inline {
+  position: relative;
+  top: -1px;
+  margin-left: 4px;
+}
 
 @media (max-width: 360px) {
   .companion-player-row.companion-matchup-player-row.is-compact {
     --matchup-avatar-size: 18px;
     gap: 2px;
   }
+}
+
+/* Phone matchup card stat line (no photo on phones): Figtree caps under the
+   game line, a touch lighter than it, stopping at the score column. Each
+   segment ("4 CAR, 13 YDS") stays whole; lines break between segments. */
+.companion-player-row__detail {
+  min-width: 0;
+}
+
+.companion-matchup-player-row .companion-player-row__detail {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.3em;
+  margin-top: 3px;
+  color: var(--companion-player-muted, var(--color-label-secondary));
+  /* The smallest text on the card: labels 9px, numbers 10px, under an 11px
+     game line and a 10–12px name. */
+  font-size: calc(var(--type-micro) - 2px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  /* No opacity: below 1 it creates a stacking context that would paint over
+     the injury link's 44px hit area on the line above. */
+}
+
+.companion-matchup-live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--companion-player-fg, currentColor);
+  white-space: nowrap;
+}
+
+.companion-matchup-stat-line__segment {
+  white-space: nowrap;
+}
+
+.companion-matchup-stat-line__value {
+  font-size: calc(var(--type-micro) - 1px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Compact injury links keep their independent 44px target on the metadata
@@ -30366,3 +30563,69 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 .companion-matchup-player-row.is-compact .companion-player-row__meta-item:has(.companion-matchup-injury-link) {
   flex-shrink: 0;
 }
+
+/* Phone Matchups header (≤767px): a one-row replay bar, compact scorecards and
+   less air above the chart, so the chart starts about 100px higher. Touch
+   targets keep 44px. */
+@media (max-width: 767px) {
+  /* Controls: same 44px touch height, less space under them. */
+  .companion-matchup-controls { margin-bottom: 6px; }
+
+  /* Replay bar: one 44px top row, tighter track, less padding. */
+  .matchup-replay {
+    row-gap: 0;
+    margin-bottom: 6px;
+    padding-block: 2px 4px;
+  }
+  .matchup-replay__state { min-width: 0; }
+  .matchup-replay__when { gap: 1px; }
+  .matchup-replay__when strong { font-size: var(--type-body); }
+  .matchup-replay__when span {
+    font-size: var(--type-micro);
+    line-height: 1.2;
+  }
+  .matchup-replay__track-wrap { gap: 0; }
+  .matchup-replay__track { height: 16px; }
+  .matchup-replay__segments { inset: 6px 0; }
+  .matchup-replay__ticks { height: 12px; letter-spacing: 0.04em; }
+
+  /* Scorecards: less padding, smaller identity, name and score. */
+  .companion-matchup-masthead .companion-matchup-masthead__score-grid { min-height: 0; }
+  .companion-matchup-masthead .companion-matchup-masthead__side {
+    min-height: 0;
+    padding: 9px 10px 10px;
+  }
+  .companion-matchup-masthead .companion-matchup-masthead__identity {
+    gap: 6px;
+    font-size: var(--type-micro);
+  }
+  .companion-matchup-masthead .companion-matchup-masthead__identity-avatar {
+    width: 24px;
+    height: 24px;
+    border-width: 1px;
+  }
+  .companion-matchup-masthead .companion-matchup-masthead__team-name {
+    margin-top: 6px;
+    font-size: clamp(15px, 4.4vw, 19px);
+  }
+  .companion-matchup-masthead .companion-matchup-masthead__score-label { margin-top: 5px; }
+  .companion-matchup-masthead .companion-matchup-masthead__score {
+    margin-top: 2px;
+    font-size: clamp(30px, 9vw, 38px);
+  }
+  .companion-matchup-masthead .companion-matchup-masthead__projected-final { margin-top: 5px; }
+  .companion-matchup-masthead .companion-matchup-masthead__team-summary { margin-top: 6px; }
+  .companion-matchup-masthead .companion-matchup-masthead__details summary {
+    padding-block: 6px;
+    font-size: var(--type-micro);
+  }
+
+  /* Section labels: less air above the chart and the panels. */
+  .matchup-live-label {
+    min-height: 0;
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+  .matchup-live-tabs { margin-top: 4px; }
+}
+

@@ -2,70 +2,12 @@ import { useMemo, useRef } from 'react';
 import { usePointerFollow } from './usePointerFollow.js';
 import { calcPoints } from '../../../utils/scoringEngine';
 import { getHoverCardMode } from '../../../utils/matchupReplay.js';
+import { buildStatChips, getGameStatLine, sumStats } from '../../../utils/matchupStatChips.js';
 
 // Desktop hover card for a Matchups starter. Before kickoff it shows the
 // season, while the game is live this game, and once final a summary of that
 // game. Clicking the row still opens the existing player breakdown.
 // Rules: docs/Fantasy Live.md.
-
-const STAT_KEYS = [
-  'pass_yd', 'pass_td', 'pass_int', 'rush_yd', 'rush_td', 'rec', 'rec_yd', 'rec_td', 'fgm', 'xpm', 'fum_lost',
-  // Individual defenders (IDP) and team defense.
-  'idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast', 'idp_tkl_loss', 'idp_sack', 'idp_int', 'idp_ff', 'idp_pd', 'idp_pass_def', 'idp_def_td',
-  'sack', 'int', 'fum_rec', 'def_td', 'pts_allow',
-];
-const IDP_POSITIONS = new Set(['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']);
-
-function sumStats(rows) {
-  const totals = Object.fromEntries(STAT_KEYS.map((key) => [key, 0]));
-  rows.forEach((row) => STAT_KEYS.forEach((key) => { totals[key] += Number(row?.[key]) || 0; }));
-  return totals;
-}
-
-const plural = (count, one, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
-
-// Chips only name stats the position records: a defender never shows
-// receiving yards and a kicker never shows tackles.
-function buildStatChips(position, line, games = 1) {
-  const pos = String(position ?? '').toUpperCase();
-  const chips = [];
-  const round = (value) => Math.round(Number(value) || 0);
-  if (IDP_POSITIONS.has(pos)) {
-    const tackles = round(line.idp_tkl) || round(line.idp_tkl_solo) + round(line.idp_tkl_ast);
-    const sacks = Math.round((Number(line.idp_sack) || 0) * 10) / 10;
-    chips.push(plural(tackles, 'tackle'));
-    if (sacks || ['DL', 'DE', 'DT'].includes(pos)) chips.push(plural(sacks, 'sack'));
-    if (line.idp_tkl_loss) chips.push(`${round(line.idp_tkl_loss)} TFL`);
-    if (line.idp_int) chips.push(`${round(line.idp_int)} INT`);
-    // Sleeper reports passes defended as idp_pass_def; scoring settings call it idp_pd.
-    const passesDefended = round(line.idp_pd) + round(line.idp_pass_def);
-    if (passesDefended) chips.push(plural(passesDefended, 'pass defended', 'passes defended'));
-    if (line.idp_ff) chips.push(plural(round(line.idp_ff), 'forced fumble'));
-    if (line.idp_def_td) chips.push(`${round(line.idp_def_td)} TD`);
-    return chips.slice(0, 4);
-  }
-  if (pos === 'DEF' || pos === 'DST' || pos === 'D/ST') {
-    const sacks = Math.round((Number(line.sack) || 0) * 10) / 10;
-    chips.push(plural(sacks, 'sack'), plural(round(line.int) + round(line.fum_rec), 'takeaway'));
-    if (line.def_td) chips.push(`${round(line.def_td)} TD`);
-    if (games > 0 && line.pts_allow) chips.push(games === 1 ? `${round(line.pts_allow)} pts allowed` : `${(line.pts_allow / games).toFixed(1)} pts allowed a game`);
-    return chips;
-  }
-  if (pos === 'QB') {
-    chips.push(`${round(line.pass_yd)} pass yds`, `${round(line.pass_td)} pass TD`);
-    if (line.pass_int) chips.push(`${round(line.pass_int)} INT`);
-    if (line.rush_yd) chips.push(`${round(line.rush_yd)} rush yds`);
-  } else if (pos === 'K') {
-    chips.push(`${round(line.fgm)} FG`, `${round(line.xpm)} XP`);
-  } else {
-    if (pos === 'RB' || line.rush_yd) chips.push(`${round(line.rush_yd)} rush yds`);
-    if (pos !== 'RB' || line.rec) chips.push(`${round(line.rec)} rec · ${round(line.rec_yd)} yds`);
-    const touchdowns = round(line.rush_td) + round(line.rec_td);
-    if (touchdowns) chips.push(`${touchdowns} TD`);
-  }
-  if (line.fum_lost) chips.push(`${round(line.fum_lost)} fumble lost`);
-  return chips;
-}
 
 function signed(value, digits = 2) {
   const numeric = Number(value) || 0;
@@ -85,6 +27,8 @@ export default function MatchupPlayerHoverCard({
   plays = [],
   weeklyRows = [],
   week,
+  replaying = false,
+  boxLine = null,
   scoringSettings,
   sideColor,
 }) {
@@ -110,14 +54,12 @@ export default function MatchupPlayerHoverCard({
     };
   }, [hasProjection, mode, player?.position, projected, scoringSettings, week, weeklyRows]);
 
-  // This game's line: summed from its plays while the live layer has them,
-  // otherwise the week's stat row (past weeks, or no play-by-play).
+  // This game's line: the live box line now, the plays up to a replayed
+  // moment, otherwise the week's stat row (getGameStatLine).
   const gameLine = useMemo(() => {
     if (mode === 'season') return null;
-    if (plays.length) return sumStats(plays.map((play) => play.stats ?? {}));
-    const weekRow = (weeklyRows ?? []).find((row) => Number(row?.week) === Number(week));
-    return weekRow ? sumStats([weekRow]) : null;
-  }, [mode, plays, week, weeklyRows]);
+    return getGameStatLine({ boxLine, plays, weeklyRows, week, replaying });
+  }, [boxLine, mode, plays, replaying, week, weeklyRows]);
 
   // With a mouse the card follows the pointer (usePointerFollow); from
   // keyboard focus it sits below (or above) the row, aligned to the row's

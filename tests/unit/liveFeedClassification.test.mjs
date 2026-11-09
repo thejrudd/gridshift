@@ -53,6 +53,17 @@ describe('current live player points', () => {
     }), 28.9);
   });
 
+  it('a finished game keeps the official points the provider stat line cannot score', () => {
+    // Week 9 2026: the provider line has no 40+ completion or 40+/50+ TD
+    // bonuses (5 points), so it reads 16.86 against Sleeper's official 21.86.
+    assert.equal(resolveCurrentPlayerPoints({
+      hasMappedStats: true,
+      livePoints: 16.86,
+      sleeperPoints: 21.86,
+      preferAuthoritative: true,
+    }), 21.86);
+  });
+
   it('reports the exact Sleeper-to-BDL reconciliation adjustment', () => {
     assert.deepEqual(reconcileLiveFantasyPoints({
       derivedPoints: 28.9,

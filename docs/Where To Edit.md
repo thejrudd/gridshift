@@ -492,3 +492,4 @@ Do not reuse the prediction fragment codec for server Trade rooms. Proposal revi
 | `src/main.jsx` | App entry |
 | `src/hooks/usePWAInstall.js` | Install prompt |
 | `docker-compose.yml`, `Dockerfile`, `Dockerfile.prebuilt`, `Dockerfile.server` | Container topology |
+| `cloudflare/down-page-worker/` | Cloudflare Worker that shows the "GridShift is down" page when the tunnel or app is unreachable; deployed separately with Wrangler. See `docs/Self-Hosting.md` > Down page |

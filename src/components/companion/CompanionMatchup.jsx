@@ -36,6 +36,8 @@ import { buildMatchupRivalry } from '../../utils/matchupRivalry.js';
 import { pairingId as matchupPairingId, readRecentKeyIds, recordKeyIds } from '../../utils/matchupPreviewKeyHistory.js';
 import useCardGlow from '../../hooks/useCardGlow.jsx';
 import useMediaQuery from '../../hooks/useMediaQuery.js';
+import { buildCardStatLine, getGameStatLine } from '../../utils/matchupStatChips.js';
+import { formatLocalKickoffDayTime } from '../../utils/statisticsScoresTime.js';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { getSleeperAvatarUrl, POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
@@ -66,6 +68,7 @@ import {
   getMatchupCustomPoints,
   getOfficialMatchupRowPoints,
   getSleeperPlayerName,
+  getTeamAbbr,
   hasReconciledMatchup,
   isCompleteScheduleWeek,
 } from '../../utils/liveScoringFeed.js';
@@ -88,6 +91,7 @@ import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 
 const TOTAL_WEEKS = 18;
 const COMPACT_PHONE_QUERY = '(max-width: 480px)';
+const NO_PLAYER_PLAYS = Object.freeze([]);
 // The page holds its skeleton for the live layer's first answer, at most this
 // long, so the masthead, chart and rows arrive as one beat (docs/Loading Motion.md).
 const LIVE_LAYER_MAX_WAIT_MS = 2500;
@@ -162,16 +166,18 @@ function getLongestTokenLength(label) {
 
 function getUnifiedPlayerNameFontSize(labels, compact = false) {
   const names = (labels ?? []).filter(Boolean);
-  if (!names.length) return compact ? 11 : 14;
+  if (!names.length) return compact ? 12 : 14;
 
   const longestToken = names.reduce((max, label) => Math.max(max, getLongestTokenLength(label)), 0);
   const longestLabel = names.reduce((max, label) => Math.max(max, String(label ?? '').length), 0);
 
+  // Phone cards have no photo, so names get a step more room; the stat line
+  // under them stays a size smaller still (see .companion-player-row__detail).
   if (compact) {
-    if (longestToken >= 14 || longestLabel >= 24) return 9;
-    if (longestToken >= 12 || longestLabel >= 20) return 9;
-    if (longestToken >= 10 || longestLabel >= 17) return 10;
-    return 11;
+    if (longestToken >= 14 || longestLabel >= 24) return 10;
+    if (longestToken >= 12 || longestLabel >= 20) return 10;
+    if (longestToken >= 10 || longestLabel >= 17) return 11;
+    return 12;
   }
 
   if (longestToken >= 12 || longestLabel >= 20) return 12;
@@ -2015,6 +2021,38 @@ function CompanionMatchupView({
       .filter((event) => event.side);
   }, [live.events, live.series, liveLayerActive, liveMineKey, myRosterId, opponentRosterId, players, starterById]);
 
+  // A starter's share of each play up to the replay moment (or now),
+  // including combined rows they are part of; the row id stays the combined
+  // one so a click selects it.
+  // Each player's plays up to the replay moment (or now), grouped in one pass
+  // per update: every card's stat line and the hover card look a player up
+  // here instead of scanning the whole week's feed on each render.
+  const livePlaysByPlayer = useMemo(() => {
+    const byPlayer = new Map();
+    if (!liveLayerActive) return byPlayer;
+    const add = (playerId, play) => {
+      const key = String(playerId);
+      if (!byPlayer.has(key)) byPlayer.set(key, []);
+      byPlayer.get(key).push(play);
+    };
+    liveEvents.forEach((event) => {
+      if (effectiveReplayAt != null && Number(event.progress) > effectiveReplayAt + 1e-6) return;
+      if (!event.contributors || event.contributors.length < 2) {
+        add(event.playerId, event);
+        return;
+      }
+      event.contributors.forEach((own) => add(own.playerId, {
+        ...event, pts: own.pts, stats: own.stats, kind: own.kind, description: own.desc ?? event.description,
+      }));
+    });
+    return byPlayer;
+  }, [effectiveReplayAt, liveEvents, liveLayerActive]);
+
+  const livePlaysFor = useCallback(
+    (playerId) => livePlaysByPlayer.get(String(playerId)) ?? NO_PLAYER_PLAYS,
+    [livePlaysByPlayer],
+  );
+
   const liveFrame = useMemo(() => (liveLayerActive
     ? buildReplayFrame({ series: live.series, events: liveEvents, mineKey: liveMineKey, at: effectiveReplayAt })
     : null), [effectiveReplayAt, live.series, liveEvents, liveLayerActive, liveMineKey]);
@@ -2046,6 +2084,74 @@ function CompanionMatchupView({
     return map;
   }, [live.sidesByRosterId]);
 
+  // Each starter's full box line from the live feed right now (every snap,
+  // not just the scoring plays), for the hover card's chips and the phone
+  // card's stat line: BALLDONTLIE's line first, Sleeper's stat line when it has
+  // none (row.detailStats). Targets are display-only, so they are filled here
+  // (BALLDONTLIE, then Sleeper) rather than in the stats that feed scoring.
+  const liveBoxLineById = useMemo(() => {
+    const map = new Map();
+    if (!liveLayerActive) return map;
+    const finite = (value) => (value != null && Number.isFinite(Number(value)) ? Number(value) : null);
+    Object.values(live.sidesByRosterId ?? {}).forEach((side) => side.entries.forEach((entry) => {
+      const line = entry.row?.detailStats;
+      if (!line) return;
+      const targets = finite(line.rec_tgt) ?? finite(entry.row.bdlRow?.receiving_targets) ?? finite(entry.row.sleeperStats?.rec_tgt);
+      map.set(String(entry.id), targets == null ? line : { ...line, rec_tgt: targets });
+    }));
+    return map;
+  }, [live.sidesByRosterId, liveLayerActive]);
+
+  // The phone card's stat line, once the player's game has started: the live
+  // box line now, the plays up to a replayed moment, otherwise the week's stat
+  // row (getGameStatLine, shared with the desktop hover card).
+  // Each card's game status: 'pre', 'live' or 'final', plus the live game's
+  // clock (the game's own clock now, the replayed moment's otherwise).
+  const cardGameStatusFor = useCallback((player) => {
+    if (!player?.id || player.name === 'Empty' || player.isBye) return null;
+    const tracked = liveLayerActive && live.starterGameStateById.has(String(player.id));
+    const { state, progress } = tracked
+      ? liveGameStateFor(player.id)
+      : { state: isPlayerGameFinal(player) ? 'final' : player.gameStarted ? 'live' : 'pre', progress: 0 };
+    let clock = null;
+    if (state === 'live' && !tracked && effectiveReplayAt == null && liveLayerActive) {
+      // Bench players are not tracked per player; find their game by team.
+      const team = getTeamAbbr(player.team);
+      const game = (live.games ?? []).find((entry) => getTeamAbbr(entry?.home_team) === team || getTeamAbbr(entry?.visitor_team) === team);
+      clock = game ? getLiveGameClockLabel(game) ?? null : null;
+    } else if (state === 'live' && tracked) {
+      if (effectiveReplayAt == null) {
+        clock = getLiveGameClockLabel(live.starterGameStateById.get(String(player.id))?.game) ?? null;
+      } else {
+        const quarter = Math.min(4, Math.floor(progress * 4) + 1);
+        const seconds = Math.floor((1 - ((progress * 4) % 1)) * 900);
+        clock = `Q${quarter} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+      }
+    }
+    return { state, clock };
+  }, [effectiveReplayAt, live.games, live.starterGameStateById, liveGameStateFor, liveLayerActive]);
+
+  const cardStatLineFor = useCallback((player) => {
+    const status = cardGameStatusFor(player);
+    if (!status) return null;
+    const { state } = status;
+    // Before kickoff: the game's weekday and time in the viewer's timezone,
+    // from the same schedule Statistics Schedule and Scores read.
+    if (state === 'pre') {
+      const kickoff = formatLocalKickoffDayTime(player.scheduleEntry?.kickoff);
+      return kickoff ? [kickoff] : null;
+    }
+    const line = getGameStatLine({
+      boxLine: liveBoxLineById.get(String(player.id)) ?? null,
+      plays: livePlaysFor(player.id),
+      weeklyRows: player.weekly ?? weeklyStats?.[player.id] ?? [],
+      week,
+      replaying: effectiveReplayAt != null,
+    });
+    const segments = buildCardStatLine(player.position, line);
+    return segments.length ? segments : null;
+  }, [cardGameStatusFor, effectiveReplayAt, liveBoxLineById, livePlaysFor, week, weeklyStats]);
+
   // Rows follow the live layer: live totals now, or the replay moment's.
   const displaySlots = useMemo(() => {
     if (!liveLayerActive || !liveFrame) return enrichedSlots;
@@ -2060,7 +2166,9 @@ function CompanionMatchupView({
       const gameProgress = effectiveReplayAt == null && state === 'live'
         ? getLiveGameProgress(live.starterGameStateById.get(String(player.id))?.game)
         : null;
-      return { ...player, weekPts: state === 'pre' ? null : points, gameStarted: state !== 'pre', gameProgress };
+      // A replayed moment before the final whistle shows the matchup, not the result.
+      const hideGameResult = effectiveReplayAt != null && state !== 'final';
+      return { ...player, weekPts: state === 'pre' ? null : points, gameStarted: state !== 'pre', gameProgress, hideGameResult };
     };
     return enrichedSlots.map((slot) => ({ ...slot, mine: follow(slot.mine), opp: follow(slot.opp) }));
   }, [effectiveReplayAt, enrichedSlots, live.starterGameStateById, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive]);
@@ -2210,23 +2318,16 @@ function CompanionMatchupView({
       state = isPlayerGameFinal(player) ? 'final' : player.gameStarted ? 'live' : 'pre';
       progress = state === 'final' ? 1 : 0;
     }
-    // This player's share of each play, including combined rows they are part
-    // of; the row id stays the combined one so a click selects it.
-    const plays = liveLayerActive
-      ? liveEvents.flatMap((event) => {
-        if (effectiveReplayAt != null && Number(event.progress) > effectiveReplayAt + 1e-6) return [];
-        if (!event.contributors || event.contributors.length < 2) {
-          return String(event.playerId) === String(player.id) ? [event] : [];
-        }
-        const own = event.contributors.find((contributor) => String(contributor.playerId) === String(player.id));
-        return own
-          ? [{ ...event, pts: own.pts, stats: own.stats, kind: own.kind, description: own.desc ?? event.description }]
-          : [];
-      })
-      : [];
-    const points = liveLayerActive
-      ? liveFrame?.pointsByPlayer.get(String(player.id)) ?? 0
-      : Number(player.weekPts) || 0;
+    const plays = livePlaysFor(player.id);
+    // The same number as the player's row: the live displayed total now, the
+    // replay frame's at a replay moment (see displaySlots).
+    const points = !liveLayerActive
+      ? Number(player.weekPts) || 0
+      : state === 'pre'
+        ? 0
+        : effectiveReplayAt == null
+          ? liveDisplayedPoints.get(String(player.id)) ?? (Number(player.weekPts) || 0)
+          : liveFrame?.pointsByPlayer.get(String(player.id)) ?? 0;
     const liveGame = live.starterGameStateById.get(String(player.id))?.game;
     const quarterClock = () => {
       if (effectiveReplayAt == null) {
@@ -2246,7 +2347,7 @@ function CompanionMatchupView({
     const kickoffLabel = kickoffWindow ? `Kicks off ${kickoffWindow.longLabel}` : gameLabel;
     const clockLabel = state === 'live' ? quarterClock() : state === 'final' ? gameLabel : kickoffLabel;
     return { player, side, state, progress, plays, points, clockLabel };
-  }, [effectiveReplayAt, hoverTarget, live.axis, live.starterGameStateById, liveEvents, liveFrame, liveGameStateFor, liveLayerActive, starterById]);
+  }, [effectiveReplayAt, hoverTarget, live.axis, live.starterGameStateById, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive, livePlaysFor, starterById]);
 
   useEffect(() => {
     const requestedPlayerId = initialWeekRequest?.playerId;
@@ -2509,6 +2610,8 @@ function CompanionMatchupView({
                 slotPos={slot.slotPos}
                 sharedPlayerNameFontSize={sharedPlayerNameFontSize}
                 showProgress={liveLayerActive}
+                statLineFor={cardStatLineFor}
+                gameStatusFor={cardGameStatusFor}
                 onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
                 onComparePlayers={slot.mine && slot.opp ? () => openTaleOfTape(slot.mine, slot.opp, slot.slotPos) : null}
                 onSelectMine={() => slot.mine?.id && setSelectedPlayer({ id: slot.mine.id, projection: slot.mine.projection ?? null, enriched: slot.mine })}
@@ -2543,6 +2646,8 @@ function CompanionMatchupView({
                         opp={enrichedOppBench[i] ?? null}
                         bench
                         sharedPlayerNameFontSize={sharedPlayerNameFontSize}
+                        statLineFor={cardStatLineFor}
+                        gameStatusFor={cardGameStatusFor}
                         onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
                         onSelectMine={() => enrichedMyBench[i]?.id && setSelectedPlayer({ id: enrichedMyBench[i].id, projection: enrichedMyBench[i].projection ?? null, enriched: enrichedMyBench[i] })}
                         onSelectOpp={() => enrichedOppBench[i]?.id && setSelectedPlayer({ id: enrichedOppBench[i].id, projection: enrichedOppBench[i].projection ?? null, enriched: enrichedOppBench[i] })}
@@ -2675,8 +2780,8 @@ function CompanionMatchupView({
           opponentPalette={opponentFantasyPalette}
           myScore={liveMasthead ? liveFrame.mine.toFixed(2) : displayedMineScore}
           opponentScore={liveMasthead ? liveFrame.opp.toFixed(2) : displayedOppScore}
-          myScoreLabel={replayingMasthead ? 'Score at this moment' : liveMasthead ? 'Live score' : matchupWinProbability?.settled ? 'Final score' : mineScoreIsLive ? 'Live score' : mineForecastTotal != null ? 'Projected points' : 'Score pending'}
-          opponentScoreLabel={replayingMasthead ? 'Score at this moment' : liveMasthead ? 'Live score' : matchupWinProbability?.settled ? 'Final score' : oppScoreIsLive ? 'Live score' : oppForecastTotal != null ? 'Projected points' : 'Score pending'}
+          myScoreLabel={replayingMasthead ? 'Live score' : liveMasthead ? 'Live score' : matchupWinProbability?.settled ? 'Final score' : mineScoreIsLive ? 'Live score' : mineForecastTotal != null ? 'Projected points' : 'Score pending'}
+          opponentScoreLabel={replayingMasthead ? 'Live score' : liveMasthead ? 'Live score' : matchupWinProbability?.settled ? 'Final score' : oppScoreIsLive ? 'Live score' : oppForecastTotal != null ? 'Projected points' : 'Score pending'}
           myProjectedFinal={liveMasthead ? liveFrame.expectedMine ?? mineHeaderProjection : mineHeaderProjection}
           opponentProjectedFinal={liveMasthead ? liveFrame.expectedOpp ?? oppHeaderProjection : oppHeaderProjection}
           showProjectionDelta={matchupIsSettled && !replayingMasthead}
@@ -2714,11 +2819,13 @@ function CompanionMatchupView({
         // Lineup and Scoring plays tabs, so it stays in view on both.
         <div className="matchup-live__body">
           <section className="matchup-live-section matchup-live-chart-section" data-panel="lead" aria-labelledby="matchup-chart-title">
+            {/* The view switch is the chart's heading; the h2 stays for
+                screen readers so the section keeps its name. */}
             <div className="matchup-live-label">
-              <h2 id="matchup-chart-title">{chartView === 'lead' ? 'Lead' : 'Win chance'}</h2>
-              <div className="matchup-live-label__controls matchup-live-segmented" role="group" aria-label="Chart view">
-                <button type="button" className="matchup-live-chip" aria-pressed={chartView === 'wp'} onClick={() => setChartView('wp')}>Win chance</button>
-                <button type="button" className="matchup-live-chip" aria-pressed={chartView === 'lead'} onClick={() => setChartView('lead')}>Lead</button>
+              <h2 id="matchup-chart-title" className="sr-only">{chartView === 'lead' ? 'Lead' : 'Win chance'}</h2>
+              <div className="matchup-chart-switch" role="group" aria-label="Chart view">
+                <button type="button" className="matchup-chart-switch__option" aria-pressed={chartView === 'wp'} onClick={() => setChartView('wp')}>Win chance</button>
+                <button type="button" className="matchup-chart-switch__option" aria-pressed={chartView === 'lead'} onClick={() => setChartView('lead')}>Lead</button>
               </div>
             </div>
             {/* Drawn once its data is complete (capped by the page's wait), so
@@ -2828,6 +2935,8 @@ function CompanionMatchupView({
           plays={hoverCardData.plays}
           weeklyRows={hoverCardData.player.weekly ?? weeklyStats?.[hoverCardData.player.id] ?? []}
           week={week}
+          replaying={effectiveReplayAt != null}
+          boxLine={liveBoxLineById.get(String(hoverCardData.player.id)) ?? null}
           scoringSettings={activeScoringSettings}
           sideColor={liveSideColors[hoverCardData.side]}
         />
@@ -3443,7 +3552,7 @@ function MatchupProgressBar({ player, align }) {
   );
 }
 
-function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false }) {
+function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false, statLineFor = null, gameStatusFor = null }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
@@ -3453,12 +3562,14 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
 
   return (
     <div className="px-1.5 sm:px-4" style={{ opacity: bench ? 0.72 : 1 }}>
-      <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
+      <div className="matchup-h2h-grid">
       {/* My player — left */}
         <div className="matchup-row-cell" data-hover-player={!bench && mine?.id ? mine.id : undefined}>
           <MatchupPlayerRow
             player={mine}
             lineupUnavailable={mineLineupUnavailable}
+            statLine={isCompactPhone ? statLineFor?.(mine) ?? null : null}
+            gameStatus={gameStatusFor?.(mine) ?? null}
             darkMode={darkMode}
             compact={isCompactPhone}
             onSelect={onSelectMine}
@@ -3469,21 +3580,23 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
         </div>
 
       {/* Position badge — center */}
-        <div className="relative z-[1] flex items-center justify-center">
+        <div className="matchup-h2h-slot">
           <button
             type="button"
             onClick={canCompare ? onComparePlayers : undefined}
-            className={`companion-matchup-slot-badge font-bold text-center inline-flex w-full flex-col items-center justify-center${canCompare ? ' companion-matchup-compare' : ''}`}
+            className={`companion-matchup-slot-badge font-bold text-center inline-flex flex-col items-center justify-center${isCompactPhone ? ' is-compact' : ' w-full'}${canCompare ? ' companion-matchup-compare' : ''}`}
             style={{
               color: posColor,
               fontFamily: '"Barlow Condensed", sans-serif',
               fontSize: isCompactPhone ? '9px' : '11px',
-              minWidth: 44,
-              minHeight: 44,
-              padding: isCompactPhone ? '2px 1px' : '3px 4px',
+              // Phones draw a small chip over the seam; .is-compact sizes it
+              // and its ::before keeps a 44px hit area.
+              minWidth: isCompactPhone ? 0 : 44,
+              minHeight: isCompactPhone ? 0 : 44,
+              padding: isCompactPhone ? 0 : '3px 4px',
               lineHeight: 1,
               cursor: canCompare ? 'pointer' : 'default',
-              letterSpacing: '0.08em',
+              letterSpacing: isCompactPhone ? '0.04em' : '0.08em',
             }}
             aria-label={canCompare ? `Open tale of the tape for ${mine?.name} and ${opp?.name}` : undefined}
           >
@@ -3496,6 +3609,8 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
         <MatchupPlayerRow
           player={opp}
           lineupUnavailable={oppLineupUnavailable}
+            statLine={isCompactPhone ? statLineFor?.(opp) ?? null : null}
+            gameStatus={gameStatusFor?.(opp) ?? null}
           darkMode={darkMode}
           compact={isCompactPhone}
           onSelect={onSelectOpp}
@@ -3510,12 +3625,28 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
   );
 }
 
-function getGameLabel(player) {
+// "JAX @ BAL" before and during a game; "JAX W 33-10 @ BAL" once it is final,
+// with the player's team's score first. `includeTeam: false` drops the
+// player's own team for the phone row, where the line is narrow.
+function getGameLabel(player, { includeTeam = true, dropTeamLive = false } = {}) {
   if (!player?.team) return null;
   if (!player.oppTeam) return player.team;
-  if (player.isHome === true) return `${player.team} v. ${player.oppTeam}`;
-  if (player.isHome === false) return `${player.team} @ ${player.oppTeam}`;
-  return `${player.team} vs ${player.oppTeam}`;
+  const venue = player.isHome === true ? 'v.' : player.isHome === false ? '@' : 'vs';
+  const result = getFinalGameResult(player);
+  const team = dropTeamLive || (!includeTeam && result) ? '' : `${player.team} `;
+  return result
+    ? `${team}${result} ${venue} ${player.oppTeam}`
+    : `${team}${venue} ${player.oppTeam}`;
+}
+
+function getFinalGameResult(player) {
+  const entry = player?.scheduleEntry;
+  if (player?.hideGameResult || entry?.completed !== true) return null;
+  const teamScore = Number(entry.ptsFor);
+  const oppScore = Number(entry.ptsAgainst);
+  if (entry.ptsFor == null || entry.ptsAgainst == null || !Number.isFinite(teamScore) || !Number.isFinite(oppScore)) return null;
+  const outcome = teamScore > oppScore ? 'W' : teamScore < oppScore ? 'L' : 'T';
+  return `${outcome} ${teamScore}-${oppScore}`;
 }
 
 function isPlayerGameFinal(player) {
@@ -3541,7 +3672,7 @@ function getPlayerPerformanceTarget(player, actualScore, projectedPts) {
   return Number.isFinite(outlook.expectedAtNow) ? outlook.expectedAtNow : null;
 }
 
-function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, onOpenInjuries = null, nameFontSize = 13 }) {
+function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, onOpenInjuries = null, nameFontSize = 13, statLine = null, gameStatus = null }) {
   const isRight = align === 'right';
   if (lineupUnavailable) {
     return (
@@ -3601,7 +3732,10 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
 
   // Keep the phone name line clear; position, game and injury status use the
   // existing metadata line without changing the avatar/identity/score grid.
-  const matchupMeta = [player.position, getGameLabel(player)]
+  // Phones drop the player's own team once the game has a result; every live
+  // row drops it so the live dot and clock fit (desktop shows the team logo).
+  // Phones carry the position beside the name, leaving this line to the game.
+  const matchupMeta = [compact ? null : player.position, getGameLabel(player, { includeTeam: !compact, dropTeamLive: gameStatus?.state === 'live' })]
     .filter(Boolean)
     .join(' ');
   const rankText = player.weekRank ? `${player.weekRank.posLabel}${player.weekRank.rank}` : player.rank ? `${player.rank.posLabel}${player.rank.rank} Overall` : null;
@@ -3679,7 +3813,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
   // The status badge rides beside the name rather than taking its own trailing
   // column, so the team logo and score columns stay aligned across every row.
   const gridTemplate = compact
-    ? `var(--matchup-avatar-size, 22px) minmax(0, 1fr) ${metricColumn}`
+    ? `minmax(0, 1fr) ${metricColumn}`
     : isTeamDefense
       ? `44px minmax(0, 1fr) ${metricColumn}`
       : `44px minmax(0, 1fr) 36px ${metricColumn}`;
@@ -3695,7 +3829,29 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       showAccentRail={false}
       className={`companion-matchup-player-row${isTeamDefense ? ' is-team-defense' : ''}`}
       useTeamLogoAsAvatar={isTeamDefense}
-      showPosition={false}
+      // Phones drop the photo so the name, game and stat line get the width.
+      showAvatar={!compact}
+      // A live game leads its game line with the live dot and clock; a final
+      // one already starts with its result, and an upcoming one shows its
+      // kickoff in the stat line.
+      metaPrefix={gameStatus?.state === 'live' ? (
+        <span className="companion-matchup-live-status">
+          <i className="matchup-live-dot" aria-hidden="true" />
+          {(gameStatus.clock ?? 'Live').replace(' · ', ' ')}
+        </span>
+      ) : undefined}
+      detail={statLine ? statLine.map((segment, index) => (
+        <span key={segment} className="companion-matchup-stat-line__segment">
+          {/* Numbers ("16/26", "-1") a step larger than their labels. */}
+          {segment.split(/(-?\d+(?:[./]\d+)*)/).map((part, partIndex) => (
+            partIndex % 2 === 1
+              ? <b key={partIndex} className="companion-matchup-stat-line__value">{part}</b>
+              : part
+          ))}
+          {index < statLine.length - 1 ? ',' : ''}
+        </span>
+      )) : null}
+      showPosition={compact}
       positionPlacement="identity"
       showTeamLogo={!compact && !isTeamDefense}
       metaSegments={[matchupMeta, ...detailSegments, ...(compact && injuryStatus ? [injuryStatus] : [])]}
@@ -3711,15 +3867,21 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
       separateAction={Boolean(onOpenInjuries && player.availabilityStatus && player.id != null)}
       name={player.name}
-      title={player.name}
+      // No native tooltip: on desktop the Matchups hover card names the player,
+      // and a browser title bubble would sit on top of it. The accessible name
+      // comes from the row's aria-label, so screen readers lose nothing.
+      title=""
       style={{
         borderRadius: 0,
         borderLeftWidth: isRight ? 1 : 4,
         borderLeftColor: isRight ? 'var(--color-separator)' : rowAccent,
         borderRight: isRight ? `4px solid ${rowAccent}` : undefined,
         minHeight: compact ? 56 : 70,
+        // Phones: the seam side clears the slot chip that overlaps it, and the
+        // content sits 1px high so the injury badge's 44px hit area stays inside
+        // the card.
         padding: compact
-          ? '7px 3px'
+          ? (isRight ? '5px 7px 7px 16px' : '5px 16px 7px 7px')
           : isRight ? '10px 12px' : '10px 18px 10px 12px',
         '--matchup-player-name-size': `${nameFontSize}px`,
         '--matchup-player-score-size': scoreFontSize,
@@ -3762,10 +3924,10 @@ function MatchupSkeletonSide({ align = 'left' }) {
 function MatchupSkeletonRow() {
   return (
     <div className="px-1.5 sm:px-4">
-      <div className="grid grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-stretch gap-1 sm:gap-2">
+      <div className="matchup-h2h-grid">
         <Skeleton className="h-[68px] w-full rounded-lg" />
-        <div className="flex items-center justify-center">
-          <Skeleton className="h-4 w-8 rounded" />
+        <div className="matchup-h2h-slot">
+          <Skeleton className="h-4 w-7 rounded" />
         </div>
         <Skeleton className="h-[68px] w-full rounded-lg" />
       </div>

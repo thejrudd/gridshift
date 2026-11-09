@@ -139,6 +139,50 @@ export function buildDrilldownStatLine({ rows = [], entry = null, statKeys = [],
   };
 }
 
+/**
+ * The week's volume (the work behind the points, scored or not): completions
+ * of attempts and carries for a QB, carries and catches of targets for a
+ * running back, catches of targets (and any carries) for a receiver or tight
+ * end, field goals and extra points made of attempted for a kicker. A figure
+ * the stat line does not carry is left out rather than shown as zero; "of"
+ * counts appear only when the attempts are known. Other positions return [].
+ */
+export function buildDrilldownVolume(position, entry) {
+  if (!entry) return [];
+  const pos = String(position ?? '').toUpperCase();
+  const count = key => matchupNumber(entry?.[key]);
+  const out = [];
+  const ofTotal = (key, made, attempts, labels) => {
+    if (made == null && attempts == null) return;
+    const hasAttempts = attempts != null && attempts >= (made ?? 0);
+    out.push({ key, label: hasAttempts ? labels[1] : labels[0], value: hasAttempts ? `${made ?? 0}/${attempts}` : String(made ?? 0) });
+  };
+  const carries = (always = false) => {
+    const value = count('rush_att');
+    if (value != null && (always || value > 0)) out.push({ key: 'rush_att', label: value === 1 ? 'Carry' : 'Carries', value: String(value) });
+  };
+  const catches = (always = false) => {
+    const made = count('rec');
+    const targets = count('rec_tgt');
+    if (!always && !made && !targets) return;
+    ofTotal('rec', made, targets, ['Catches', 'Catches / targets']);
+  };
+  if (pos === 'QB') {
+    ofTotal('pass', count('pass_cmp'), count('pass_att'), ['Completions', 'Completions / attempts']);
+    carries();
+  } else if (pos === 'RB') {
+    carries(true);
+    catches();
+  } else if (pos === 'WR' || pos === 'TE') {
+    catches(true);
+    carries();
+  } else if (pos === 'K') {
+    ofTotal('fg', count('fgm'), count('fga'), ['Field goals', 'Field goals made / tried']);
+    ofTotal('xp', count('xpm'), count('xpa'), ['Extra points', 'Extra points made / tried']);
+  }
+  return out;
+}
+
 /** Points for one stat key (or the total when `key` is null) in a stat line. */
 export function getStatLinePoints(line, key = null) {
   if (!line) return null;

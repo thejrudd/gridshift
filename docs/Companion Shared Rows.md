@@ -58,7 +58,7 @@ Use `CompanionPlayerRow` for player rows in:
 - Companion League
 - Companion Rankings
 - Companion Waiver
-- Companion Matchup player rows. On phones (≤480px) each card is the headshot (team logo for D/ST), then the name with an inline position chip (`positionPlacement="identity"`) and any status badge flowing after it, then the game (`SEA v. KC` / `PIT @ NO`); rank and weather stay desktop-only. The name line wraps between words rather than truncating, and the inline injury link sets `min-height: 0` so the global coarse-pointer 44px button rule cannot make injured rows taller (its `::before` keeps the 44px hit area).
+- Companion Matchup player rows. On phones (≤480px) each card has no headshot: the name with an inline position chip (`showPosition` with `positionPlacement="identity"`) and any status badge flowing after it, then the game line without the position (`SEA v. KC` / `PIT @ NO`, the result once final, `W 33-10 @ NO`, or the live dot and clock while live, `● Q2 2:37 @ NE`), then the stat line once the game has started or the local kickoff day and time before it (see Narrow Core names below); rank and weather stay desktop-only. Every live row, phone or desktop, leads its game line with the live dot and game clock and drops the player's own team. The name line wraps between words rather than truncating, and the inline injury link sets `min-height: 0` so the global coarse-pointer 44px button rule cannot make injured rows taller (its `::before` keeps the 44px hit area).
 - Matchup preview "Who decided it" / movers cards (`PreviewPlayerCard` in `MatchupPreviewModal.jsx`): the shared row with the position folded into the meta line; the projection chip is a `CompanionPlayerStatus` with `localContrast={false}` on a theme-surface backing so its semantic tone stays readable on any team gradient. "Where the rosters lead" stays the mirrored number/bar comparison.
 - Heatmap player drilldown/performer lists
 - Trade roster picker, roster browse, and Upgrade Finder mover rows
@@ -83,6 +83,8 @@ Preferred shape:
   ]}
 />
 ```
+
+Pass `title=""` to suppress the row's default native tooltip when a custom hover card replaces it.
 
 `positionPlacement` is `'column'` (default: the chip takes its own grid slot) or `'identity'` (the chip sits after the name, inside the identity line).
 
@@ -134,8 +136,22 @@ Rosters is one of the two design-foundation reference screens ([[Design System Q
 
 Rosters and Matchups keep their existing row structure and one-line names. Give
 identity space before applying ellipsis: compact Rosters use a 28px portrait,
-4px grid gaps, and narrower metric tracks; compact Matchups use a 22px portrait,
-3px grid gaps, and 3px side padding (18px/2px at 320px). Position and injury
+4px grid gaps, and narrower metric tracks; compact Matchups (≤480px) show no
+portrait (`showAvatar={false}`): the card is the name, the game line, and once
+the player's game has started a stat line in the row's `detail` slot (Figtree
+caps, `16/26, 242 YDS, 1 PASS TD, 1 CAR, -1 YDS`; built by `buildCardStatLine()`
+in `src/utils/matchupStatChips.js`, segments never split across lines, stopping
+at the score column). Paired cards stretch to the same height. On phones the two
+cards sit edge to edge (`.matchup-h2h-grid`, 2px seam) and the slot badge is a
+26×22 opaque chip centered over the seam, overlapping both cards' inner edges
+like Sleeper's; each card pads 16px on the seam side to clear it, and the chip
+keeps a 44×44 hit area (`.companion-matchup-slot-badge.is-compact::before`, above
+both cards at `z-index: 2`). The stat line is the smallest text on the card (9px
+labels, 10px numbers, under an 11px game line and a 10–12px name); targets come
+from BALLDONTLIE, then Sleeper, for display only. Each card reads its plays from
+one per-update grouping by player (`livePlaysByPlayer`), never by scanning the
+week's feed per card. `detail` is an optional `CompanionPlayerRow` line under the meta
+line; other rows leave it unset. Position and injury
 facts use the existing metadata line on compact Matchups, leaving the name line
 clear. Keep score sizes and the independent 44px injury hit target intact.
 The full name remains in the row title and accessible action name. These
