@@ -95,6 +95,14 @@ test.describe('desktop', () => {
     await expect(page).toHaveURL(/\/statistics\/team\/buf$/);
   });
 
+  test('does not announce a correction the results did not use', async ({ page }) => {
+    await openWithShortcut(page);
+    // "target" corrects to the stat "targets", but Target Magnet matched it as typed.
+    await searchInput(page).fill('target magnet vs flex receiver');
+    await expect(palette(page).getByRole('heading', { name: 'Target Magnet vs Flex Receiver' })).toBeVisible();
+    await expect(palette(page).getByText('Showing results for')).toBeHidden();
+  });
+
   test('reports a query with no matches', async ({ page }) => {
     await openWithShortcut(page);
     await searchInput(page).fill('zzqxv');
