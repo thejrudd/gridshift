@@ -39,7 +39,7 @@ function recordLabel(row) {
  * the average of the opponents' win percentages. Calling it anything else would
  * invite the reader to compare it against a number on a different scale.
  */
-function nflValues(row) {
+export function nflValues(row) {
   return {
     record: { key: 'record', label: 'Record', display: recordLabel(row) },
     pf: { key: 'pf', label: 'Points for', display: String(row.pointsFor) },
@@ -60,7 +60,7 @@ function nflValues(row) {
   };
 }
 
-function fantasyValues(row) {
+export function fantasyValues(row) {
   return {
     record: { key: 'record', label: 'Record', display: row.recordLabel },
     pf: {

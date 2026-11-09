@@ -16,16 +16,25 @@ function seasonPoints(weeks, scoring, position) {
   return weeks.reduce((total, week) => total + calcPoints(week, scoring, position), 0);
 }
 
-/**
- * Where a player ranks at their position by fantasy points this season.
- */
-function resolveRankingAnswer(record, data) {
-  const { weeklyStats, players, scoring } = data;
-  const sleeperId = record.meta?.sleeperId;
-  if (!sleeperId || !weeklyStats || !players) return null;
+// The ranked field per position, cached on the stats and scoring objects it was
+// built from. Search re-resolves its answer on every keystroke, and re-scoring a
+// whole position each time is the kind of cost that shows up as input lag.
+const fieldCache = new WeakMap();
 
-  const position = String(record.meta?.position ?? '').toUpperCase();
-  if (!position) return null;
+function positionField(position, { weeklyStats, players, scoring }) {
+  let byScoring = fieldCache.get(weeklyStats);
+  if (!byScoring) {
+    byScoring = new WeakMap();
+    fieldCache.set(weeklyStats, byScoring);
+  }
+  const scoringKey = scoring && typeof scoring === 'object' ? scoring : fieldCache;
+  let byPosition = byScoring.get(scoringKey);
+  if (!byPosition || byPosition.players !== players) {
+    byPosition = { players, fields: new Map() };
+    byScoring.set(scoringKey, byPosition);
+  }
+  const cached = byPosition.fields.get(position);
+  if (cached) return cached;
 
   const field = [];
   for (const [id, weeks] of Object.entries(weeklyStats)) {
@@ -35,21 +44,52 @@ function resolveRankingAnswer(record, data) {
     if (points <= 0) continue;
     field.push({ id, points });
   }
-  if (!field.length) return null;
-
   field.sort((left, right) => right.points - left.points);
+  byPosition.fields.set(position, field);
+  return field;
+}
+
+/**
+ * A player's season at their position: rank over everyone at the position with
+ * points, total points, and games. Rank is computed over the full field before
+ * anything is filtered. Null when the stats are not loaded or the player has no
+ * points yet.
+ */
+export function positionSeason(record, data = {}) {
+  const { weeklyStats, players } = data;
+  const sleeperId = record?.meta?.sleeperId;
+  if (!sleeperId || !weeklyStats || !players) return null;
+
+  const position = String(record.meta?.position ?? '').toUpperCase();
+  if (!position) return null;
+
+  const field = positionField(position, data);
   const index = field.findIndex((entry) => entry.id === sleeperId);
   if (index === -1) return null;
 
-  const games = weeklyStats[sleeperId]?.length ?? 0;
-  const points = field[index].points;
+  return {
+    position,
+    rank: index + 1,
+    fieldSize: field.length,
+    points: field[index].points,
+    games: weeklyStats[sleeperId]?.length ?? 0,
+  };
+}
+
+/**
+ * Where a player ranks at their position by fantasy points this season.
+ */
+function resolveRankingAnswer(record, data) {
+  const season = positionSeason(record, data);
+  if (!season) return null;
+  const { position, rank, fieldSize, points, games } = season;
 
   return {
     kind: 'fantasyRanking',
     title: record.label,
     subtitle: [record.meta?.position, record.meta?.team].filter(Boolean).join(' · '),
     values: [
-      { key: 'rank', label: `${position} rank`, display: `${position}${index + 1}` },
+      { key: 'rank', label: `${position} rank`, display: `${position}${rank}` },
       { key: 'pts', label: 'Fantasy points', display: points.toFixed(1) },
       {
         key: 'ppg',
@@ -57,7 +97,7 @@ function resolveRankingAnswer(record, data) {
         display: games ? (points / games).toFixed(1) : '—',
       },
     ],
-    footnote: `Of ${Math.min(field.length, RANK_LIMIT)} ${position}s with points this season`,
+    footnote: `Of ${Math.min(fieldSize, RANK_LIMIT)} ${position}s with points this season`,
   };
 }
 

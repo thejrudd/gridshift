@@ -65,6 +65,10 @@ function createSlots(raw) {
     operator: null,
     week: null,
     season: null,
+    // "jsn vs kupp": each side parsed on its own, since a comparison names two
+    // things and requiring every name term on one record would match nothing.
+    // Null unless the query has a compare operator with something on both sides.
+    compare: null,
     // Words that were read as a team ("washington"), kept so ranking can try the
     // other reading — a player's surname — when the team reading finds nobody.
     teamWords: [],
@@ -173,7 +177,7 @@ function matchPhraseAt(words, i, slots) {
  * lets ranking decide on the evidence: a real player named Moss outscores a
  * superlative with no stat attached to it.
  */
-export function parseGlobalQuery(query) {
+export function parseGlobalQuery(query, { splitCompare = true } = {}) {
   const raw = String(query ?? '');
   const slots = createSlots(raw);
   const words = expandGluedWeekTokens(raw.toLowerCase().trim())
@@ -233,7 +237,23 @@ export function parseGlobalQuery(query) {
     if (word.length >= 2) pushUnique(slots.nameTerms, word);
   }
 
+  if (splitCompare && slots.operator === 'compare') slots.compare = splitComparison(words);
+
   return slots;
+}
+
+/**
+ * Parse each side of the first compare operator separately. Only an exactly
+ * typed operator splits — a typo that corrected into "vs" is too weak a signal
+ * to cut a query in half.
+ */
+function splitComparison(words) {
+  const at = words.findIndex((word) => lookupPhrase(word)?.type === 'operator');
+  if (at <= 0 || at >= words.length - 1) return null;
+  const left = parseGlobalQuery(words.slice(0, at).join(' '), { splitCompare: false });
+  const right = parseGlobalQuery(words.slice(at + 1).join(' '), { splitCompare: false });
+  if (isEmptyQuery(left) || isEmptyQuery(right)) return null;
+  return { left, right };
 }
 
 /**
