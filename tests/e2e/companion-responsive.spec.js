@@ -824,6 +824,27 @@ test('Fantasy horizontal affordances appear when rails overflow', async ({ page 
   await expect(page.locator('[data-scroll-cue="right"]').first()).toBeVisible();
 });
 
+test('Fantasy Rosters settles on a team opened from outside the roster view', async ({ page }) => {
+  await page.goto('/fantasy/rosters');
+  await expect(page).toHaveURL(/\/fantasy\/rosters/);
+  await expect(page.locator('.companion-player-row').first()).toBeVisible();
+
+  // Same path as the Statistics player "Roster" chip: the route changes to
+  // another team while Rosters is already mounted on my own team.
+  const otherRosterId = String(rosters.find((roster) => roster.roster_id !== 1)?.roster_id);
+  await page.evaluate((rosterId) => {
+    window.history.pushState(null, '', `/fantasy/rosters?team=${rosterId}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, otherRosterId);
+
+  const seen = new Set();
+  for (let sample = 0; sample < 20; sample += 1) {
+    seen.add(new URL(page.url()).searchParams.get('team'));
+    await page.waitForTimeout(50);
+  }
+  expect([...seen]).toEqual([otherRosterId]);
+});
+
 test('Fantasy Rosters labels submitted Sleeper keepers', async ({ page }) => {
   await page.goto('/fantasy/rosters?team=1');
 
