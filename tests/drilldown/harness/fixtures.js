@@ -89,6 +89,9 @@ export function buildFixture({ phase = 'pregame', source = 'balldontlie', bench 
   if (phase !== 'pregame') {
     const total = { week: WEEK, team: 'CIN', opp: 'PIT', off_snp: 62, tm_off_snp: 70 };
     reached.forEach(event => Object.entries(event.stats).forEach(([key, value]) => { total[key] = (total[key] ?? 0) + value; }));
+    // Volume the plays do not carry: targets beyond the catches, and carries.
+    total.rec_tgt = (total.rec ?? 0) + 3;
+    total.rush_att = total.rush_yd ? 1 : 0;
     weeklyStats.receiver.push(total);
   }
 

@@ -1001,6 +1001,20 @@
 .pdd-bdt__p { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: 14px; font-weight: 700; text-align: right; opacity: 1 !important; }
 .pdd-bdt__r.is-total { margin-top: 2px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--color-bg) 30%, transparent); font-weight: 700; }
 .pdd-bdt__r.is-total .pdd-bdt__p { font-size: 18px; }
+/* Inline points breakdown (live / final hero): the tooltip's table on the
+   page surface, so its rule and text use page colors. */
+.pdd-pts { display: grid; gap: 2px; padding-top: 14px; border-top: 1px solid var(--color-separator); font-size: var(--type-label); min-width: 0; }
+/* Volume above the points table: the work behind the points (carries,
+   catches of targets, completions of attempts), scored or not. */
+.pdd-vol { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px 16px; margin: 6px 0 10px; }
+.pdd-vol > div { display: grid; gap: 2px; align-content: start; min-width: 0; }
+.pdd-vol dt { order: 2; color: var(--color-label-tertiary); font-size: var(--type-label); }
+.pdd-vol dd { order: 1; margin: 0; font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: 22px; font-weight: 700; line-height: 1; color: var(--color-label); }
+/* A filling pace chart lays its SVG over a container sized by the layout. */
+.pdd-chart.is-fill { flex: 1 1 auto; }
+.pdd-chart.is-fill > .pdd-svg { position: absolute; inset: 0 auto auto 0; }
+.pdd-pts .pdd-bdt__r.is-total { border-top-color: var(--color-separator); }
+.pdd-pts .pdd-bdt__s { color: var(--color-label-secondary); opacity: 1 !important; }
 
 /* scoring pace scrub */
 .pdd-scrub { cursor: crosshair; touch-action: pan-y; outline: none; border-radius: 6px; }
@@ -1089,6 +1103,12 @@
   .pdd-rule { margin: 0 -32px; }
   .pdd-hero { grid-template-columns: 250px minmax(0, 1fr); gap: 40px; align-items: start; }
   .pdd-hero.is-solo { grid-template-columns: minmax(0, 1fr); }
+  /* Live / final: score over the breakdown on the left; the chart spans both
+     rows and stretches to their height, so the hero has no empty band. */
+  .pdd-hero.has-breakdown:not(.is-solo) { grid-template-areas: 'k chart' 'pts chart'; row-gap: 0; }
+  .pdd-hero.has-breakdown:not(.is-solo) > .pdd-k { grid-area: k; }
+  .pdd-hero.has-breakdown:not(.is-solo) > .pdd-pts { grid-area: pts; margin-top: 14px; }
+  .pdd-hero.has-breakdown:not(.is-solo) > .pdd-sec { grid-area: chart; align-self: stretch; display: flex; flex-direction: column; }
   .pdd-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 0; row-gap: 40px; }
   /* Hairline divider between the columns. */
   .pdd-cols > .pdd-sec:not(.is-span):nth-child(odd) { padding-right: 48px; }

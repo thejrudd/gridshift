@@ -83,6 +83,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - docs/Global Search.md — global search vocabulary, matching rules, index measurements, and answer-resolver boundaries.
 - docs/Player Dashboard.md — Statistics player page tabs: data routes, identity resolution, play credit, rank pools, opponent context, and UI rules.
 - docs/Team Dashboard.md — Statistics team page: position leaders, depth chart, season tabs, data route, fantasy scoring, and UI rules.
+- docs/Self-Hosting.md — Docker and Cloudflare tunnel deployment, the no-key feature matrix, and the Cloudflare down-page Worker (cloudflare/down-page-worker/): what it replaces, how to change the page, and how to deploy it.
 - For QA, testing, validation, or regression-review tasks, use docs/Agent Workflow.md and the relevant feature references; do not load unrelated material.
 
 ## Design system — Broadcast Editorial

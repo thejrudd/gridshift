@@ -172,6 +172,9 @@ export default function CompanionPlayerRow({
   showAccentRail = true,
   metaPrefix = undefined,
   metaSegments = [],
+  // Optional line under the meta line, inside the identity column (the phone
+  // Matchups card's stat line).
+  detail = null,
   leading = null,
   trailing = null,
   columns = null,
@@ -409,6 +412,7 @@ export default function CompanionPlayerRow({
             ))}
           </div>
         )}
+        {detail ? <div className="companion-player-row__detail">{detail}</div> : null}
       </div>
       {showTeamLogo && teamLogoUrl && !teamLogoFailed ? (
         <img
