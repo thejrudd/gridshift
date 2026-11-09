@@ -980,7 +980,7 @@ export async function fetchGameLog(playerId, teamId, season) {
   const isHistorical = season < CURRENT_SEASON;
   const ttl = isHistorical ? TTL.historical : TTL.stats;
 
-  return cachedPlayerData(`gamelog_v11_${playerId}_${season}`, async (stale) => {
+  return cachedPlayerData(`gamelog_v12_${playerId}_${season}`, async (stale) => {
     const query = teamId ? `?team=${encodeURIComponent(teamId)}` : '';
     const viaServer = await fetchFromPlayerDataServer(`/${playerId}/gamelog/${season}${query}`);
     if (viaServer && !viaServer.notFound) return viaServer;

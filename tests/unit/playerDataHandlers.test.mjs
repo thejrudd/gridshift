@@ -191,7 +191,7 @@ describe('player data cache: game logs', () => {
     time.advance(1000 * 60 * 60 * 24 * 60); // into March 2026
     const finalized = await service.getGameLog('555', 2025, 'sea');
     assert.equal(finalized.final, true);
-    assert.equal(store.get('gamelog_v11_555_2025').final, true);
+    assert.equal(store.get('gamelog_v12_555_2025').final, true);
   });
 
   it('coalesces concurrent requests into one ESPN waterfall', async () => {
