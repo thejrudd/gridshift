@@ -30629,3 +30629,128 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   .matchup-live-tabs { margin-top: 4px; }
 }
 
+
+/* Desktop matchup cards (above 480px): the phone card's three lines beside the
+   photo — the name with its inline position chip and any status badge, the game
+   line, then the stat line once the game has started or the local kickoff
+   before it. Every line is a step larger than on phones for desk-distance
+   reading. A narrow card lets its stat line wrap between segments; the paired
+   card stretches to match. */
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity {
+  line-height: 1.15;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__position--inline {
+  display: inline-flex;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: var(--type-micro);
+  letter-spacing: 0.04em;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__meta {
+  margin-top: 4px;
+  line-height: 1.2;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__detail {
+  margin-top: 3px;
+  font-size: var(--type-micro);
+  line-height: 1.3;
+}
+
+.companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-matchup-stat-line__value {
+  font-size: var(--type-label);
+}
+
+/* Team defense names truncate as a block; keep the DEF chip on the name line. */
+.companion-player-row.companion-matchup-player-row.is-team-defense:not(.is-compact) .companion-player-row__identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Each desktop card's cell is a size container: a narrow card (a 1024px window
+   with the sidebar open, a tablet) drops the team logo and its track, shrinks
+   the photo, keeps the game line whole by dropping rank, weather and range, and
+   shortens the status badge, so the name and stat line keep the width. */
+@media (min-width: 481px) {
+  .matchup-row-cell {
+    container: matchup-card / inline-size;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__meta-item:not(.companion-player-row__meta-item ~ .companion-player-row__meta-item) {
+    flex-shrink: 0;
+  }
+}
+
+@container matchup-card (max-width: 400px) {
+  .companion-player-row.companion-matchup-player-row {
+    --matchup-avatar-track: 36px;
+    --matchup-logo-track: 0px;
+    gap: 8px;
+  }
+
+  .companion-player-row.companion-matchup-player-row .companion-player-row__avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .companion-player-row.companion-matchup-player-row .companion-player-row__team-logo,
+  .companion-player-row.companion-matchup-player-row .companion-player-row__team-logo-spacer,
+  .companion-player-row.companion-matchup-player-row .companion-player-row__meta-item + .companion-player-row__meta-item {
+    display: none;
+  }
+
+  .companion-matchup-player-row .player-status-badge.is-responsive-compact .player-status-badge__label,
+  .companion-matchup-player-row .player-status-badge.is-responsive-compact .player-status-badge__detail {
+    display: none;
+  }
+
+  .companion-matchup-player-row .player-status-badge.is-responsive-compact .player-status-badge__compact-label {
+    display: inline;
+  }
+}
+
+/* Cards narrower still (a window just above phone width) drop the photo like
+   the phone card, and the game line may shorten rather than run under the
+   score. */
+@container matchup-card (max-width: 260px) {
+  .companion-player-row.companion-matchup-player-row {
+    --matchup-avatar-track: 0px;
+  }
+
+  /* Collapsed in place, not removed, so the name keeps its grid track. */
+  .companion-player-row.companion-matchup-player-row .companion-player-row__avatar {
+    width: 0;
+    height: 0;
+    visibility: hidden;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__meta-item {
+    flex-shrink: 1;
+  }
+
+  /* Names wrap between words, as on phones, rather than truncating. */
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity,
+  .companion-player-row.companion-matchup-player-row.is-team-defense:not(.is-compact) .companion-player-row__identity {
+    display: block;
+    white-space: normal;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity-label,
+  .companion-player-row.companion-matchup-player-row.is-team-defense:not(.is-compact) .companion-player-row__identity-label {
+    display: inline;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__position--inline,
+  .companion-player-row.companion-matchup-player-row:not(.is-compact) .companion-player-row__identity-accessory {
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+}

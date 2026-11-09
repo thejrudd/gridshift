@@ -1987,10 +1987,12 @@ test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({
   await expect(dstRows).toHaveCount(2);
   await expect(dstRows.locator('.companion-matchup-player-metric--projection')).toHaveCount(2);
   await expect(dstRows.nth(0).locator('.companion-player-row__identity-label')).toHaveText('Washington Commanders');
-  // A finished game shows its result between the team and the opponent.
-  await expect(dstRows.nth(0).locator('.companion-player-row__meta')).toContainText(/DEF WAS (?:[WLT] \d+-\d+ )?@ PHI/);
+  // The position rides beside the name; a finished game shows its result
+  // between the team and the opponent.
+  await expect(dstRows.nth(0).locator('.companion-player-row__identity .companion-player-row__position--inline')).toHaveText('DEF');
+  await expect(dstRows.nth(0).locator('.companion-player-row__meta')).toContainText(/^WAS (?:[WLT] \d+-\d+ )?@ PHI/);
   await expect(dstRows.nth(1).locator('.companion-player-row__identity-label')).toHaveText('Cincinnati Bengals');
-  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText(/DEF CIN (?:[WLT] \d+-\d+ )?v\. TB/);
+  await expect(dstRows.nth(1).locator('.companion-player-row__meta')).toContainText(/^CIN (?:[WLT] \d+-\d+ )?v\. TB/);
 
   const geometry = await dstRows.evaluateAll((rows) => rows.map((row) => {
     const rowRect = row.getBoundingClientRect();
@@ -2026,7 +2028,8 @@ test('Fantasy Matchups keeps D/ST projections in the row metric track', async ({
       identityAboveMeta: true,
     },
   ]);
-  geometry.forEach((row) => expect(row.height).toBeLessThanOrEqual(72));
+  // Three lines (name, game, stat line or kickoff) in a 78px card.
+  geometry.forEach((row) => expect(row.height).toBeLessThanOrEqual(80));
 });
 
 test('Fantasy Matchups shows a started player actual score above the projection', async ({ page }) => {
