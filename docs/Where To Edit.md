@@ -45,12 +45,20 @@ Read first: [[Global Search]] (measurements, the load-bearing matching rules, an
 | `src/utils/globalSearch/correct.js` | Bounded typo correction |
 | `src/utils/globalSearch/tokenIndex.js` | Exact / prefix / trigram indexes |
 | `src/utils/globalSearch/rank.js` | Slot filtering, scoring, grouping |
-| `src/utils/globalSearch/persist.js` | IndexedDB record cache |
+| `src/utils/globalSearch/persist.js` | IndexedDB record cache and device-local recents |
+| `src/utils/globalSearch/recents.js` | Recent queries and opened results |
+| `src/utils/globalSearch/suggestions.js` | Empty-palette groups: recent, your starters, this week's games |
 | `src/utils/globalSearch/resolveRoute.js` | Result to route object |
+| `src/utils/globalSearch/detail.js` | Expanded result facts and result actions |
 | `src/utils/globalSearch/entities/*.js` | Per-source record adapters |
 | `src/utils/globalSearch/answers/*.js` | Inline answer resolvers (read-only over existing engines) |
-| `src/hooks/useGlobalSearch.js` | Open state, Cmd/Ctrl+K, index lifecycle |
-| `src/components/search/*.jsx` | Palette, result row, answer card, guide |
+| `src/utils/globalSearch/answers/compare.js` | "X vs Y" compare card |
+| `src/utils/globalSearch/answers/live.js` | Live scoreboard card and box-score highlights |
+| `src/utils/globalSearch/answers/history.js` | Champions, head to head, trades, transactions from stored League History |
+| `src/utils/globalSearch/live/liveSource.js` | The one search request: live gate, `/api/live` games, box score |
+| `src/hooks/useGlobalSearch.js` | Open state, Cmd/Ctrl+K, index lifecycle, recents |
+| `src/hooks/useLiveSearchAnswer.js` | Live answer request lifecycle for the palette |
+| `src/components/search/*.jsx` | Palette, result row, expanded detail and actions, answer card, guide |
 | `scripts/build-search-index.mjs` | Generates `public/search-index.v1.json` at `prebuild` |
 
 `src/utils/parseSearchQuery.js` re-exports `SEARCH_PATTERNS` from the shared vocabulary; the player browser and global search must not drift apart.
