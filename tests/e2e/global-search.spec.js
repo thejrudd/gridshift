@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { installTradeFixtures } from './tradeTestHarness.js';
-import { rosters } from '../fixtures/tradeFixtures.js';
+import { players, rosters } from '../fixtures/tradeFixtures.js';
 
 // Browser coverage for the global search palette: opening it from every shell
 // entry point, keyboard selection, typo correction, routing, commands, and the
@@ -398,6 +398,36 @@ test.describe('league history answers', () => {
     await card.getByRole('button', { name: 'Open trade history' }).click();
     await expect(page).toHaveURL(/\/trade\/history/);
     expect(historyRequests).toEqual([]);
+  });
+});
+
+test.describe('players with no team', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Behaviour is shared across layouts.');
+    // As Sleeper lists him: a free agent with neither a team nor an ESPN id.
+    await installTradeFixtures(page, {
+      players: {
+        ...players,
+        7528: { player_id: '7528', full_name: 'Najee Harris', first_name: 'Najee', last_name: 'Harris', position: 'RB', team: null, espn_id: null, active: true, search_rank: 170, fantasy_positions: ['RB'] },
+      },
+    });
+    await page.route('https://site.web.api.espn.com/apis/common/v3/search**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [{ id: '4241457', displayName: 'Najee Harris', type: 'player' }] }),
+    }));
+    await page.goto(START_ROUTE);
+    await expect(page.getByRole('button', { name: 'Search GridShift' })).toBeVisible();
+    await expect(page).toHaveURL(SETTLED_ROUTE);
+  });
+
+  test('a free agent with no ESPN id opens his stats page, found by name', async ({ page }) => {
+    await openWithShortcut(page);
+    await searchInput(page).fill('najee harris');
+    await expect(palette(page).getByRole('option').first()).toContainText('Najee Harris');
+    await page.keyboard.press('Enter');
+    await expect(palette(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/statistics\/player\/4241457/);
   });
 });
 

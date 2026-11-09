@@ -1,4 +1,5 @@
 import { fetchRoster } from './playerApi.js';
+import { cachedFetch, TTL } from './playerCache.js';
 
 export const STATISTICS_MODES = {
   GAME: 'game',
@@ -75,19 +76,80 @@ export function findRosterMatchForSleeperPlayer(player = {}, roster = []) {
     ?? null;
 }
 
+const ESPN_PLAYER_SEARCH_URL = 'https://site.web.api.espn.com/apis/common/v3/search';
+
+async function searchEspnPlayers(name) {
+  const params = new URLSearchParams({
+    query: name,
+    limit: '10',
+    type: 'player',
+    sport: 'football',
+    league: 'nfl',
+  });
+  const response = await fetch(`${ESPN_PLAYER_SEARCH_URL}?${params}`);
+  if (!response.ok) throw new Error(`Player search failed: ${response.status}`);
+  const payload = await response.json();
+  return (payload?.items ?? []).map((item) => ({ id: item?.id, displayName: item?.displayName ?? '' }));
+}
+
+/**
+ * A player's ESPN id found by name, for a player with no team to look up a
+ * roster on — a free agent such as Najee Harris, whom Sleeper lists with
+ * neither a team nor an ESPN id.
+ *
+ * ESPN's search does not say a player's position, so the name has to be
+ * unique: two players with the same name (the two Josh Allens) give null
+ * rather than a guess that would open the wrong player's page.
+ */
+export async function lookupEspnIdByName(name, { searchFn = searchEspnPlayers } = {}) {
+  const normalized = normalizePlayerName(name);
+  if (!normalized) return null;
+  try {
+    const candidates = await cachedFetch(
+      `espn_player_search_v1_${normalized}`,
+      () => searchFn(String(name).trim()),
+      TTL.roster,
+    );
+    const matches = (candidates ?? []).filter((candidate) => (
+      candidate?.id != null && normalizePlayerName(candidate.displayName) === normalized
+    ));
+    return matches.length === 1 ? String(matches[0].id) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveStatisticsPlayerMetaFromSleeperId(
   sleeperId,
   sleeperPlayers,
   espnIdOverrides = {},
-  { rosterFetcher = null, fetchRosterFn = null } = {},
+  { rosterFetcher = null, fetchRosterFn = null, nameLookup = lookupEspnIdByName } = {},
 ) {
   const playerMeta = buildStatisticsPlayerMetaFromSleeperId(sleeperId, sleeperPlayers, espnIdOverrides);
   if (playerMeta) return playerMeta;
 
   if (!sleeperId || !sleeperPlayers) return null;
   const player = sleeperPlayers[sleeperId];
-  const teamId = player?.team?.toUpperCase?.();
-  if (!player || !teamId) return null;
+  if (!player) return null;
+  const teamId = player.team?.toUpperCase?.();
+
+  // No team, so no roster to match on: find the player by name instead.
+  if (!teamId) {
+    const displayName = getSleeperDisplayName(player);
+    const espnId = typeof nameLookup === 'function' ? await nameLookup(displayName) : null;
+    if (!espnId) return null;
+    return buildStatisticsPlayerMeta({}, {
+      id: espnId,
+      espnId,
+      sleeperId: String(sleeperId),
+      displayName,
+      teamId: null,
+      position: player.position ?? '',
+      experience: player.years_exp != null ? player.years_exp + 1 : undefined,
+      jersey: player.number ?? '',
+      status: player.injury_status ?? player.status ?? '',
+    });
+  }
 
   const fetchRosterForTeam = rosterFetcher ?? fetchRosterFn ?? fetchRoster;
   if (typeof fetchRosterForTeam !== 'function') return null;
