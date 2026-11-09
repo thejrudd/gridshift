@@ -230,7 +230,7 @@ export function createPlayerDataService({ store, upstream, config, now = () => D
 
   async function getGameLog(playerId, season, teamId) {
     return resolve({
-      key: `gamelog_v11_${playerId}_${season}`,
+      key: `gamelog_v12_${playerId}_${season}`,
       season,
       ttlMs: config.liveTtlMs,
       isEmpty: (games) => !Array.isArray(games) || games.length === 0,

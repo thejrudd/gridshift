@@ -8,6 +8,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Status |
 |-----|--------|
+| Statistics player game logs showed no team, opponent, or result for games a player played after a mid-season trade, and placed bye weeks and playoff games by his first team of the season. | Fix implemented for v9.4; awaiting user verification |
 
 ---
 
