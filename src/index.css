@@ -30097,6 +30097,15 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   color: var(--color-label);
 }
 
+/* Reached with → from the search field: the row stays the listbox's active
+   option, and the action it will run on Enter is marked like a focused control. */
+.global-search-detail__action.is-focused {
+  background: var(--color-fill);
+  color: var(--color-label);
+  outline: var(--focus-ring-width) solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 @media (pointer: coarse) {
   .global-search-detail__action {
     min-height: 44px;

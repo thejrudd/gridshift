@@ -294,6 +294,55 @@ test.describe('live answers', () => {
   });
 });
 
+test.describe('result actions', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Keyboard paths; tap is covered on mobile.');
+    await installTradeFixtures(page);
+    await page.goto(START_ROUTE);
+    await expect(page.getByRole('button', { name: 'Search GridShift' })).toBeVisible();
+    await expect(page).toHaveURL(SETTLED_ROUTE);
+  });
+
+  test('→ walks into a player\'s actions and Enter trades for him from his owner', async ({ page }) => {
+    await openWithShortcut(page);
+    await searchInput(page).fill('partner receiver');
+    const detail = palette(page).locator('.global-search-detail');
+    await expect(detail.getByRole('button', { name: 'Trade for' })).toBeVisible();
+    await expect(palette(page).getByText('for actions')).toBeVisible();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(detail.getByRole('button', { name: 'Trade for' })).toHaveClass(/is-focused/);
+    await expect(searchInput(page)).toHaveAttribute('aria-activedescendant', 'global-search-action-0');
+    await page.keyboard.press('Tab');
+    await expect(detail.getByRole('button', { name: 'Roster' })).toHaveClass(/is-focused/);
+    await page.keyboard.press('ArrowLeft');
+    await expect(detail.getByRole('button', { name: 'Trade for' })).toHaveClass(/is-focused/);
+
+    await page.keyboard.press('Enter');
+    await expect(palette(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/trade\/agent\?player=203&side=get&partner=2$/);
+  });
+
+  test('← back out of the actions returns Enter to the result itself', async ({ page }) => {
+    await openWithShortcut(page);
+    await searchInput(page).fill('seahawks');
+    const detail = palette(page).locator('.global-search-detail');
+    await expect(detail.getByRole('button', { name: 'Schedule' })).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowLeft');
+    await expect(detail.getByRole('button', { name: 'Schedule' })).not.toHaveClass(/is-focused/);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/statistics\/team\/sea$/);
+  });
+
+  test('your own player is offered to trade away', async ({ page }) => {
+    await openWithShortcut(page);
+    await searchInput(page).fill('target magnet');
+    await palette(page).getByRole('button', { name: 'Trade away' }).click();
+    await expect(page).toHaveURL(/\/trade\/agent\?player=104&side=give$/);
+  });
+});
+
 test.describe('mobile', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-mobile', 'Mobile shell entry point.');
@@ -311,5 +360,14 @@ test.describe('mobile', () => {
     await first.click();
     await expect(palette(page)).toBeHidden();
     await expect(page).toHaveURL(/\/statistics\/team\/sea$/);
+  });
+
+  test('a team\'s schedule action opens from a tap', async ({ page }) => {
+    await page.getByRole('button', { name: 'Search GridShift' }).click();
+    await searchInput(page).fill('seahawks');
+    await palette(page).getByRole('button', { name: 'Schedule' }).click();
+    await expect(palette(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/statistics\/schedule/);
+    await expect(page).toHaveURL(/sea/i);
   });
 });

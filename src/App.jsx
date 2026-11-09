@@ -1843,6 +1843,8 @@ function AppInner() {
     // The league's own active week, so "last week" means the most recently
     // completed one rather than a calendar guess.
     currentWeek: currentFantasyWeek,
+    // Result actions offer Trade only where the Trade tab itself works.
+    tradeAvailable: hasLeague && !tradeDisabled,
   }), [
     activeScoringSettings,
     currentFantasyWeek,
@@ -1857,6 +1859,7 @@ function AppInner() {
     scheduleData?.teams,
     searchFantasyOwnership,
     sleeperPlayers,
+    tradeDisabled,
     weeklyStats,
   ]);
 
