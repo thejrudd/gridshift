@@ -2607,6 +2607,7 @@ function CompanionMatchupView({
                 key={i}
                 mine={slot.mine}
                 opp={slot.opp}
+                tourAnchor={i === 0}
                 mineLineupUnavailable={myLineupUnavailable}
                 oppLineupUnavailable={opponentLineupUnavailable}
                 slotPos={slot.slotPos}
@@ -3554,7 +3555,7 @@ function MatchupProgressBar({ player, align }) {
   );
 }
 
-function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false, statLineFor = null, gameStatusFor = null }) {
+function HeadToHeadRow({ mine, opp, bench, slotPos, tourAnchor = false, mineLineupUnavailable = false, oppLineupUnavailable = false, onSelectMine, onSelectOpp, onComparePlayers, onOpenInjuries, sharedPlayerNameFontSize, showProgress = false, statLineFor = null, gameStatusFor = null }) {
   const { darkMode } = useTheme();
   const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
   const slotLabel = slotPos ? (SLOT_LABELS[slotPos] ?? slotPos) : (mine?.position ?? opp?.position ?? '?');
@@ -3566,7 +3567,11 @@ function HeadToHeadRow({ mine, opp, bench, slotPos, mineLineupUnavailable = fals
     <div className="px-1.5 sm:px-4" style={{ opacity: bench ? 0.72 : 1 }}>
       <div className="matchup-h2h-grid">
       {/* My player — left */}
-        <div className="matchup-row-cell" data-hover-player={!bench && mine?.id ? mine.id : undefined}>
+        <div
+          className="matchup-row-cell"
+          data-hover-player={!bench && mine?.id ? mine.id : undefined}
+          data-tour={tourAnchor ? 'matchup-player-card' : undefined}
+        >
           <MatchupPlayerRow
             player={mine}
             lineupUnavailable={mineLineupUnavailable}

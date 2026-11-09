@@ -1555,4 +1555,5 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Search corrections** - Search no longer says it is showing results for a corrected word when the results matched what you typed, and words like "love" and "adds" are no longer corrected into a different question.
 - **Free agents open from Search** - A free agent whom Sleeper lists with no team, such as Najee Harris, now opens their Statistics page from Search, Rankings and Rosters instead of saying no stats page is available.
 - **Game logs after mid-season trades** - Statistics player game logs show the team, opponent and result for games after a mid-season trade, and only show byes when the player's team had no game.
+- **Desktop matchup cards** - Desktop matchup cards show, beside the photo, the name with the position beside it, the game, then the stat line once the game starts or the kickoff day and time before it. In narrow windows the cards drop the team logo and then the photo, so names and games stay whole.
 
