@@ -16,7 +16,14 @@ function seasonSummary(data, team) {
     .filter((row) => teams[row.t]?.conf === me.conf && teams[row.t]?.div === me.div)
     .sort((a, b) => b.w - a.w || a.l - b.l || (b.pf - b.pa) - (a.pf - a.pa));
   const leader = division[0];
+  const pointsFor = games.reduce((sum, game) => sum + (Number(game.pf) || 0), 0);
+  const pointsAgainst = games.reduce((sum, game) => sum + (Number(game.pa) || 0), 0);
+  const diff = pointsFor - pointsAgainst;
   return {
+    diff: games.length ? `${diff > 0 ? '+' : ''}${diff}` : null,
+    perGame: games.length
+      ? `${(pointsFor / games.length).toFixed(1)} for · ${(pointsAgainst / games.length).toFixed(1)} against`
+      : null,
     record: `${wins}–${games.length - wins - ties}${ties ? `–${ties}` : ''}`,
     split: `${homeWins}–${home.length - homeWins} home · ${awayWins}–${games.length - home.length - awayWins} away`,
     place: division.findIndex((row) => row.t === team) + 1,
@@ -38,8 +45,8 @@ function Pod({ value, label, note }) {
 }
 
 /**
- * Statistics team hero: identity, the selected season's record and division
- * place beside franchise honors, and the next game. Colors come from the
+ * Statistics team hero: identity, the selected season's record, division
+ * place and point differential, and the next game. Colors come from the
  * team's palette through CSS custom properties set by the caller.
  */
 export default function TeamHero({ team, teamAbbr, history, season, seasonData, darkMode, colors, onViewSchedule, onOpenNextGame }) {
@@ -72,14 +79,7 @@ export default function TeamHero({ team, teamAbbr, history, season, seasonData, 
             <div className="statistics-team-hero__pods">
               {summary && <Pod value={summary.record} label={`${season} record`} note={summary.split} />}
               {summary?.place > 0 && <Pod value={ordinal(summary.place)} label={summary.divisionName} note={summary.leaderNote} />}
-              {history && (
-                <Pod
-                  value={history.superBowls}
-                  label={history.superBowls === 1 ? 'Super Bowl' : 'Super Bowls'}
-                  note={history.superBowlYears.length > 0 ? history.superBowlYears.join(', ') : null}
-                />
-              )}
-              {history && <Pod value={history.divisionTitles} label={history.divisionTitles === 1 ? 'Division title' : 'Division titles'} />}
+              {summary?.diff && <Pod value={summary.diff} label="Point diff" note={summary.perGame} />}
             </div>
           </div>
 
@@ -111,7 +111,9 @@ export default function TeamHero({ team, teamAbbr, history, season, seasonData, 
             <span>{new Date(next.date).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             {next.venue && <span>{next.venue}</span>}
             <span>Week {next.week}</span>
-            <span className="statistics-team-hero__next-cta" aria-hidden="true">Matchup ›</span>
+            <svg className="statistics-team-hero__next-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="9 6 15 12 9 18" />
+            </svg>
           </button>
         )}
         {next && !onOpenNextGame && (

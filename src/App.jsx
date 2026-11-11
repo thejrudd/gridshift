@@ -2815,7 +2815,7 @@ function AppInner() {
             <>
               {leagueView === 'standings' && (
                 <Suspense fallback={<SectionLoading label="Loading Standings" />}>
-                  <CompanionStandings />
+                  <CompanionStandings onOpenRoster={(rosterId) => openFantasyTeamFromStats({ rosterId })} />
                 </Suspense>
               )}
               {leagueView === 'history' && (

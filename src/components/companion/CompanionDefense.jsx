@@ -233,7 +233,7 @@ function SortHeader({ active, dir, children, onClick, align = 'right' }) {
       type="button"
       className={`companion-sort-header${active ? ' is-active' : ''}`}
       onClick={onClick}
-      style={{ justifyContent: align === 'left' ? 'flex-start' : 'flex-end' }}
+      style={{ justifyContent: align === 'left' ? 'flex-start' : align === 'center' ? 'center' : 'flex-end' }}
       aria-label={`Sort by ${children}${active ? `, currently ${directionLabel}` : ''}`}
     >
       <span>{children}</span>
@@ -432,8 +432,8 @@ export default function CompanionDefense({
       compactGridTemplate="38px minmax(0,1fr) minmax(112px, 1fr) 12px"
       columnGridTemplate={compactRows ? 'repeat(2, minmax(0, 1fr))' : '112px 112px'}
       columns={[
-        <CompanionPlayerMetric key="total" value={formatDefenseRankingValue(row.total, { mode: state.mode, stat: state.stat })} label="Total" />,
-        <CompanionPlayerMetric key="avg" value={formatDefenseRankingValue(row.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })} label="Per Game" />,
+        <CompanionPlayerMetric key="total" value={formatDefenseRankingValue(row.total, { mode: state.mode, stat: state.stat })} label="Total" align="center" />,
+        <CompanionPlayerMetric key="avg" value={formatDefenseRankingValue(row.avg, { mode: state.mode, stat: state.stat, scope: 'avg' })} label="Per Game" align="center" />,
       ]}
       leading={(
         <span className="companion-defense-rank">#{row.strengthRank}</span>
@@ -565,8 +565,8 @@ export default function CompanionDefense({
             <span>Rank</span>
             <SortHeader active={state.sort === 'team'} dir={state.dir} align="left" onClick={() => setSort('team')}>Defense</SortHeader>
             <div className="companion-defense-row-header__metrics">
-              <SortHeader active={state.sort === 'total'} dir={state.dir} onClick={() => setSort('total')}>Total</SortHeader>
-              <SortHeader active={state.sort === 'avg'} dir={state.dir} onClick={() => setSort('avg')}>Per Game</SortHeader>
+              <SortHeader active={state.sort === 'total'} dir={state.dir} align="center" onClick={() => setSort('total')}>Total</SortHeader>
+              <SortHeader active={state.sort === 'avg'} dir={state.dir} align="center" onClick={() => setSort('avg')}>Per Game</SortHeader>
             </div>
             <span aria-hidden="true" />
           </div>

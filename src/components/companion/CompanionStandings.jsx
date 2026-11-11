@@ -28,24 +28,87 @@ function SectionHeading({ title, meta, icon, id }) {
   return <SectionHeader id={id} title={title} meta={meta} icon={icon && <LeagueHistoryIcon name={icon} size="sm" />} />;
 }
 
-function StandingRows({ rows, historical, playoffTeamCount }) {
+function StandingRow({ row, playoffTeamCount, historical, divisionLeader, onOpenRoster }) {
+  const inPlayoffs = playoffTeamCount > 0 && row.seed <= playoffTeamCount;
+  const seedClass = `league-seed${inPlayoffs ? ' is-playoff-seed' : ''}${divisionLeader ? ' is-division-leader' : ''}`;
+  const seedLabel = [divisionLeader && 'Division leader', inPlayoffs && (historical ? 'Made playoffs' : 'Playoff spot')].filter(Boolean).join(', ');
+  const canOpen = typeof onOpenRoster === 'function' && row.rosterId != null;
+  const name = <strong className="gs-text-row-title" title={row.teamName}>{row.teamName}</strong>;
   return (
-    <DataTable className="league-standings-table" scrollClassName="league-standings-table-scroll">
-      <thead><tr><th className="is-center">Seed</th><th className="is-start">Team</th><th className="is-center">Record</th><th className="is-center is-desktop-only">Last 5</th><th>PF</th><th className="is-desktop-only">PA</th></tr></thead>
-      <tbody>{rows.map((row) => {
-        const inPlayoffs = historical && playoffTeamCount > 0 && row.seed <= playoffTeamCount;
+    <tr className={inPlayoffs ? 'is-playoff-team' : ''}>
+      <td className="is-center"><span className={seedClass} title={seedLabel || undefined} aria-label={seedLabel ? `Seed ${row.seed}, ${seedLabel}` : undefined}>{row.seed}</span></td>
+      <td className="is-start league-standing-team">
+        {canOpen ? (
+          <button type="button" className="league-standing-team__link" onClick={() => onOpenRoster(row.rosterId)} aria-label={`Open ${row.teamName} roster`}>
+            {name}
+            <small className="gs-text-secondary" title={row.managerName}>{row.managerName}</small>
+          </button>
+        ) : (
+          <>
+            {name}
+            <small className="gs-text-secondary" title={row.managerName}>{row.managerName}</small>
+          </>
+        )}
+      </td>
+      <td className="is-center league-standing-record"><b>{row.wins}</b><span>-</span><em>{row.losses}</em>{row.ties > 0 && <><span>-</span><i>{row.ties}</i></>}</td>
+      <td className="is-center is-desktop-only"><span className="league-standing-form" aria-label={`Recent form: ${row.recentForm.join(', ') || 'none'}`}>{row.recentForm.map((result, index) => <i key={`${result}-${index}`} className={`is-${result.toLowerCase()}`} title={result === 'W' ? 'Win' : result === 'L' ? 'Loss' : 'Tie'} />)}</span></td>
+      <td>{formatScore(row.pointsFor)}</td>
+      <td className="is-desktop-only">{formatScore(row.pointsAgainst)}</td>
+    </tr>
+  );
+}
+
+const STANDINGS_HEAD = (
+  <thead><tr><th className="is-center">Seed</th><th className="is-start">Team</th><th className="is-center">Record</th><th className="is-center is-desktop-only">Last 5</th><th>PF</th><th className="is-desktop-only">PA</th></tr></thead>
+);
+
+function divisionLeaderId(division, multipleDivisions) {
+  if (!multipleDivisions || !division.rows.length) return null;
+  return division.rows.reduce((best, row) => (row.seed < best.seed ? row : best)).participantId;
+}
+
+/** One table for every division: a single sticky column header, with each
+    division as a label row, so the header is never repeated down the page. */
+function StandingsTable({ divisions, historical, playoffTeamCount, onOpenRoster }) {
+  const multipleDivisions = divisions.length > 1;
+  return (
+    <DataTable className="league-standings-table is-combined" scrollClassName="league-standings-table-scroll is-combined">
+      {STANDINGS_HEAD}
+      {divisions.map((division) => {
+        const leaderId = divisionLeaderId(division, multipleDivisions);
         return (
-          <tr key={row.participantId} className={inPlayoffs ? 'is-playoff-team' : ''}>
-            <td className="is-center"><span className={`league-seed${inPlayoffs ? ' is-playoff-seed' : ''}`}>{row.seed}</span></td>
-            <td className="is-start league-standing-team"><strong className="gs-text-row-title" title={row.teamName}>{row.teamName}</strong><small className="gs-text-secondary" title={row.managerName}>{row.managerName}{inPlayoffs ? ' · Playoffs' : ''}</small></td>
-            <td className="is-center league-standing-record"><b>{row.wins}</b><span>-</span><em>{row.losses}</em>{row.ties > 0 && <><span>-</span><i>{row.ties}</i></>}</td>
-            <td className="is-center is-desktop-only"><span className="league-standing-form" aria-label={`Recent form: ${row.recentForm.join(', ') || 'none'}`}>{row.recentForm.map((result, index) => <i key={`${result}-${index}`} className={`is-${result.toLowerCase()}`} title={result === 'W' ? 'Win' : result === 'L' ? 'Loss' : 'Tie'} />)}</span></td>
-            <td>{formatScore(row.pointsFor)}</td>
-            <td className="is-desktop-only">{formatScore(row.pointsAgainst)}</td>
-          </tr>
+          <tbody key={division.id}>
+            {multipleDivisions && (
+              <tr className="league-standings-division-row">
+                {/* Same cell pattern as a data row, so the phone layout's
+                    hidden desktop-only columns never widen this row. */}
+                <th colSpan={2} scope="rowgroup" className="is-start">{division.label}</th>
+                <td /><td className="is-desktop-only" /><td /><td className="is-desktop-only" />
+              </tr>
+            )}
+            {division.rows.map((row) => (
+              <StandingRow
+                key={row.participantId}
+                row={row}
+                historical={historical}
+                playoffTeamCount={playoffTeamCount}
+                divisionLeader={row.participantId === leaderId}
+                onOpenRoster={onOpenRoster}
+              />
+            ))}
+          </tbody>
         );
-      })}</tbody>
+      })}
     </DataTable>
+  );
+}
+
+function StandingsLegend({ historical, showDivisionLeader }) {
+  return (
+    <div className="league-standings-legend" aria-hidden="true">
+      <span><i className="league-seed is-playoff-seed" />{historical ? 'Made playoffs' : 'Playoff spot'}</span>
+      {showDivisionLeader && <span><i className="league-seed is-division-leader" />Division leader</span>}
+    </div>
   );
 }
 
@@ -359,7 +422,7 @@ function losersBracketPresentation(type) {
   return { title: 'Losers Bracket', meta: 'Verified Sleeper bracket' };
 }
 
-export default function CompanionStandings() {
+export default function CompanionStandings({ onOpenRoster = null }) {
   const history = useLeagueHistoryData();
   const snapshot = history.snapshots?.find((entry) => String(entry.season) === history.season) ?? null;
   const historical = Boolean(snapshot?.completed);
@@ -383,12 +446,14 @@ export default function CompanionStandings() {
         title={`${history.season} Standings`}
         description={<>Results through completed <strong>Week {standings.throughWeek}</strong>. In-progress scoring never changes this order.</>}
       />
-      <div className="league-division-grid">
-        {standings.divisions.map((division) => (
-          <Section key={division.id} title={division.label} meta={historical ? null : 'League seed at left'}>
-            <StandingRows rows={division.rows} historical={historical} playoffTeamCount={playoffTeamCount} />
-          </Section>
-        ))}
+      <div>
+        <StandingsLegend historical={historical} showDivisionLeader={standings.divisions.length > 1} />
+        <StandingsTable
+          divisions={standings.divisions}
+          historical={historical}
+          playoffTeamCount={playoffTeamCount}
+          onOpenRoster={historical ? null : onOpenRoster}
+        />
       </div>
       {historical && brackets?.hasChampionship && <Bracket title="Championship playoff" rows={brackets.championship} champion />}
       {historical && brackets?.hasConsolation && <Bracket title={losersBracket.title} meta={losersBracket.meta} rows={brackets.consolation} toiletBowl={brackets.losersBracketType === 'toilet-bowl'} />}

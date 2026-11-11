@@ -819,6 +819,7 @@ export default function StatisticsScores({
               onChange={selectSeasonPhase}
               className="scores-phase-toggle"
             />
+            {availableSeasons.length > 1 && (
             <label className="scores-season-select">
               <span>Season</span>
               <select
@@ -847,6 +848,7 @@ export default function StatisticsScores({
                 ))}
               </select>
             </label>
+            )}
           </div>
         </div>
       </header>

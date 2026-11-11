@@ -99,8 +99,8 @@ function formatLeagueRankTitle(rank) {
 
 function getLeagueMetaSegments(player) {
   const showReserveMeta = player.isReserve && player.availabilityStatus !== 'Injured Reserve';
+  // Position is already carried by the group heading and the rank (RB12).
   return [
-    player.position,
     player.team,
     player.isKeeper ? 'Keeper' : null,
     showReserveMeta ? 'IR' : null,
@@ -120,8 +120,8 @@ function getLeagueLayout(isCompactPhone, bodyColPx) {
       // Names stay on one line (ellipsis), so the metric block is kept as
       // narrow as its values allow to leave the name the most room.
       rowTemplate: '28px minmax(0,1fr) auto 8px',
-      metricTemplate: '20px 36px 58px',
-      metricGap: 4,
+      metricTemplate: '20px 46px 58px',
+      metricGap: 10,
       sidePadding: 6,
       tradeWidth: 30,
       verticalPadding: 11,
@@ -1105,6 +1105,8 @@ function LeaguePicksView() {
         right={picksScrollCue.right}
         targetRef={picksScrollRef}
         label="draft pick holdings"
+        className="horizontal-scroll-cue--picks"
+        touchInteractive
       />
     </div>
   );

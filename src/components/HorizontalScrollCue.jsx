@@ -7,6 +7,8 @@ export default function HorizontalScrollCue({
   targetRef = null,
   scrollRatio = 0.75,
   label = 'horizontal list',
+  // Tappable on touch screens too, not only with a mouse.
+  touchInteractive = false,
 }) {
   const isFinePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
   if (!left && !right) return null;
@@ -24,7 +26,7 @@ export default function HorizontalScrollCue({
   const renderCue = (direction) => {
     const visible = direction === 'left' ? left : right;
     if (!visible) return null;
-    const interactive = Boolean(isFinePointer && targetRef);
+    const interactive = Boolean((isFinePointer || touchInteractive) && targetRef);
 
     return (
       <button

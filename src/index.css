@@ -520,6 +520,23 @@ body {
   bottom: 0.75rem;
 }
 
+/* Draft pick holdings: a bare arrow over the table, no fade band. The button
+   is only the arrow's hit area so it never covers the pick cells. */
+.horizontal-scroll-cue.horizontal-scroll-cue--picks {
+  top: 50%;
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  background: none;
+  transform: translateY(-50%);
+}
+.horizontal-scroll-cue--picks::after {
+  width: 32px;
+  height: 32px;
+}
+
 /* ─────────────────────────────────────────────────────────────
    App Shell — two-panel layout on lg+
    ───────────────────────────────────────────────────────────── */
@@ -1911,7 +1928,8 @@ body {
   align-items: center;
   gap: 10px;
   margin-bottom: 7px;
-  padding: 0 14px;
+  /* Same inline padding as .companion-defense-row so headings sit over values. */
+  padding: 0 10px 0 12px;
   color: var(--color-label-tertiary);
   font-size: var(--type-label);
   font-weight: 900;
@@ -1924,11 +1942,20 @@ body {
   display: grid;
   grid-template-columns: 112px 112px;
   align-items: center;
-  gap: 0;
+  gap: 8px;
 }
 
 .companion-defense-row-header__metrics > * {
-  text-align: right;
+  text-align: center;
+  white-space: nowrap;
+}
+/* The sort arrow (8px + 4px gap) follows the label; offsetting by the same
+   width keeps the label itself centered over the values. */
+.companion-defense-row-header__metrics > .companion-sort-header.is-active {
+  padding-left: 12px;
+}
+@media (max-width: 720px) {
+  .companion-defense-row-header__metrics { letter-spacing: 0.02em; }
 }
 
 /* Defenses opened from a Schedule matchup: a way back, and both teams pinned. */
@@ -2471,16 +2498,19 @@ body {
 }
 
 @media (max-width: 720px) {
+  /* Mirrors the rows' compactGridTemplate and column grid in
+     CompanionDefense.jsx so each heading sits over its value column. */
   .companion-defense-row-header {
-    grid-template-columns: 38px minmax(0,1fr) 112px 12px;
+    grid-template-columns: 38px minmax(0,1fr) minmax(112px, 1fr) 12px;
     gap: 8px;
     padding-inline: 8px;
   }
 
   .companion-defense-row-header__metrics {
-    justify-self: end;
-    width: 112px;
-    grid-template-columns: repeat(2, minmax(0, 52px));
+    justify-self: stretch;
+    width: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 }
 
@@ -3395,8 +3425,6 @@ body {
 .companion-scoring-profile-header {
   grid-area: profile;
   min-width: 0;
-  padding-left: var(--density-space-lg);
-  border-left: 3px solid var(--color-signature);
 }
 
 .companion-scoring-profile-header__eyebrow {
@@ -3430,17 +3458,22 @@ body {
 
 .companion-scoring-profile-facts {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--density-space-xs) var(--density-space-md);
+  flex-wrap: nowrap;
+  gap: var(--density-space-sm);
   margin-top: var(--density-space-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
   color: var(--color-label-tertiary);
   font-size: var(--type-label);
   font-weight: 650;
 }
 
+.companion-scoring-profile-facts::-webkit-scrollbar { display: none; }
+.companion-scoring-profile-facts span { flex: none; }
 .companion-scoring-profile-facts span + span::before {
-  content: '/';
-  margin-right: var(--density-space-md);
+  content: '·';
+  margin-right: var(--density-space-sm);
   color: var(--color-label-quaternary);
 }
 
@@ -3485,9 +3518,7 @@ body {
   gap: var(--density-space-md);
   min-height: calc(var(--control-height) + var(--density-space-lg));
   margin-bottom: 0;
-  padding: var(--density-space-sm) var(--density-space-md);
-  border-left: 4px solid var(--scoring-section-accent);
-  background: color-mix(in srgb, var(--scoring-section-accent) 13%, var(--color-fill-secondary));
+  padding: var(--density-space-sm) 0;
 }
 
 .companion-scoring-section-heading > div {
@@ -3532,19 +3563,18 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
   margin: 0;
-  gap: 1px;
-  padding: 1px;
-  background: var(--color-separator);
+  column-gap: var(--density-space-lg);
+  border-top: 1px solid var(--color-separator);
 }
 
 .companion-scoring-core-grid > div {
   min-width: 0;
-  padding: var(--density-space-md);
-  background: var(--color-fill-secondary);
+  padding: var(--density-space-md) 0;
+  border-bottom: 1px solid var(--color-separator);
 }
 
 .companion-scoring-core-grid > div[data-emphasis='true'] {
-  background: color-mix(in srgb, var(--color-signature) 12%, var(--color-fill-secondary));
+  padding-left: var(--density-space-md);
   box-shadow: inset 3px 0 0 var(--color-signature);
 }
 
@@ -3723,10 +3753,6 @@ body {
   grid-area: example;
   align-self: start;
   min-width: 0;
-  padding: var(--density-space-md);
-  background: var(--color-fill-secondary);
-  border: 1px solid var(--color-separator);
-  border-radius: 12px;
 }
 
 .companion-scoring-example-heading {
@@ -11642,7 +11668,11 @@ body {
   border-radius: 8px;
   background: var(--color-bg-secondary);
   color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* Text */
@@ -12585,6 +12615,10 @@ button.player-dash-rank__dot::after { content: ''; position: absolute; inset: -1
    .player-dash-* pieces; "this team" is --player-dash-me.
    ───────────────────────────────────────────────────────────── */
 
+@media (max-width: 639px) {
+  .team-dash { padding-inline: 12px; }
+}
+
 .team-dash-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -13097,36 +13131,49 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .statistics-team-hero__next.is-link {
+  position: relative;
   width: 100%;
   margin: 0;
-  border-width: 1px 0 0;
-  border-style: solid;
-  border-color: var(--statistics-team-hero-pod);
-  background: none;
+  padding: 12px 44px 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--statistics-team-hero-on) 22%, transparent);
+  border-radius: 12px;
+  background: var(--statistics-team-hero-pod);
   text-align: left;
   cursor: pointer;
   font: inherit;
   font-size: var(--type-label);
+  transition:
+    background-color 150ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 150ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.statistics-team-hero__next.is-link:hover .statistics-team-hero__next-cta,
-.statistics-team-hero__next.is-link:focus-visible .statistics-team-hero__next-cta {
-  color: var(--statistics-team-hero-on);
+.statistics-team-hero__next.is-link:hover {
+  border-color: color-mix(in srgb, var(--statistics-team-hero-on) 45%, transparent);
+  background: color-mix(in srgb, var(--statistics-team-hero-on) 12%, var(--statistics-team-hero-pod));
+}
+
+.statistics-team-hero__next.is-link:active {
+  transform: scale(0.99);
+  background: color-mix(in srgb, var(--statistics-team-hero-on) 16%, var(--statistics-team-hero-pod));
 }
 
 .statistics-team-hero__next.is-link:focus-visible {
   outline: 2px solid var(--statistics-team-hero-on);
-  outline-offset: 4px;
-  border-radius: 4px;
+  outline-offset: 3px;
 }
 
-.statistics-team-hero__next-cta {
-  margin-left: auto;
-  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--statistics-team-hero-muted);
+.statistics-team-hero__next-chevron {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--statistics-team-hero-on);
+  transform: translateY(-50%);
+  transition: transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.statistics-team-hero__next.is-link:hover .statistics-team-hero__next-chevron {
+  transform: translate(2px, -50%);
 }
 
 @media (pointer: coarse) {
@@ -13196,6 +13243,20 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 @media (max-width: 639px) {
   .statistics-team-hero__watermark { display: none; }
+  .statistics-team-hero__inner { gap: 14px; padding: 16px; }
+  .statistics-team-hero__layout,
+  .statistics-team-hero__main { gap: 12px; }
+  .statistics-team-hero__identity { gap: 12px; }
+  .statistics-team-hero__logo { width: 52px; height: 52px; }
+  .statistics-team-hero__title { font-size: 30px; }
+  .statistics-team-hero__meta { margin-top: 4px; }
+  .statistics-team-hero__pods {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .statistics-team-hero__pod { padding: 2px 10px; }
+  .statistics-team-hero__pod-value { font-size: 22px; }
+  .statistics-team-hero__next { gap: 6px 12px; padding-top: 12px; }
 }
 
 @media (min-width: 640px) {
@@ -27167,7 +27228,8 @@ button.trade-history-asset-card:focus-visible {
 .league-activity-entry:first-child .league-activity-entry__rail::before { top: 14px; }
 .league-activity-entry:last-child .league-activity-entry__rail::before { bottom: auto; height: 14px; }
 .league-activity-entry__node { position: relative; z-index: 1; display: grid; place-items: center; align-self: flex-start; margin-top: 8px; padding: 2px; border-radius: 50%; background: var(--color-bg); }
-.league-activity-entry__body { min-width: 0; margin-bottom: 12px; padding: 12px 14px 14px; border: 1px solid var(--color-separator); border-radius: 12px; background: var(--color-bg-secondary); box-shadow: 0 6px 16px color-mix(in srgb, var(--color-label) 7%, transparent); }
+.league-activity-entry__body { min-width: 0; padding: 10px 0 16px; border-bottom: 1px solid var(--color-separator); }
+.league-activity-entry:last-child .league-activity-entry__body { border-bottom: 0; }
 .league-activity-entry__meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .league-activity-entry__meta > span:last-child { color: var(--color-label-tertiary); font-size: var(--type-label); white-space: nowrap; }
 .league-activity-entry__badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 4px; font-family: 'Barlow Condensed', sans-serif; font-size: var(--type-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -27180,8 +27242,8 @@ button.trade-history-asset-card:focus-visible {
 .league-activity-entry__heading > strong { font-size: var(--type-meta); }
 .league-activity-entry__heading > span { color: var(--color-label-tertiary); font-family: 'Barlow Condensed', sans-serif; font-size: var(--type-label); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
 .league-activity-entry__body > p { margin: 4px 0 0; color: var(--color-label-secondary); font-size: var(--type-label); line-height: 1.5; }
-.league-activity-moves { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
-.league-activity-move { display: grid; grid-template-columns: minmax(240px, 0.9fr) minmax(230px, 1.1fr); gap: 12px; align-items: center; min-width: 0; padding: 6px; border-radius: 10px; background: var(--color-fill-secondary); }
+.league-activity-moves { display: flex; flex-direction: column; gap: 12px; margin: 10px 0 0; padding: 0; list-style: none; }
+.league-activity-move { display: grid; grid-template-columns: minmax(240px, 0.9fr) minmax(230px, 1.1fr); gap: 12px; align-items: center; min-width: 0; }
 .league-activity-player { position: relative; isolation: isolate; overflow: hidden; container-type: inline-size; width: 100%; min-width: 0; min-height: 62px; display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; border-radius: 8px; color: var(--activity-player-fg); text-align: left; background: var(--activity-player-bg); }
 .league-activity-player.is-drillable { cursor: pointer; transition: transform 140ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 160ms cubic-bezier(0.32, 0.72, 0, 1); }
 .league-activity-player.is-drillable:hover { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--activity-player-fg) 32%, transparent); }
@@ -30875,6 +30937,68 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 .league-standings-table tr.is-playoff-team small { color: var(--color-text-secondary); }
 .league-standings-page .league-seed { width: 28px; height: 28px; border-radius: 50%; background: var(--color-fill); box-shadow: none; font-size: var(--type-body); }
 .league-standings-page .league-seed.is-playoff-seed { box-shadow: inset 0 0 0 2px var(--color-state-selected); }
+.league-standings-page .league-seed.is-division-leader { background: var(--color-signature); color: var(--color-signature-fg); }
+.league-standings-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-bottom: 8px;
+  font-size: var(--type-label);
+  color: var(--color-text-secondary);
+}
+.league-standings-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.league-standings-page .league-standings-legend .league-seed { width: 14px; height: 14px; }
+/* One header for the whole table. The wrapper clips instead of scrolling so
+   the sticky header tracks the page scroller; its top cancels .content-area's
+   padding-top (see .statistics-schedule-group-row). */
+.league-standings-table-scroll.is-combined { overflow: visible; }
+.league-standings-table.is-combined thead th {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
+  background: var(--color-bg);
+}
+@media (min-width: 1024px) {
+  .league-standings-table.is-combined thead th { top: -24px; }
+}
+.league-standings-division-row th,
+.league-standings-division-row td {
+  vertical-align: bottom;
+}
+.league-standings-division-row th {
+  overflow: visible;
+  white-space: nowrap;
+  padding-top: 22px;
+  padding-bottom: 6px;
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-emphasis);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-label);
+}
+.league-standing-team__link {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.league-standing-team__link strong,
+.league-standing-team__link small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.league-standing-team__link:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.league-standing-team__link:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+@media (pointer: coarse) { .league-standing-team__link { min-height: 44px; } }
 .league-standings-page .league-standing-record { font-size: var(--text-row-title-size); }
 .league-standings-page .league-standing-record span { padding: 0 1px; color: var(--color-text-secondary); }
 .league-standings-page .league-standings-live-note { margin-top: calc(var(--space-section) * -0.5); }
