@@ -2297,12 +2297,14 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           entrance. The heatmap grid scrolls under sticky week headers, and a
           transform-based entrance would make the animating wrapper their
           containing block for the length of the reveal. Opacity alone does not.
-          Knobs and definitions: docs/Loading Motion.md. */}
+          Knobs and definitions: docs/Loading Motion.md. Sorting is not part of
+          resetKey: a new resetKey remounts the content, which would reset the
+          grid's sideways scroll and push later weeks off screen. */}
       <LoadingSwap
         loading={!loaded}
         navigationScope={`heatmap:${platform}:${selectedLeagueId}:${season}`}
         entrance="fade"
-        resetKey={`${league?.league_id ?? ''}:${sortKey}`}
+        resetKey={league?.league_id ?? ''}
         skeleton={(
           <div className="px-4">
             <SkeletonRows count={1} height="18rem" />

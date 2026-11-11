@@ -15,6 +15,7 @@ import { getTeamColorKey } from '../../data/teamColors';
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { useTheme } from '../../context/ThemeContext';
+import useMediaQuery from '../../hooks/useMediaQuery.js';
 import Modal from '../Modal';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 import { CompanionSearchField, CompanionSelectorButton, CompanionSelectorRail } from './CompanionSelectorControls.jsx';
@@ -90,6 +91,9 @@ const PICKER_HEADER_ROW_HEIGHT = 35;
 const PICKER_PLAYER_ROW_HEIGHT = 76;
 const PICKER_OVERSCAN_PX = 320;
 const PICKER_REFERENCE_VIEWPORT = { width: 430, height: 760 };
+// Phones use the Matchups card shape: no photo or logo, position chip and
+// status beside the name, and metadata that wraps by whole segment.
+const COMPACT_PHONE_QUERY = '(max-width: 480px)';
 const TRADE_LOGO_SIDE_THEME_OPTIONS = { logoSide: 'end' };
 
 function clamp(value, min, max) {
@@ -227,6 +231,7 @@ export default function TradeRosterPicker({
   const showSearchGuide = isAllMode && !trimmedSearch && posFilter === 'ALL';
   const enrichedPlayerCacheRef = useRef(new Map());
   const pickerFit = useTradePickerFitMetrics();
+  const isCompactPhone = useMediaQuery(COMPACT_PHONE_QUERY);
 
   // Positional ranks across all rostered players
   const rankMap = useMemo(
@@ -487,10 +492,18 @@ export default function TradeRosterPicker({
       player.rankInfo ? `#${player.rankInfo.rank} ${player.rankInfo.posLabel}` : null,
       player.avgPPG != null ? `${player.avgPPG.toFixed(1)} avg` : null,
       ...getTradeCurrentContextLabels(player.currentContext),
-    ].filter(Boolean).slice(0, pickerFit.optionalMetaCount);
+    ].filter(Boolean).slice(0, isCompactPhone ? 3 : pickerFit.optionalMetaCount);
     const valuePrefix = (player.dynastyFallback || player.idpFallback) ? '~' : '';
     const estimateLabel = player.dynastyFallback ? 'DYN est.' : player.idpFallback ? 'est.' : null;
     const additiveTotal = showsAdditiveTotal(player) && currentTotal > 0 ? `→ ${fmtTradeValue(currentTotal + player.val)}` : null;
+    const ownerLabel = isAllMode && player.ownerName ? player.ownerName : null;
+    const statusBadge = player.availabilityStatus ? (
+      <PlayerStatusBadge
+        status={player.availabilityStatus}
+        compact
+        className="trade-roster-picker-row__status-badge"
+      />
+    ) : null;
 
     return (
       <CompanionPlayerRow
@@ -501,20 +514,23 @@ export default function TradeRosterPicker({
         disabled={player.isAdded}
         selected={player.isAdded}
         compact
-        className="trade-roster-picker-row"
-        showTeamLogo
+        className={`trade-roster-picker-row${isCompactPhone ? ' is-phone' : ''}`}
         teamThemeOptions={TRADE_LOGO_SIDE_THEME_OPTIONS}
-        identityAccessory={isAllMode && player.ownerName ? (
+        showAvatar={!isCompactPhone}
+        showTeamLogo={!isCompactPhone}
+        showPosition
+        positionPlacement={isCompactPhone ? 'identity' : 'column'}
+        identityAccessory={isCompactPhone ? statusBadge : ownerLabel ? (
           <span
             className={[
               'trade-roster-picker-row__owner',
               player.isOwnPlayer ? 'is-own' : '',
             ].filter(Boolean).join(' ')}
           >
-            {player.ownerName}
+            {ownerLabel}
           </span>
         ) : null}
-        metaSegments={[player.team, ...optionalMeta].filter(Boolean)}
+        metaSegments={[isCompactPhone ? ownerLabel : null, player.team, ...optionalMeta].filter(Boolean)}
         columnGridTemplate="minmax(58px, auto)"
         columns={[
           <CompanionPlayerMetric
@@ -525,13 +541,7 @@ export default function TradeRosterPicker({
             title={player.idpFallback ? 'Estimated from available league production or normalized market context' : undefined}
           />,
         ]}
-        status={player.availabilityStatus ? (
-          <PlayerStatusBadge
-            status={player.availabilityStatus}
-            compact
-            className="trade-roster-picker-row__status-badge"
-          />
-        ) : (
+        status={isCompactPhone ? null : statusBadge ?? (
           <span className="trade-roster-picker-row__status-spacer" aria-hidden="true" />
         )}
         actions={player.isAdded ? (
@@ -550,7 +560,9 @@ export default function TradeRosterPicker({
             <span data-testid={`trade-roster-picker-add-${player.id}`}>+</span>
           </CompanionPlayerAction>
         )}
-        gridTemplate="auto auto minmax(0,1fr) auto minmax(58px,auto) 22px auto"
+        gridTemplate={isCompactPhone
+          ? 'minmax(0,1fr) minmax(52px,auto) auto'
+          : 'auto auto minmax(0,1fr) auto minmax(58px,auto) 22px auto'}
         dataTestId={`trade-roster-picker-row-${player.id}`}
         style={{
           borderBottom: '1px solid var(--color-separator)',
@@ -565,7 +577,7 @@ export default function TradeRosterPicker({
         }}
       />
     );
-  }, [currentTotal, darkMode, handleSelect, isAllMode, pickerFit.optionalMetaCount, shouldVirtualize, showsAdditiveTotal]);
+  }, [currentTotal, darkMode, handleSelect, isAllMode, isCompactPhone, pickerFit.optionalMetaCount, shouldVirtualize, showsAdditiveTotal]);
 
   return (
     <Modal

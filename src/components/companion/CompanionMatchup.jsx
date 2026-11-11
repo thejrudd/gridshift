@@ -3864,7 +3864,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       columns={isBye ? [
         <CompanionPlayerStatus
           key="bye-week"
-          label="Bye Week"
+          label={compact ? 'Bye' : 'Bye Week'}
           className="companion-matchup-bye-metric"
         />,
       ] : scoreColumns}
