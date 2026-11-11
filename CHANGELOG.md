@@ -1570,3 +1570,12 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Upcoming schedule** - Matchup details show the team's remaining weeks for the position, each with its Heatmap matchup rank and color, and rank the whole schedule from easiest to hardest. Bye weeks are marked.
 - **Player position ranks** - Each player row shows where the player ranks at their position across the league this season, such as "5th WR overall", in place of the team.
 - **This week's finished games count** - Team and player averages include a game that has already finished this week, even while other games that week are still to play.
+
+## v9.4.3 - Mobile Fixes
+*2026-11-11*
+
+- **Heatmap week sort keeps your place** - Sorting by a week on a phone no longer scrolls the Heatmap back to the first week.
+- **Rank dots on phones** - The rank strips on a player's Statistics page show small round dots along the line on phones, as on desktop, instead of tall ovals.
+- **Heatmap opens season stats** - Selecting a player from the Heatmap opens their Seasons tab instead of Overview.
+- **Trade player rows on phones** - Add Player rows in Trade follow the Matchups card layout on phones: the position and status sit beside the name, and details wrap instead of being cut off.
+- **Shorter bye label** - Matchups shows "Bye" instead of "Bye Week" on phones.

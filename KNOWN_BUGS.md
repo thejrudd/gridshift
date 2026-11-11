@@ -15,6 +15,11 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| Sorting the Heatmap by a week on a phone scrolled the grid back to the first week, pushing the sorted week off screen. | v9.4.3 |
+| Statistics player rank strips drew other players as tall ovals on phones instead of small dots. | v9.4.3 |
+| Selecting a player from the Heatmap opened their Statistics Overview instead of their Seasons tab. | v9.4.3 |
+| Trade Add Player rows on phones cut off team, rank, and other details with ellipses. | v9.4.3 |
+| The "Bye Week" label on phone matchup cards was too wide for the card. | v9.4.3 |
 | Opening another team's roster from a player's Statistics page flipped Rosters back and forth between that team and your own without stopping. | v9.4.1 |
 | Free agents whom Sleeper lists with no team and no ESPN id, such as Najee Harris, were found by Search but could not open their Statistics page from Search, Rankings, or Rosters. | v9.4.0 |
 | Statistics player game logs showed no team, opponent, or result for games a player played after a mid-season trade, took bye weeks and playoff games from his first team of the season, and filled weeks before his first game with byes even when his team played. | v9.4.0 |
