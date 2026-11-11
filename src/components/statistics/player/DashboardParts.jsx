@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { getNflTeamLogoUrl } from '../../../utils/companionAssetVisuals.js';
 import { getTeamVisualTheme } from '../../../utils/teamVisualTheme.js';
 import { fmt, ordinal } from '../../../utils/playerSeason/dashboardModel.js';
-import { tipAttrs, ZONES } from './dashboardUi.js';
+import { tipAttrs, useDashboardTip, ZONES } from './dashboardUi.js';
 
 export function TeamMark({ abbr, darkMode, size = 16 }) {
   const logoKey = getTeamVisualTheme(abbr, darkMode)?.logoKey;
@@ -134,6 +134,10 @@ export function Switch({ checked, onChange, label, className = '' }) {
 /**
  * One row per ranked metric: value, a strip of every pooled player, and the
  * player's rank. Dots for other players open their pages when a handler is given.
+ *
+ * Mouse: hovering a dot names its player; clicking opens him. Touch: the dots
+ * are too dense to hit one by one, so a tap names the player nearest the tap
+ * and a second tap on that same player opens him (the WinSpark pattern).
  */
 export function RankStrips({ ranks, playerId, playerName, onOpenPlayer }) {
   if (!ranks?.length) return null;
@@ -142,38 +146,11 @@ export function RankStrips({ ranks, playerId, playerName, onOpenPlayer }) {
     <div className="player-dash-ranks">
       {ranks.map((rank) => {
         const me = rank.vals.find((entry) => entry.id === String(playerId));
-        const values = rank.vals.map((entry) => entry.v);
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const span = max - min || 1;
-        const left = (value) => (rank.dir > 0 ? (value - min) / span : (max - value) / span) * 100;
         return (
           <div key={rank.key} className="player-dash-rank">
             <span className="player-dash-rank__label">{rank.label}</span>
             <span className="player-dash-rank__value">{me ? `${fmt(me.v, rank.dp)}${rank.suffix}` : '–'}</span>
-            <div className="player-dash-rank__strip" role="img" aria-label={me ? `${rank.label}: ${playerName} ranks ${ordinal(me.r)} of ${count}` : `${rank.label}: not in this pool`}>
-              <span className="player-dash-rank__axis" />
-              <span className="player-dash-rank__ends" aria-hidden="true"><span>Worst</span><span>Best</span></span>
-              {rank.vals.map((entry) => {
-                const isMe = entry.id === String(playerId);
-                // Inset 8px each side so end dots stay inside the strip.
-                const style = { left: `calc(8px + (100% - 16px) * ${(left(entry.v) / 100).toFixed(4)})` };
-                const tip = tipAttrs(`${entry.n} · ${entry.t}`, [`${fmt(entry.v, rank.dp)}${rank.suffix} · ${ordinal(entry.r)}`, !isMe && onOpenPlayer ? 'Select to open his stats page' : null]);
-                return onOpenPlayer && !isMe ? (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="player-dash-rank__dot"
-                    style={style}
-                    aria-label={`${entry.n}, ${entry.t}: ${fmt(entry.v, rank.dp)}${rank.suffix}, ${ordinal(entry.r)}. Open player page`}
-                    onClick={() => onOpenPlayer(entry)}
-                    {...tip}
-                  />
-                ) : (
-                  <span key={entry.id} className={`player-dash-rank__dot ${isMe ? 'is-me' : ''}`} style={style} {...tip} />
-                );
-              })}
-            </div>
+            <RankStrip rank={rank} me={me} count={count} playerId={playerId} playerName={playerName} onOpenPlayer={onOpenPlayer} />
             <span className="player-dash-rank__rank">
               {me ? (
                 <>
@@ -183,6 +160,97 @@ export function RankStrips({ ranks, playerId, playerName, onOpenPlayer }) {
               ) : <span className="player-dash-faint">Not ranked</span>}
             </span>
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RankStrip({ rank, me, count, playerId, playerName, onOpenPlayer }) {
+  const tip = useDashboardTip();
+  const selectedRef = useRef(null);
+  // Where the finger landed. A tap's click can be moved onto the nearest
+  // clickable dot by the browser's touch adjustment; pointerdown is not.
+  const touchXRef = useRef(null);
+  const values = rank.vals.map((entry) => entry.v);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const fraction = (value) => (rank.dir > 0 ? (value - min) / span : (max - value) / span);
+  const reading = (entry, touch) => {
+    const isMe = entry.id === String(playerId);
+    const action = !isMe && onOpenPlayer ? (touch ? 'Tap again to open his stats page' : 'Select to open his stats page') : null;
+    return [`${entry.n} · ${entry.t}`, [`${fmt(entry.v, rank.dp)}${rank.suffix} · ${ordinal(entry.r)}`, action].filter(Boolean).join('\n')];
+  };
+
+  const onTouchTap = (event) => {
+    if (!tip?.isTouch() || !event.detail) return;
+    // Handle the whole tap here so the shared tooltip does not pin or close it.
+    event.stopPropagation();
+    event.preventDefault();
+    const strip = event.currentTarget;
+    const rect = strip.getBoundingClientRect();
+    const tapX = touchXRef.current ?? event.clientX;
+    touchXRef.current = null;
+    const at = (tapX - rect.left - 8) / Math.max(1, rect.width - 16);
+    const entry = rank.vals.reduce((best, candidate) => (
+      Math.abs(fraction(candidate.v) - at) < Math.abs(fraction(best.v) - at) ? candidate : best
+    ), rank.vals[0]);
+    if (!entry) return;
+
+    const selected = selectedRef.current;
+    if (selected && selected.id === entry.id && tip.pinnedElement() === strip) {
+      tip.hide();
+      if (entry.id !== String(playerId) && onOpenPlayer) onOpenPlayer(entry);
+      return;
+    }
+
+    const dot = strip.querySelector(`[data-rank-entry="${CSS.escape(entry.id)}"]`);
+    const dotRect = dot?.getBoundingClientRect();
+    const [title, body] = reading(entry, true);
+    tip.pin(
+      strip,
+      title,
+      body,
+      dotRect ? dotRect.left + dotRect.width / 2 : tapX,
+      dotRect ? dotRect.top : event.clientY,
+      () => {
+        selectedRef.current?.dot?.classList.remove('is-selected');
+        selectedRef.current = null;
+      },
+    );
+    dot?.classList.add('is-selected');
+    selectedRef.current = { id: entry.id, dot };
+  };
+
+  return (
+    <div
+      className="player-dash-rank__strip"
+      role="img"
+      aria-label={me ? `${rank.label}: ${playerName} ranks ${ordinal(me.r)} of ${count}` : `${rank.label}: not in this pool`}
+      onPointerDownCapture={(event) => { touchXRef.current = event.pointerType === 'mouse' ? null : event.clientX; }}
+      onClickCapture={onTouchTap}
+    >
+      <span className="player-dash-rank__axis" />
+      <span className="player-dash-rank__ends" aria-hidden="true"><span>Worst</span><span>Best</span></span>
+      {rank.vals.map((entry) => {
+        const isMe = entry.id === String(playerId);
+        // Inset 8px each side so end dots stay inside the strip.
+        const style = { left: `calc(8px + (100% - 16px) * ${fraction(entry.v).toFixed(4)})` };
+        const tipProps = tipAttrs(...reading(entry, false));
+        return onOpenPlayer && !isMe ? (
+          <button
+            key={entry.id}
+            type="button"
+            className="player-dash-rank__dot"
+            data-rank-entry={entry.id}
+            style={style}
+            aria-label={`${entry.n}, ${entry.t}: ${fmt(entry.v, rank.dp)}${rank.suffix}, ${ordinal(entry.r)}. Open player page`}
+            onClick={() => onOpenPlayer(entry)}
+            {...tipProps}
+          />
+        ) : (
+          <span key={entry.id} className={`player-dash-rank__dot ${isMe ? 'is-me' : ''}`} data-rank-entry={entry.id} style={style} {...tipProps} />
         );
       })}
     </div>
