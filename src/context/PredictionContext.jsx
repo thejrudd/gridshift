@@ -9,6 +9,7 @@ import {
   getCurrentPredictionSeason,
   isCreatablePredictionSeason,
 } from '../utils/predictionSnapshot.js';
+import { buildCompletedGameResults } from '../utils/predictionCompletedResults.js';
 
 const PredictionContext = createContext();
 const VALID_GAME_RESULTS = new Set(['W', 'L', 'T']);
@@ -925,7 +926,7 @@ export const PredictionProvider = ({ children }) => {
     });
   };
 
-  const setManualTeamRecord = (teamId, record = {}, allTeams = null) => {
+  const setManualTeamRecord = (teamId, record = {}, allTeams = null, { lockedGameResults = null } = {}) => {
     const team = allTeams?.find(t => t.id === teamId);
     const ties = record.ties ?? 0;
     const wins = record.wins ?? 0;
@@ -955,12 +956,13 @@ export const PredictionProvider = ({ children }) => {
     // A manual record is authoritative. Clear any previously forced or partial
     // game results (and their mirrored opponent results) so Advanced Mode can
     // never appear complete with a schedule that describes a different record.
+    // Final game results are facts, not picks, so they are kept.
     setTeamRecord(
       teamId,
       wins,
       losses,
       divisionWins,
-      {},
+      { ...(lockedGameResults ?? {}) },
       allTeams,
       ties,
       { manualOverride: true, recordSource: 'manual', opponentSyncMode: 'preserve' },
@@ -1026,9 +1028,17 @@ export const PredictionProvider = ({ children }) => {
     return predictions[teamId] || null;
   };
 
-  // Reset all predictions
-  const resetAllPredictions = () => {
-    updateSeasonState(predictionSeason, () => createEmptySeasonState());
+  // Reset all predictions. Games that have already gone final are seeded with
+  // their real results so a mid-season prediction starts from what happened.
+  const resetAllPredictions = (allTeams = [], schedule = null) => {
+    const completedResults = buildCompletedGameResults(schedule);
+    const seeded = {};
+    for (const team of allTeams) {
+      const gameResults = completedResults[team.id];
+      if (!gameResults) continue;
+      seeded[team.id] = syncRecordFromGameResults({ gameResults }, team, allTeams);
+    }
+    updateSeasonState(predictionSeason, () => ({ ...createEmptySeasonState(), predictions: seeded }));
   };
 
   // Get count of teams with predictions

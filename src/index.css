@@ -25511,9 +25511,12 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   overflow: hidden;
 }
 
+/* Weeks run down the first column, then continue at the top of the second. */
 @media (min-width: 1100px) {
   .predictions-team-game-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(var(--predictions-game-rows, 9), auto);
+    grid-auto-flow: column;
   }
 }
 
@@ -25546,6 +25549,23 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .predictions-team-game-row.is-bye {
   box-shadow: inset 4px 0 0 var(--prediction-team-muted, var(--color-label-tertiary));
+}
+
+/* A game that has gone final: no team gradient, only the real result stays lit. */
+.predictions-team-game-row.is-locked {
+  background: var(--color-bg-tertiary, var(--color-fill));
+}
+
+.predictions-team-game-row.is-locked .predictions-team-logo {
+  filter: grayscale(1);
+}
+
+.predictions-team-game-row.is-locked .predictions-game-result-button {
+  cursor: not-allowed;
+}
+
+.predictions-team-game-row.is-locked .predictions-game-result-button:not(.is-active) {
+  opacity: 0.35;
 }
 
 .predictions-team-game-meta {

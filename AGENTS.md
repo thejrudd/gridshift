@@ -121,6 +121,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Never auto-commit, bump versions, push, deploy, or perform external writes unless the user explicitly requests that action.
 - Name every branch for what it is for (for example `live-stat-refresh-fix` or `v9.3-scores-dashboard`). Never put an AI or tool name in a branch name (`claude/`, `codex/`) or leave a generated suffix; rename such a branch before committing to it.
 - Read docs/Release Workflow.md before committing, preparing a release, changing release metadata, or generating release notes.
+- A request to commit or merge to main also covers pushing main and its tag, creating the GitHub release with release notes, and deploying that tag on the GridShift VPS (`ssh -t gridshift deploy-gridshift --ref <tag>`). Follow the Committing to main section of docs/Release Workflow.md. Other branches keep the no-push rule.
 - Before running the What's New tour gate for a commit, present the genuinely new user-facing capabilities in the proposed commit scope (or say there are none) and wait for the user's confirmation.
 
 ## User-facing copy

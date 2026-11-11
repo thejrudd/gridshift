@@ -1571,7 +1571,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Player position ranks** - Each player row shows where the player ranks at their position across the league this season, such as "5th WR overall", in place of the team.
 - **This week's finished games count** - Team and player averages include a game that has already finished this week, even while other games that week are still to play.
 
-## v9.4.3 - Mobile Fixes
+## v9.4.3 - Mobile Fixes & Mid-Season Predictions
 *2026-11-11*
 
 - **Heatmap week sort keeps your place** - Sorting by a week on a phone no longer scrolls the Heatmap back to the first week.
@@ -1579,3 +1579,7 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Heatmap opens season stats** - Selecting a player from the Heatmap opens their Seasons tab instead of Overview.
 - **Trade player rows on phones** - Add Player rows in Trade follow the Matchups card layout on phones: the position and status sit beside the name, and details wrap instead of being cut off.
 - **Shorter bye label** - Matchups shows "Bye" instead of "Bye Week" on phones.
+- **Mid-season predictions** - Reset Predictions keeps the result of every game already played, so a new prediction starts from each team's real record and only the remaining weeks are left to pick. Reset is available once games have been played, even with no picks yet.
+- **Records stay possible** - Standard mode will not set a record, division record, or automatic balance below the wins and losses a team already has, or above what its remaining games allow.
+- **Played games locked** - In Advanced mode, games already played are greyed out with the final score and can't be changed.
+- **Weeks in order on desktop** - Advanced mode lists a team's weeks down the first column, then continues in the second.

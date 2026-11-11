@@ -20,6 +20,7 @@ export default function Sidebar({
   activeTab,
   onTabChange,
   predictionCount,
+  canResetPredictions = predictionCount > 0,
   completedTeamCount = predictionCount,
   totalTeams,
   pickedGameCount = 0,
@@ -313,7 +314,7 @@ export default function Sidebar({
             <SidebarAction
               label="Reset Predictions"
               onClick={onReset}
-              disabled={predictionCount === 0}
+              disabled={!canResetPredictions}
               destructive
             />
           </>

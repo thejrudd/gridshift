@@ -21,6 +21,7 @@ export default function ActionSheet({
   onImportJSON,
   onRandom,
   onReset,
+  canResetPredictions,
   onInstall,
   onMyTeam,
   favoriteTeam,
@@ -33,6 +34,7 @@ export default function ActionSheet({
   onDraftSync,
 }) {
   const hasPicks = predictionCount > 0;
+  const canReset = canResetPredictions ?? hasPicks;
   const isPredictions = activeTab === 'predictions';
   const showStatsExport = activeTab === 'fantasy' && canExportStats && Boolean(onStatsExport);
   const showLeagueControls = Boolean(league);
@@ -187,7 +189,7 @@ export default function ActionSheet({
             className="rounded-xl overflow-hidden"
             style={{ background: 'var(--color-fill-tertiary)' }}
           >
-            <ActionRow label="Reset Predictions" onClick={onReset} disabled={!hasPicks} destructive />
+            <ActionRow label="Reset Predictions" onClick={onReset} disabled={!canReset} destructive />
           </div>
         </div>
         )}

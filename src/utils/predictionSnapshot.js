@@ -367,7 +367,7 @@ export function getManualRecordLeagueStatus({ records = {}, teams = [] } = {}) {
   };
 }
 
-export function rebalanceCompleteManualRecords({ records = {}, teams = [], targetTeamId } = {}) {
+export function rebalanceCompleteManualRecords({ records = {}, teams = [], targetTeamId, recordBounds = {} } = {}) {
   const status = getManualRecordLeagueStatus({ records, teams });
   const nextRecords = { ...records };
   const adjustments = [];
@@ -383,13 +383,18 @@ export function rebalanceCompleteManualRecords({ records = {}, teams = [], targe
     .map((team) => {
       const teamId = normalizeTeamId(team?.id);
       const record = normalizeRecord(records[teamId]);
+      // Final results are a hard floor: never balance a team below the wins or
+      // losses it already has.
+      const bounds = recordBounds?.[teamId];
+      const finalWins = (bounds?.divisionWins ?? 0) + (bounds?.otherWins ?? 0);
+      const finalLosses = (bounds?.divisionLosses ?? 0) + (bounds?.otherLosses ?? 0);
       return {
         teamId,
         originalRecord: record,
         record,
         adjustmentCount: 0,
-        minWins: Math.max(0, record.divisionWins),
-        maxWins: Math.min(NFL_TEAM_GAMES - record.ties, 11 + record.divisionWins),
+        minWins: Math.max(0, record.divisionWins, finalWins),
+        maxWins: Math.min(NFL_TEAM_GAMES - record.ties, 11 + record.divisionWins, NFL_TEAM_GAMES - record.ties - finalLosses),
       };
     });
 

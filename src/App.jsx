@@ -17,6 +17,11 @@ import {
 } from './utils/predictionSnapshot';
 import { decodePredictionShareUrl } from './utils/predictionShareCodec';
 import { getPredictionProgressSummary } from './utils/predictionProgress.js';
+import {
+  buildCompletedGameResults,
+  buildCompletedRecordBoundsByTeam,
+  clampRecordToCompletedResults,
+} from './utils/predictionCompletedResults.js';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import useBodyScrollLock from './hooks/useBodyScrollLock';
 import useServiceWorkerUpdate from './hooks/useServiceWorkerUpdate';
@@ -1767,8 +1772,8 @@ function AppInner() {
   };
   const handleReset = () => {
     setActionSheetOpen(false);
-    if (!window.confirm('Are you sure you want to reset your predictions? This cannot be undone.')) return;
-    resetAllPredictions();
+    if (!window.confirm('Are you sure you want to reset your predictions? Games already played keep their final results. This cannot be undone.')) return;
+    resetAllPredictions(predictionTeams, predictionSchedule);
   };
   const handleInstall = () => { triggerInstall(); setActionSheetOpen(false); };
   const handleImportClick = () => { fileInputRef.current?.click(); setActionSheetOpen(false); };
@@ -1820,6 +1825,15 @@ function AppInner() {
   );
   const predictionTeams = predictionScheduleModel.teams;
   const predictionSchedule = predictionScheduleModel.schedule;
+  // Final games are fixed: Reset seeds them and no prediction can contradict them.
+  const completedGameResults = useMemo(
+    () => buildCompletedGameResults(predictionSchedule),
+    [predictionSchedule],
+  );
+  const completedRecordBounds = useMemo(
+    () => buildCompletedRecordBoundsByTeam(predictionTeams, completedGameResults),
+    [predictionTeams, completedGameResults],
+  );
 
   // Data the inline answer resolvers may read. Every field is something the app
   // already holds; a missing one makes the relevant resolver return null and the
@@ -2006,8 +2020,14 @@ function AppInner() {
 
   const handlePredictionRecordChange = useCallback(({ teamId, record }) => {
     if (!teamId || !record) return;
-    setManualTeamRecord(teamId, record, predictionTeams);
-  }, [predictionTeams, setManualTeamRecord]);
+    const bounds = completedRecordBounds[teamId];
+    setManualTeamRecord(
+      teamId,
+      clampRecordToCompletedResults(record, bounds),
+      predictionTeams,
+      { lockedGameResults: bounds ? completedGameResults[teamId] : null },
+    );
+  }, [completedGameResults, completedRecordBounds, predictionTeams, setManualTeamRecord]);
 
   const handlePredictionGameResultsSave = useCallback(({ teamId, gameResults }) => {
     if (!teamId) return false;
@@ -2076,6 +2096,8 @@ function AppInner() {
   }
 
   const predictionCount = getPredictionCount();
+  // Reset is useful with no picks once games are final: it fills in real results.
+  const canResetPredictions = predictionCount > 0 || Object.keys(completedGameResults).length > 0;
   const progressSummary = getPredictionProgressSummary({
     teams: predictionTeams,
     predictions,
@@ -2100,6 +2122,7 @@ function AppInner() {
         activeTab={activeTab}
         onTabChange={navigateToTab}
         predictionCount={predictionCount}
+        canResetPredictions={canResetPredictions}
         completedTeamCount={completedTeamCount}
         totalTeams={totalTeams}
         pickedGameCount={pickedGameCount}
@@ -2395,6 +2418,7 @@ function AppInner() {
                 picks={displayedPickMap}
                 predictions={displayedPredictions}
                 onRecordChange={sharedPredictionEnvelope ? undefined : handlePredictionRecordChange}
+                recordBounds={completedRecordBounds}
                 onSaveTeamGameResults={sharedPredictionEnvelope ? undefined : handlePredictionGameResultsSave}
                 playoffPicks={displayedPlayoffPicks}
                 onPlayoffPick={sharedPredictionEnvelope ? undefined : handlePlayoffPick}
@@ -2872,6 +2896,7 @@ function AppInner() {
         <ActionSheet
           onClose={() => setActionSheetOpen(false)}
           predictionCount={predictionCount}
+          canResetPredictions={canResetPredictions}
           predictionProgress={progressSummary}
           activeTab={activeTab}
           onGuide={() => { setGuideOpen(true); setActionSheetOpen(false); }}

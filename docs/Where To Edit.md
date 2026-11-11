@@ -113,6 +113,7 @@ Rules: retune in the tokens, never at a call site. A surface with sticky or fixe
 | --- | --- |
 | `src/context/PredictionContext.jsx` | Prediction state — high blast radius; trace consumers and persisted-state effects before changing |
 | `src/utils/predictionSnapshot.js` | Completion rules, season policy, immutable snapshot schema, import materialization |
+| `src/utils/predictionCompletedResults.js` | Final game results baked in on Reset and locked in Advanced mode |
 | `src/utils/predictionPlayoffSeeding.js` | Canonical seed ordering shared by picker, validator, randomizer, share cards |
 | `src/utils/playoffBracket.js` | NFL lowest-remaining-seed reseeding |
 | `src/utils/scheduleParser.js` | Schedule ingestion |
