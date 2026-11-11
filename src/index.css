@@ -12032,7 +12032,8 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.player-dash-rank__strip { grid-column: 1 / -1; position: relative; height: 30px; }
+/* manipulation: a quick confirming second tap must not zoom the page. */
+.player-dash-rank__strip { grid-column: 1 / -1; position: relative; height: 30px; touch-action: manipulation; }
 .player-dash-rank__rank { grid-column: 1 / -1; font-size: var(--type-label); color: var(--color-label-secondary); }
 
 @media (min-width: 760px) {
@@ -12075,6 +12076,15 @@ body {
 .player-dash-rank__dot:hover { opacity: 1; }
 
 button.player-dash-rank__dot::after { content: ''; position: absolute; inset: -10px 0; }
+
+/* Touch: the tapped player's dot stands out while its name is pinned. */
+.player-dash .player-dash-rank__strip.is-tip-pinned { background: none; }
+.player-dash-rank__dot.is-selected {
+  z-index: 3;
+  opacity: 1;
+  background: var(--color-label);
+  box-shadow: 0 0 0 2px var(--color-bg);
+}
 
 .player-dash-rank__dot.is-me {
   z-index: 2;
