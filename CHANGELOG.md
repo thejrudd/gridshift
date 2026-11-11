@@ -1579,3 +1579,4 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Heatmap opens season stats** - Selecting a player from the Heatmap opens their Seasons tab instead of Overview.
 - **Trade player rows on phones** - Add Player rows in Trade follow the Matchups card layout on phones: the position and status sit beside the name, and details wrap instead of being cut off.
 - **Shorter bye label** - Matchups shows "Bye" instead of "Bye Week" on phones.
+- **Rank dots on touch screens** - On a player's Statistics page, tapping a rank dot names that player and highlights the dot; tapping the same player again opens their stats page.
