@@ -493,3 +493,41 @@
   .nfl-matchup-situation { grid-template-columns: minmax(0, 1fr) auto; }
   .nfl-matchup-field { grid-column: 1 / -1; order: 3; }
 }
+
+/* ── collapsed score bar ────────────────────────────────────────────────────
+   Shown under the fixed header once the full scoreboard scrolls away. */
+.nfl-matchup-mini {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px var(--matchup-preview-gutter);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-separator);
+}
+.nfl-matchup-mini__side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.nfl-matchup-mini__side:last-child { flex-direction: row-reverse; }
+.nfl-matchup-mini__side img { width: 24px; height: 24px; flex: none; object-fit: contain; }
+.nfl-matchup-mini__side b,
+.nfl-matchup-mini__axis {
+  font-family: var(--nfl-matchup-display);
+  font-size: var(--type-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.nfl-matchup-mini__axis { color: var(--color-label-secondary); }
+.nfl-matchup-mini__side strong {
+  margin-left: auto;
+  font-family: var(--nfl-matchup-display);
+  font-size: var(--type-heading-sm);
+  font-weight: 800;
+  line-height: 1;
+}
+.nfl-matchup-mini__side:last-child strong { margin-left: 0; margin-right: auto; }
