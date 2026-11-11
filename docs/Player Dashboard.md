@@ -12,7 +12,7 @@ The Statistics player page opens on a play-by-play dashboard. Tabs depend on the
 | LB | Overview · Tackling · Pass rush · Every play · Seasons |
 | DB | Overview · Coverage · Tackling · Every play · Seasons |
 
-Positions without a group (OL, P, LS, team defense) show the Seasons page alone. The last-opened tab is remembered for the browser session; a tab the next player's group lacks falls back to Overview.
+Positions without a group (OL, P, LS, team defense) show the Seasons page alone. The last-opened tab is remembered for the browser session; a tab the next player's group lacks falls back to Overview. A caller that opens a player for a specific view sets that tab first with `rememberPlayerDashboardTab` (`src/utils/playerSeason/dashboardTabMemory.js`); the Fantasy Heatmap opens players on Seasons.
 
 ## Data
 

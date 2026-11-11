@@ -1138,6 +1138,68 @@ test('Heatmap mobile keeps filters collapsed above the grid', async ({ page }) =
   await expect(page.locator('#companion-heatmap-filter-panel')).toHaveCount(0);
 });
 
+test('Heatmap week sort keeps the grid scrolled to the selected week', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/fantasy/heatmap');
+  await dismissWhatsNew(page);
+
+  const scroller = page.locator('.companion-heatmap-table-scroller');
+  const lastWeekHeader = page.locator('th[data-heatmap-header-week]').last();
+  await expect(lastWeekHeader).toBeVisible();
+  const canScroll = await scroller.evaluate((node) => node.scrollWidth > node.clientWidth + 40);
+  test.skip(!canScroll, 'Grid fits the viewport, so there is no sideways scroll to keep.');
+
+  await scroller.evaluate((node) => { node.scrollLeft = node.scrollWidth; });
+  const before = await scroller.evaluate((node) => node.scrollLeft);
+  expect(before).toBeGreaterThan(0);
+
+  await lastWeekHeader.click();
+  await expect.poll(() => scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(before - 24);
+  await lastWeekHeader.click();
+  await expect.poll(() => scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(before - 24);
+});
+
+test('Trade Add Player rows on phones keep names and metadata whole', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/trade/agent');
+  await dismissWhatsNew(page);
+
+  await page.getByTestId('trade-plate-yours-add-player').filter({ visible: true }).first().click();
+  const rows = page.locator('[data-testid^="trade-roster-picker-row-"]:visible');
+  await expect(rows.first()).toBeVisible();
+
+  const geometry = await rows.evaluateAll((nodes) => nodes.map((row) => {
+    const rowRect = row.getBoundingClientRect();
+    const meta = row.querySelector('.companion-player-row__meta');
+    const metaRect = meta?.getBoundingClientRect();
+    return {
+      hasAvatar: Boolean(row.querySelector('.companion-player-row__avatar')),
+      inlinePosition: Boolean(row.querySelector('.companion-player-row__identity .companion-player-row__position--inline')),
+      rowWidth: row.clientWidth,
+      rowScrollWidth: row.scrollWidth,
+      metaBottomWithinRow: metaRect ? metaRect.bottom <= rowRect.bottom + 1 : true,
+      items: [...(meta?.querySelectorAll('.companion-player-row__meta-item') ?? [])].map((item) => ({
+        text: item.textContent?.trim(),
+        textOverflow: getComputedStyle(item).textOverflow,
+        scrollWidth: item.scrollWidth,
+        clientWidth: item.clientWidth,
+      })),
+    };
+  }));
+
+  expect(geometry.length).toBeGreaterThan(0);
+  for (const row of geometry) {
+    expect(row.hasAvatar).toBe(false);
+    expect(row.inlinePosition).toBe(true);
+    expect(row.rowScrollWidth).toBeLessThanOrEqual(row.rowWidth + 1);
+    expect(row.metaBottomWithinRow).toBe(true);
+    for (const item of row.items) {
+      expect(item.textOverflow, item.text).not.toBe('ellipsis');
+      expect(item.scrollWidth, item.text).toBeLessThanOrEqual(item.clientWidth + 1);
+    }
+  }
+});
+
 test('Heatmap filter summary keeps one chip per filter after changes', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/fantasy/heatmap');

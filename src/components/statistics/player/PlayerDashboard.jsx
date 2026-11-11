@@ -14,6 +14,7 @@ import { OverviewTab, StatRail } from './OverviewTab.jsx';
 import { KickingTab, PassingTab, ReceivingTab, RushingTab } from './OffenseTabs.jsx';
 import { CoverageTab, PassRushTab, TacklingTab } from './DefenseTabs.jsx';
 import { EveryPlayTab } from './PlayList.jsx';
+import { readPlayerDashboardTab as readStoredTab, rememberPlayerDashboardTab as storeTab } from '../../../utils/playerSeason/dashboardTabMemory.js';
 
 const TAB_LABELS = {
   overview: 'Overview', passing: 'Passing', rushing: 'Rushing', receiving: 'Receiving', kicking: 'Kicking',
@@ -29,15 +30,6 @@ const GROUP_TABS = {
   LB: ['overview', 'tackling', 'passrush', 'plays', 'seasons'],
   DB: ['overview', 'coverage', 'tackling', 'plays', 'seasons'],
 };
-const TAB_STORAGE_KEY = 'gridshift.statistics.playerTab';
-
-function readStoredTab() {
-  try { return sessionStorage.getItem(TAB_STORAGE_KEY); } catch { return null; }
-}
-function storeTab(tab) {
-  try { sessionStorage.setItem(TAB_STORAGE_KEY, tab); } catch { /* storage is optional */ }
-}
-
 /**
  * Statistics player page tabs. Overview, the position tabs, and Every play
  * come from the player's season of play-by-play; Seasons is the existing
