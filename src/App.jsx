@@ -71,6 +71,7 @@ import {
   STATISTICS_MODES,
 } from './utils/playerDrilldown';
 import { hasTradeProposalAssets } from './utils/tradeProposal.js';
+import { rememberPlayerDashboardTab } from './utils/playerSeason/dashboardTabMemory.js';
 import { isTradeAvailableForSeason } from './utils/seasonAvailability.js';
 import { debugCompanionLog, debugCompanionTimeAsync } from './utils/companionPerfDebug';
 import {
@@ -2737,6 +2738,7 @@ function AppInner() {
                     routeState={heatmapRouteState}
                     onRouteStateChange={scheduleHeatmapRouteUpdate}
                     onViewPlayer={(id, meta) => {
+                      rememberPlayerDashboardTab('seasons');
                       navigateToStatisticsPlayer({ id, ...meta }, {
                         backLabel: 'Heatmap',
                         backRoute: appRoute,
