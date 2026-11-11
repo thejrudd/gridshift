@@ -12,7 +12,32 @@ asks.
 A statement such as “let's work on v8.7” establishes version context; it is not
 permission to commit.
 
-After committing, do not run git push. The user pushes manually.
+After committing, do not run git push. The user pushes manually. The one
+exception is a commit to main, covered below.
+
+## Committing to main
+
+A user request to commit or merge to main also authorizes the release and
+deploy steps that follow it. After the main commit passes every gate in this
+document, finish all of these in the same pass:
+
+1. Push main and the version tag to origin (`git push origin main` and
+   `git push origin vX.Y[.Z]`). Tag the main commit `vX.Y[.Z]` if it is not
+   tagged yet.
+2. Create the GitHub release from that tag, titled `vX.Y[.Z] - Short Release
+   Theme`, with release notes written to the GitHub release notes format below:
+   `gh release create vX.Y[.Z] --title "vX.Y[.Z] - Short Release Theme"
+   --notes-file <notes.md> --latest`.
+3. Deploy the tag on the GridShift VPS (SSH host `gridshift`):
+   `ssh -t gridshift deploy-gridshift --ref vX.Y[.Z]`. The script lives at
+   `/usr/local/bin/deploy-gridshift`, deploys `/opt/gridshift/app` with
+   `/opt/gridshift/.env`, keeps the old containers up until the build succeeds,
+   and accepts `--force` to redeploy a commit that is already checked out. Do
+   not use the repository's `update.sh`; it targets a different install layout.
+4. Report the release URL and the deploy result. A failed deploy is not a
+   passing step: report the script output and leave the release in place.
+
+Commits to any other branch keep the no-push rule.
 
 ## Before every commit
 

@@ -6,6 +6,11 @@ import { getAllDivisions, getTeamsByDivision } from '../../utils/scheduleParser'
 import { getTeamVisualTheme } from '../../utils/teamVisualTheme';
 import { getLowestRemainingSeedTeam } from '../../utils/playoffBracket';
 import {
+  clampRecordToCompletedResults,
+  getCompletedGameOutcome,
+  getCompletedRecordRanges,
+} from '../../utils/predictionCompletedResults';
+import {
   getPredictionPlayoffField,
   getPredictionPlayoffSeeds,
 } from '../../utils/predictionPlayoffSeeding.js';
@@ -111,9 +116,22 @@ const clampChooseRecord = (record) => {
   });
 };
 
-const rebalanceDivisionRecords = (divisionTeams, records, targetTeamId, targetRecord) => {
-  const draft = new Map(divisionTeams.map((team) => [team.id, clampChooseRecord(getChooseRecord(records[team.id]))]));
-  draft.set(targetTeamId, clampChooseRecord(targetRecord));
+const rebalanceDivisionRecords = (divisionTeams, records, targetTeamId, targetRecord, recordBounds = {}) => {
+  // Final results set a floor and ceiling no automatic adjustment may cross.
+  const clampTeam = (teamId, record) => clampRecordToCompletedResults(
+    clampChooseRecord(record),
+    recordBounds[teamId],
+    { allowTies: false },
+  );
+  const getDivisionRange = (teamId, record) => {
+    const range = getNoTieDivisionRange(record);
+    const bounds = recordBounds[teamId];
+    if (!bounds) return range;
+    const final = getCompletedRecordRanges(bounds, { wins: record.wins, ties: record.ties, allowTies: false }).divisionWins;
+    return { min: Math.max(range.min, final.min), max: Math.min(range.max, final.max) };
+  };
+  const draft = new Map(divisionTeams.map((team) => [team.id, clampTeam(team.id, getChooseRecord(records[team.id]))]));
+  draft.set(targetTeamId, clampTeam(targetTeamId, targetRecord));
 
   const adjust = (amount, direction, preferredTeamIds) => {
     let remaining = amount;
@@ -123,7 +141,7 @@ const rebalanceDivisionRecords = (divisionTeams, records, targetTeamId, targetRe
       let moved = false;
       for (const teamId of preferredTeamIds) {
         const record = draft.get(teamId);
-        const range = getNoTieDivisionRange(record);
+        const range = getDivisionRange(teamId, record);
         if (direction === -1 && record.divisionWins > range.min) {
           draft.set(teamId, { ...record, divisionWins: record.divisionWins - 1 });
           remaining -= 1;
@@ -160,7 +178,7 @@ const rebalanceDivisionRecords = (divisionTeams, records, targetTeamId, targetRe
   }
 
   return [...draft.entries()]
-    .map(([teamId, record]) => [teamId, clampChooseRecord(record)])
+    .map(([teamId, record]) => [teamId, clampTeam(teamId, record)])
     .filter(([teamId, record]) => !sameRecord(record, getChooseRecord(records[teamId])) || teamId === targetTeamId);
 };
 
@@ -238,6 +256,9 @@ const normalizeGame = (game, teamsById, index = 0, weekId = '1') => {
     network: game?.network,
     venue: game?.venue ?? game?.location,
     neutral,
+    completed: game?.completed === true,
+    awayScore: game?.awayScore ?? null,
+    homeScore: game?.homeScore ?? null,
   };
 };
 
@@ -493,12 +514,18 @@ function Stepper({ label, value, min, max, onChange, showValue = true }) {
 function RecordControls({
   record,
   onChange,
+  bounds = null,
   compact = false,
   showTies = true,
   divisionMode = 'details',
   valuesVisible = true,
 }) {
-  const current = normalizeRecord(record, { allowTies: showTies });
+  // Games already played limit how far any record can move.
+  const applyBounds = (nextRecord) => clampRecordToCompletedResults(nextRecord, bounds, { allowTies: showTies });
+  const current = applyBounds(normalizeRecord(record, { allowTies: showTies }));
+  const finalRanges = bounds
+    ? getCompletedRecordRanges(bounds, { wins: current.wins, ties: current.ties, allowTies: showTies })
+    : null;
   const getDivisionRange = (nextRecord) => showTies
     ? { min: 0, max: Math.min(DIVISION_GAMES, nextRecord.wins) }
     : getNoTieDivisionRange(nextRecord);
@@ -506,11 +533,11 @@ function RecordControls({
   const normalizeNext = (nextRecord) => {
     const normalized = normalizeRecord(nextRecord, { allowTies: showTies });
     const nextDivisionRange = getDivisionRange(normalized);
-    return normalizeRecord(normalized, {
+    return applyBounds(normalizeRecord(normalized, {
       allowTies: showTies,
       divisionMin: nextDivisionRange.min,
       divisionMax: nextDivisionRange.max,
-    });
+    }));
   };
   const updateWins = (wins) => onChange(normalizeNext({ ...current, wins }));
   const updateTies = (ties) => onChange(normalizeNext({ ...current, ties }));
@@ -522,7 +549,13 @@ function RecordControls({
       : clamp(current.wins, nextDivisionWins, NON_DIVISION_GAMES + nextDivisionWins);
     onChange(normalizeNext({ ...current, wins: nextWins, divisionWins: nextDivisionWins }));
   };
-  const divisionStepperRange = showTies ? divisionRange : { min: 0, max: DIVISION_GAMES };
+  const baseDivisionStepperRange = showTies ? divisionRange : { min: 0, max: DIVISION_GAMES };
+  const divisionStepperRange = bounds
+    ? {
+      min: Math.max(baseDivisionStepperRange.min, bounds.divisionWins),
+      max: Math.min(baseDivisionStepperRange.max, DIVISION_GAMES - bounds.divisionLosses - bounds.divisionTies),
+    }
+    : baseDivisionStepperRange;
   const divisionControl = (
     <label className="predictions-record-division-stepper">
       <span>Division</span>
@@ -550,8 +583,8 @@ function RecordControls({
             <Stepper
               label="Wins"
               value={current.wins}
-              min={0}
-              max={FULL_SEASON_GAMES - current.ties}
+              min={finalRanges?.wins.min ?? 0}
+              max={finalRanges?.wins.max ?? FULL_SEASON_GAMES - current.ties}
               showValue={valuesVisible}
               onChange={updateWins}
             />
@@ -562,8 +595,8 @@ function RecordControls({
               <Stepper
                 label="Ties"
                 value={current.ties}
-                min={0}
-                max={FULL_SEASON_GAMES}
+                min={finalRanges?.ties.min ?? 0}
+                max={finalRanges?.ties.max ?? FULL_SEASON_GAMES}
                 showValue={valuesVisible}
                 onChange={updateTies}
               />
@@ -591,7 +624,7 @@ function RecordControls({
   );
 }
 
-function RecordTeamRow({ team, record, onRecordChange, darkMode }) {
+function RecordTeamRow({ team, record, bounds = null, onRecordChange, darkMode }) {
   const editableRecord = getChooseRecord(record);
   const recordIsSet = isRecordSet(record);
 
@@ -617,6 +650,7 @@ function RecordTeamRow({ team, record, onRecordChange, darkMode }) {
         divisionMode="inline"
         valuesVisible={recordIsSet}
         record={editableRecord}
+        bounds={bounds}
         onChange={(nextRecord) => onRecordChange?.({ teamId: team.id, record: nextRecord })}
       />
     </article>
@@ -673,9 +707,9 @@ function AdvancedTeamRow({ team, record, onOpenTeam, darkMode }) {
   );
 }
 
-function DivisionRecordGroup({ division, teams, records, onRecordsChange, advanced = false, onOpenTeam, darkMode }) {
+function DivisionRecordGroup({ division, teams, records, recordBounds = {}, onRecordsChange, advanced = false, onOpenTeam, darkMode }) {
   const handleRecordChange = ({ teamId, record }) => {
-    onRecordsChange?.(rebalanceDivisionRecords(teams, records, teamId, record), teamId);
+    onRecordsChange?.(rebalanceDivisionRecords(teams, records, teamId, record, recordBounds), teamId);
   };
 
   return (
@@ -697,6 +731,7 @@ function DivisionRecordGroup({ division, teams, records, onRecordsChange, advanc
             key={team.id}
             team={team}
             record={records[team.id]}
+            bounds={recordBounds[team.id] ?? null}
             onRecordChange={handleRecordChange}
             darkMode={darkMode}
           />
@@ -724,6 +759,7 @@ export function PredictionsPicks({
   pickMode = 'record',
   onPickModeChange,
   records = {},
+  recordBounds = {},
   onRecordChange,
   onOpenTeam,
   regularSeasonReady = false,
@@ -800,6 +836,7 @@ export function PredictionsPicks({
       records: nextRecords,
       teams,
       targetTeamId,
+      recordBounds,
     });
     const updates = new Map(entries);
     balanced.adjustments.forEach(({ teamId, record }) => updates.set(teamId, record));
@@ -881,6 +918,7 @@ export function PredictionsPicks({
                 division={division}
                 teams={getTeamsByDivision(teams, division)}
                 records={records}
+                recordBounds={recordBounds}
                 onRecordsChange={handleRecordsChange}
                 advanced={pickMode === 'advanced'}
                 onOpenTeam={onOpenTeam}
@@ -902,12 +940,13 @@ const gameResultClass = (result) => {
   return '';
 };
 
-function GamePickButton({ value, active, onClick }) {
+function GamePickButton({ value, active, onClick, disabled = false }) {
   return (
     <button
       type="button"
       className={`predictions-game-result-button ${gameResultClass(value)}${active ? ' is-active' : ''}`}
       aria-pressed={active}
+      disabled={disabled}
       onClick={onClick}
     >
       {value}
@@ -915,18 +954,29 @@ function GamePickButton({ value, active, onClick }) {
   );
 }
 
-function TeamGameRow({ row, result, onResultChange, darkMode = false }) {
+// A final game's score from this team's side, e.g. "Final 24-17".
+const finalScoreLabel = (row) => {
+  const teamScore = row.isAway ? row.game?.awayScore : row.game?.homeScore;
+  const opponentScore = row.isAway ? row.game?.homeScore : row.game?.awayScore;
+  return `Final ${teamScore}-${opponentScore}`;
+};
+
+function TeamGameRow({ row, result, onResultChange, locked = false, darkMode = false }) {
   const setResult = (nextResult) => onResultChange(result === nextResult ? undefined : nextResult);
   const rowTheme = getTeamRowStyle(row.isBye ? row.team : row.opponent, darkMode);
 
   return (
     <article
-      className={`predictions-team-game-row predictions-team-gradient-row ${gameResultClass(result)}${result ? ' is-picked' : ''}${row.isBye ? ' is-bye' : ''}`}
-      style={rowTheme}
+      className={`predictions-team-game-row predictions-team-gradient-row ${gameResultClass(result)}${result ? ' is-picked' : ''}${row.isBye ? ' is-bye' : ''}${locked ? ' is-locked' : ''}`}
+      style={locked ? undefined : rowTheme}
     >
       <div className="predictions-team-game-meta">
         <span>{row.weekLabel}</span>
-        {row.isBye ? <span>No game</span> : row.game?.dateLabel && <span>{row.game.dateLabel}</span>}
+        {row.isBye
+          ? <span>No game</span>
+          : locked
+            ? <span>{finalScoreLabel(row)}</span>
+            : row.game?.dateLabel && <span>{row.game.dateLabel}</span>}
       </div>
       <div className="predictions-team-game-opponent">
         {row.isBye ? (
@@ -955,6 +1005,7 @@ function TeamGameRow({ row, result, onResultChange, darkMode = false }) {
               key={value}
               value={value}
               active={result === value}
+              disabled={locked}
               onClick={() => setResult(value)}
             />
           ))}
@@ -974,9 +1025,19 @@ function AdvancedTeamPage({
   darkMode = false,
 }) {
   const savedRecord = records[team.id];
-  const [draftGameResults, setDraftGameResults] = useState(() => ({ ...(predictions?.[team.id]?.gameResults ?? {}) }));
-  const [gamePicksTouched, setGamePicksTouched] = useState(false);
   const teamGames = useMemo(() => getTeamGames(team, weeks), [team, weeks]);
+  // Games that have gone final are decided: they show the real result and can't
+  // be changed. Only an editable prediction locks them; a shared one is read as made.
+  const finalResults = useMemo(() => {
+    if (!onSaveTeamGameResults) return {};
+    return Object.fromEntries(teamGames.flatMap((row) => {
+      const outcome = row.isBye ? null : getCompletedGameOutcome(row.game);
+      return outcome ? [[row.gameIndex, row.isAway ? outcome.away : outcome.home]] : [];
+    }));
+  }, [onSaveTeamGameResults, teamGames]);
+  const getInitialDraft = () => ({ ...(predictions?.[team.id]?.gameResults ?? {}), ...finalResults });
+  const [draftGameResults, setDraftGameResults] = useState(getInitialDraft);
+  const [gamePicksTouched, setGamePicksTouched] = useState(false);
   const hasDraftGameResults = Object.keys(draftGameResults).length > 0;
   const draftRecord = useMemo(
     () => getRecordFromTeamGameResults(team, teamGames, draftGameResults),
@@ -990,7 +1051,7 @@ function AdvancedTeamPage({
     if (saved !== false) onBack?.();
   };
   const resetGameResults = () => {
-    setDraftGameResults({ ...(predictions?.[team.id]?.gameResults ?? {}) });
+    setDraftGameResults(getInitialDraft());
     setGamePicksTouched(false);
     onBack?.();
   };
@@ -1017,12 +1078,16 @@ function AdvancedTeamPage({
           <h2>Game Picks</h2>
         </header>
         {teamGames.length ? (
-          <div className="predictions-team-game-list">
+          <div
+            className="predictions-team-game-list"
+            style={{ '--predictions-game-rows': Math.ceil(teamGames.length / 2) }}
+          >
             {teamGames.map((row) => (
               <TeamGameRow
                 key={row.game?.id ?? `${team.id}-${row.weekLabel}-bye`}
                 row={row}
                 result={draftGameResults[row.gameIndex]}
+                locked={Object.hasOwn(finalResults, row.gameIndex)}
                 darkMode={darkMode}
                 onResultChange={(result) => {
                   setGamePicksTouched(true);
@@ -1367,6 +1432,7 @@ export default function PredictionsRedesign({
   playoffPicks = {},
   onPlayoffPick,
   onRecordChange,
+  recordBounds = {},
   onSaveTeamGameResults,
   onOpenTeam,
   onBackToAdvancedMode,
@@ -1412,6 +1478,7 @@ export default function PredictionsRedesign({
           pickMode={pickMode}
           onPickModeChange={onPickModeChange}
           records={records}
+          recordBounds={onRecordChange ? recordBounds : {}}
           onRecordChange={onRecordChange}
           onOpenTeam={onOpenTeam}
           regularSeasonReady={regularSeasonReady}
