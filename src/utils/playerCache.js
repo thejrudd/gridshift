@@ -20,28 +20,42 @@ export const TTL = {
  *                             Useful for conditionally skipping permanent caching of
  *                             empty or incomplete data (e.g. schedule weeks not yet played).
  */
+// key -> pending fetch, so concurrent callers for one key share a request.
+const inFlight = new Map();
+
+/**
+ * `ttl` may also be a function of the cached data returning a TTL, for
+ * entries whose lifetime depends on their content (a schedule week whose
+ * games are all final never expires).
+ */
 export async function cachedFetch(key, fetchFn, ttl, shouldCache) {
   try {
     const raw = localStorage.getItem(PREFIX + key);
     if (raw) {
       const { ts, data } = JSON.parse(raw);
-      if (ttl === Infinity || Date.now() - ts < ttl) return data;
+      const entryTtl = typeof ttl === 'function' ? ttl(data) : ttl;
+      if (entryTtl === Infinity || Date.now() - ts < entryTtl) return data;
     }
   } catch {
     // Corrupted entry — fall through and re-fetch
   }
 
-  const data = await fetchFn();
+  const pending = inFlight.get(key);
+  if (pending) return pending;
 
-  if (!shouldCache || shouldCache(data)) {
-    try {
-      localStorage.setItem(PREFIX + key, JSON.stringify({ ts: Date.now(), data }));
-    } catch {
-      // localStorage quota exceeded — skip caching silently
+  const request = (async () => {
+    const data = await fetchFn();
+    if (!shouldCache || shouldCache(data)) {
+      try {
+        localStorage.setItem(PREFIX + key, JSON.stringify({ ts: Date.now(), data }));
+      } catch {
+        // localStorage quota exceeded — skip caching silently
+      }
     }
-  }
-
-  return data;
+    return data;
+  })().finally(() => { inFlight.delete(key); });
+  inFlight.set(key, request);
+  return request;
 }
 
 /**

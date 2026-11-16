@@ -1,7 +1,12 @@
 // ── Sleeper API ───────────────────────────────────────────────────────────────
 // https://docs.sleeper.com
 
+import { getSeasonStats, setSeasonStats } from '../utils/statsCache.js';
+import { toWeekStatMap } from '../utils/sleeperWeekTeams.js';
+
 const BASE = 'https://api.sleeper.app/v1';
+const STATS_BASE = 'https://api.sleeper.com/stats/nfl';
+const WEEK_FETCH_CONCURRENCY = 6;
 let liveRequestCacheBustCounter = 0;
 
 async function get(path, options = {}) {
@@ -105,13 +110,76 @@ export function getDraftTradedPicks(draftId) {
 
 // ── Players ──────────────────────────────────────────────────────────────────
 
-// Cache in module scope — the players DB is ~5MB and rarely changes
-let playersCache = null;
+// The players DB is ~5MB and changes a few times a day. It is held in module
+// scope, persisted in IndexedDB (statsCache.js store, key below) for a day,
+// and served stale-while-revalidate: a stale copy answers at once while one
+// background download replaces it; subscribePlayersUpdates() listeners (the
+// Fantasy context) receive the fresh copy. Concurrent callers share one
+// in-flight request.
+export const PLAYERS_DB_CACHE_KEY = 'sleeper:players:nfl';
+export const PLAYERS_DB_TTL = 24 * 60 * 60 * 1000;
 
-export async function getAllPlayers() {
-  if (playersCache) return playersCache;
-  playersCache = await get('/players/nfl');
-  return playersCache;
+let playersCache = null;
+let playersCacheAt = 0;
+let playersRequest = null;
+let playersRevalidation = null;
+const playersListeners = new Set();
+
+/** Listen for a refreshed players DB replacing a stale one. Returns unsubscribe. */
+export function subscribePlayersUpdates(listener) {
+  playersListeners.add(listener);
+  return () => playersListeners.delete(listener);
+}
+
+function downloadPlayers() {
+  if (playersRevalidation) return playersRevalidation;
+  playersRevalidation = get('/players/nfl')
+    .then((data) => {
+      if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+        const replaced = playersCache != null;
+        playersCache = data;
+        playersCacheAt = Date.now();
+        void setSeasonStats(PLAYERS_DB_CACHE_KEY, { players: data });
+        if (replaced) for (const listener of playersListeners) listener(data);
+      }
+      return data;
+    })
+    .finally(() => { playersRevalidation = null; });
+  return playersRevalidation;
+}
+
+function revalidatePlayersIfStale() {
+  if (Date.now() - playersCacheAt < PLAYERS_DB_TTL) return;
+  downloadPlayers().catch(() => { /* keep the stale copy */ });
+}
+
+export function getAllPlayers() {
+  if (playersCache) {
+    revalidatePlayersIfStale();
+    return Promise.resolve(playersCache);
+  }
+  if (playersRequest) return playersRequest;
+  playersRequest = (async () => {
+    const stored = await getSeasonStats(PLAYERS_DB_CACHE_KEY);
+    if (!playersCache && stored?.players && Object.keys(stored.players).length > 0) {
+      playersCache = stored.players;
+      playersCacheAt = Number(stored.ts) || 0;
+    }
+    if (playersCache) {
+      revalidatePlayersIfStale();
+      return playersCache;
+    }
+    return downloadPlayers();
+  })().finally(() => { playersRequest = null; });
+  return playersRequest;
+}
+
+/** Test hook: forget the in-memory players DB and any in-flight request. */
+export function resetPlayersCacheForTests() {
+  playersCache = null;
+  playersCacheAt = 0;
+  playersRequest = null;
+  playersRevalidation = null;
 }
 
 // ── Stats ────────────────────────────────────────────────────────────────────
@@ -191,6 +259,51 @@ export async function getAllWeeklyStats(season, totalWeeks = 18, onProgress, fai
   );
 
   return byPlayer;
+}
+
+/**
+ * Fetch one week's stat rows with each player's game-time team and opponent
+ * (api.sleeper.com). Same players and stat values as getWeeklyStats(), but
+ * offensive and IDP rows also carry `team`, `opp` and `_teamSource`; see
+ * src/utils/sleeperWeekTeams.js. Returns { [player_id]: { week, ...stats } }.
+ */
+export async function getWeeklyStatsWithTeams(season, week) {
+  const params = new URLSearchParams({ season_type: 'regular' });
+  const res = await fetch(
+    `${STATS_BASE}/${encodeURIComponent(season)}/${encodeURIComponent(week)}?${params}`,
+    // Revalidate (ETag) rather than reuse a browser-cached copy: the fetch
+    // that marks a week final is its last, so it must be current.
+    { headers: { Accept: 'application/json' }, cache: 'no-cache' },
+  );
+  if (!res.ok) throw new Error(`Sleeper stats API error: ${res.status}`);
+  return toWeekStatMap(await res.json(), week);
+}
+
+/**
+ * Fetch several weeks with getWeeklyStatsWithTeams, at most
+ * WEEK_FETCH_CONCURRENCY at a time. Returns { [week]: { [player_id]: row } }
+ * for the weeks that succeeded; failed week numbers go into `failedWeeks`.
+ */
+export async function getWeeksWithTeams(season, weeks, { onProgress, failedWeeks } = {}) {
+  const list = [...(weeks ?? [])];
+  const byWeek = {};
+  let next = 0;
+  let completed = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const week = list[next++];
+      try {
+        byWeek[week] = await getWeeklyStatsWithTeams(season, week);
+      } catch {
+        failedWeeks?.push(week);
+      } finally {
+        completed += 1;
+        onProgress?.(completed, list.length);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WEEK_FETCH_CONCURRENCY, list.length) }, worker));
+  return byWeek;
 }
 
 /**

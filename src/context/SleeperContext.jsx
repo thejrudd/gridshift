@@ -6,7 +6,8 @@ import {
   getLeagueRosters,
   getLeagueUsers,
   getAllPlayers,
-  getAllWeeklyStats,
+  subscribePlayersUpdates,
+  getWeeksWithTeams,
   getLiveWeeklyStats,
   aggregateSeasonStats,
   getMatchups,
@@ -16,7 +17,7 @@ import {
   getLeagueDrafts,
 } from '../api/sleeperApi';
 import { clearEspnSession, getEspnLeague, getEspnLeagues, setEspnSession } from '../api/espnFantasyApi';
-import { fetchSeasonSchedule, fetchPlayerGameTeamMap, fetchRoster, fetchEventScoringPlays, fetchTeamDefenseGameLog } from '../utils/playerApi';
+import { fetchSeasonSchedule, fetchRoster, fetchEventScoringPlays, fetchTeamDefenseGameLog } from '../utils/playerApi';
 import { DEFAULT_SCORING, getEspnDstScoringIndexAudit, getEspnScoringImportAudit, importLeagueScoring, normalizeScoringProfile } from '../utils/scoringEngine';
 import { normalizeEspnLeaguePayload } from '../utils/espnFantasyAdapter';
 import {
@@ -37,6 +38,14 @@ import {
   isCacheableWeeklyStats,
   CURRENT_SEASON_TTL,
 } from '../utils/statsCache';
+import {
+  TEAM_BY_WEEK_POSITIONS,
+  capSeasonPackages,
+  fillScheduleWeekTeams,
+  mergeFetchedWeeks,
+  planSeasonWeekFetch,
+  resolveStatsWeekRange,
+} from '../utils/sleeperWeekTeams.js';
 
 // Run once when this module first loads — wipes stale caches if app version changed.
 checkAndBustCacheIfNeeded();
@@ -57,6 +66,114 @@ const MIN_SLEEPER_SEASON = 2017;
 const MIN_ESPN_SEASON = 2018;
 const ESPN_HISTORY_SEASON_LIMIT = 6;
 const ESPN_WEEKLY_STATS_MAX_WEEK = 18;
+// Season packages held in memory (statsBySeason); older ones reload from IndexedDB.
+const MAX_SEASON_PACKAGES = 3;
+const ESPN_ID_ROSTER_CONCURRENCY = 4;
+const NFL_STATE_REUSE_MS = 60_000;
+
+// Stats loads that start before the context's own /state/nfl poll resolves
+// share one request instead of each issuing their own.
+let sharedNflState = null;
+let sharedNflStateRequest = null;
+function getNflStateShared() {
+  if (sharedNflState && Date.now() - sharedNflState.at < NFL_STATE_REUSE_MS) {
+    return Promise.resolve(sharedNflState.value);
+  }
+  if (sharedNflStateRequest) return sharedNflStateRequest;
+  sharedNflStateRequest = getNflState()
+    .then((value) => {
+      sharedNflState = { value, at: Date.now() };
+      return value;
+    })
+    .finally(() => { sharedNflStateRequest = null; });
+  return sharedNflStateRequest;
+}
+
+/**
+ * Weeks of a Sleeper season that can have stats. Completed league years are
+ * every week, all final; the current one follows Sleeper's live NFL state.
+ */
+async function resolveSeasonWeekRange(seasonKey, knownNflState) {
+  if (Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0])) {
+    return resolveStatsWeekRange(null, seasonKey, { completed: true });
+  }
+  const state = knownNflState?.season != null
+    ? knownNflState
+    : await getNflStateShared().catch(() => null);
+  return resolveStatsWeekRange(state, seasonKey);
+}
+
+function toCachedSeasonPackage(stored, seasonKey) {
+  if (!stored?.weeklyStats) return null;
+  return {
+    season: seasonKey,
+    weeks: stored.weeks ?? {},
+    weeklyStats: stored.weeklyStats,
+    seasonStats: stored.seasonStats,
+    scheduleMap: stored.scheduleMap ?? null,
+  };
+}
+
+// seasonKey -> in-flight refresh, shared by loadSeasonStats and loadStatsForSeason.
+const seasonRefreshes = new Map();
+
+/**
+ * Bring a stored Sleeper season package up to date: fetch only the weeks the
+ * planner says are missing or still open, merge them, and persist the result
+ * (rows already carry Sleeper's game-time team, so nothing is re-derived).
+ * Resolves `{ pkg, changed, failedWeeks }`; `pkg` is `cached` when nothing
+ * needed fetching.
+ */
+function refreshSleeperSeasonPackage(seasonKey, cached, range, { onProgress } = {}) {
+  const weeksToFetch = planSeasonWeekFetch(cached, range, { ttl: CURRENT_SEASON_TTL });
+  if (cached && weeksToFetch.length === 0) {
+    return Promise.resolve({ pkg: cached, changed: false, failedWeeks: [] });
+  }
+  const inFlight = seasonRefreshes.get(seasonKey);
+  if (inFlight) return inFlight;
+  const request = (async () => {
+    const failedWeeks = [];
+    const [fetched, schedule] = await Promise.all([
+      getWeeksWithTeams(seasonKey, weeksToFetch, { onProgress, failedWeeks }),
+      fetchSeasonSchedule(seasonKey).catch(() => null),
+    ]);
+    const merged = mergeFetchedWeeks(cached, fetched, range);
+    const pkg = {
+      season: seasonKey,
+      weeks: merged.weeks,
+      weeklyStats: merged.weeklyStats,
+      seasonStats: aggregateSeasonStats(merged.weeklyStats),
+      scheduleMap: schedule ?? cached?.scheduleMap ?? null,
+    };
+    if (Object.keys(fetched).length > 0 && isCacheableWeeklyStats(pkg.weeklyStats)) {
+      void putCachedSeasonStats(`sleeper:${seasonKey}`, pkg);
+    }
+    return { pkg, changed: true, failedWeeks };
+  })().finally(() => { seasonRefreshes.delete(seasonKey); });
+  seasonRefreshes.set(seasonKey, request);
+  return request;
+}
+
+function runWhenIdle(task) {
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(() => { void task(); }, { timeout: 5000 });
+  } else {
+    setTimeout(() => { void task(); }, 1500);
+  }
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await worker(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
 
 function getCurrentLeagueYear(date = new Date()) {
   return date.getMonth() >= LEAGUE_YEAR_START_MONTH ? date.getFullYear() : date.getFullYear() - 1;
@@ -268,7 +385,7 @@ export function FantasyProvider({ children }) {
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsEnhancing, setStatsEnhancing] = useState(false);
   const [statsProgress, setStatsProgress] = useState(0);
-  const [espnIdOverrides, setEspnIdOverrides] = useState({}); // sleeperId → espnId, for null-espn_id players resolved via Pass 2
+  const [espnIdOverrides, setEspnIdOverrides] = useState({}); // sleeperId → espnId, for null-espn_id players matched on ESPN team rosters
 
   // UI state
   const [connectError, setConnectError] = useState(null);
@@ -298,15 +415,15 @@ export function FantasyProvider({ children }) {
   useEffect(() => { seasonStatsRef.current = seasonStats; }, [seasonStats]);
   const statsLoadingRef = useRef(statsLoading);
   useEffect(() => { statsLoadingRef.current = statsLoading; }, [statsLoading]);
-  const qbOppSeasonRef = useRef(null); // tracks which season QB opp data has been merged
   const espnStatsRefreshKeyRef = useRef(null);
-  const enhancementRunRef = useRef({
-    token: 0,
-    season: null,
-    weeklyStats: null,
-    players: null,
-    scheduleMap: null,
-  });
+  // Season whose null-espn_id roster lookup has run or is running.
+  const espnIdLookupSeasonRef = useRef(null);
+  // statsBySeason keys, least recently stored first (see capSeasonPackages).
+  const seasonRecencyRef = useRef([]);
+  const seasonRef = useRef(season);
+  useEffect(() => { seasonRef.current = season; }, [season]);
+  const nflStateRef = useRef(nflState);
+  useEffect(() => { nflStateRef.current = nflState; }, [nflState]);
   const espnBigPlayRunRef = useRef({ token: 0, key: null, runningKey: null });
   const leagueUserById = useMemo(
     () => new Map((leagueUsers ?? []).map((user) => [user.user_id, user])),
@@ -336,10 +453,11 @@ export function FantasyProvider({ children }) {
     setScheduleMap(null);
     setEspnMatchupsByWeek({});
     setStatsBySeason({});
+    seasonRecencyRef.current = [];
+    espnIdLookupSeasonRef.current = null;
     setStatsEnhancing(false);
     statsAbortRef.current = false;
     statsLoadBySeasonRef.current.clear();
-    qbOppSeasonRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
     clearPlayerCache();
     void clearStatsCache();
@@ -544,7 +662,6 @@ export function FantasyProvider({ children }) {
     setEspnMatchupsByWeek(normalized.matchupsByWeek);
     setStatsEnhancing(false);
     statsAbortRef.current = false;
-    qbOppSeasonRef.current = null;
   }, []);
 
   const loadEspnLeagueSelection = useCallback(async (leagueId, leagueSeason = season, teamId = null, requestVersion = leagueSnapshotVersionRef.current) => {
@@ -674,7 +791,6 @@ export function FantasyProvider({ children }) {
     setSeasonStats(null);
     setStatsEnhancing(false);
     statsAbortRef.current = false; // allow reload on season change
-    qbOppSeasonRef.current = null;
 
     if (sleeperUser) {
       try {
@@ -751,6 +867,21 @@ export function FantasyProvider({ children }) {
     return () => rosterSync.stop();
   }, [platform, selectedLeagueId]);
 
+  // Store one season package in statsBySeason, keeping at most
+  // MAX_SEASON_PACKAGES; the selected season is never evicted.
+  const storeSeasonPackage = useCallback((seasonKey, pkg) => {
+    setStatsBySeason((current) => {
+      const { packages, recency } = capSeasonPackages(
+        { ...current, [seasonKey]: pkg },
+        seasonRecencyRef.current,
+        seasonKey,
+        { limit: MAX_SEASON_PACKAGES, keep: [String(seasonRef.current)] },
+      );
+      seasonRecencyRef.current = recency;
+      return packages;
+    });
+  }, []);
+
   // ── Player DB ───────────────────────────────────────────────────────────────
 
   const loadPlayers = useCallback(async () => {
@@ -760,6 +891,15 @@ export function FantasyProvider({ children }) {
     setPlayers(data);
     return data;
   }, [platform, players]);
+
+  // A stale players DB served from IndexedDB is replaced in this session once
+  // its background refresh lands (injury and team designations move daily).
+  useEffect(() => {
+    if (platform !== 'sleeper') return undefined;
+    return subscribePlayersUpdates((fresh) => {
+      setPlayers((current) => (current ? fresh : current));
+    });
+  }, [platform]);
 
   // ── Stats loading ───────────────────────────────────────────────────────────
 
@@ -877,78 +1017,61 @@ export function FantasyProvider({ children }) {
     // views that call loadSeasonStats whenever its identity changes.
     if (weeklyStats && seasonStats) return;
     statsAbortRef.current = true;
-    qbOppSeasonRef.current = null; // allow player team enhancement to re-run
 
     const seasonKey = String(season);
-    // Completed seasons are final — their packages never expire.
-    const isCompletedSeason = Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0]);
     const applyPackage = (pkg) => {
       if (!isCurrentRequest()) return;
       setWeeklyStats(pkg.weeklyStats);
       setSeasonStats(pkg.seasonStats);
       setScheduleMap(pkg.scheduleMap ?? null);
-      setStatsBySeason((current) => ({ ...current, [seasonKey]: pkg }));
+      storeSeasonPackage(seasonKey, pkg);
     };
 
-    // In-memory per-season cache — instant on revisits within this session
-    // (same trust model as loadStatsForSeason's statsBySeason check).
+    // In-memory per-season cache — instant on revisits within this session.
+    // Its rows already carry game-time teams, so nothing is re-derived.
     const memHit = statsBySeasonRef.current[seasonKey];
     if (memHit?.weeklyStats) {
       if (!isCurrentRequest()) return;
       applyPackage(memHit);
-      setStatsEnhancing(true); // enhancement effect re-runs from cached ESPN data
+      setStatsEnhancing(false);
       setStatsProgress(100);
       statsAbortRef.current = false;
       return;
     }
 
     setStatsLoading(true);
-    setStatsEnhancing(true);
     setStatsProgress(0);
 
     try {
-      // Persistent cache (IndexedDB). Completed seasons: serve and skip the
-      // network. Current season: serve stale immediately, then revalidate.
-      const cached = await getCachedSeasonStats(`sleeper:${seasonKey}`);
-      if (cached?.weeklyStats) {
-        const pkg = {
-          season: seasonKey,
-          weeklyStats: cached.weeklyStats,
-          seasonStats: cached.seasonStats,
-          scheduleMap: cached.scheduleMap ?? null,
-        };
-        applyPackage(pkg);
-        if (isCurrentRequest()) setStatsProgress(100);
-        if (isCompletedSeason || Date.now() - cached.ts < CURRENT_SEASON_TTL) return;
+      // Persistent cache (IndexedDB): serve the stored package at once, then
+      // fetch only weeks that are missing or still open (normally just the
+      // current week). Completed weeks are never fetched again.
+      const cached = toCachedSeasonPackage(await getCachedSeasonStats(`sleeper:${seasonKey}`), seasonKey);
+      if (cached) {
+        applyPackage(cached);
+        if (isCurrentRequest()) {
+          setStatsProgress(100);
+          setStatsLoading(false);
+        }
       }
 
-      const failedWeeks = [];
-      const [weekly, schedule] = await Promise.all([
-        getAllWeeklyStats(season, 18, (week, total) => {
-          if (isCurrentRequest()) setStatsProgress(Math.round((week / total) * 100));
-        }, failedWeeks),
-        fetchSeasonSchedule(season).catch(() => null),
-      ]);
-      const nextPackage = {
-        season: seasonKey,
-        weeklyStats: weekly,
-        seasonStats: aggregateSeasonStats(weekly),
-        scheduleMap: schedule,
-      };
-      applyPackage(nextPackage);
-      if (isCacheableWeeklyStats(weekly, failedWeeks.length)) {
-        void putCachedSeasonStats(`sleeper:${seasonKey}`, { ...nextPackage, enhanced: false });
-      }
+      const range = await resolveSeasonWeekRange(seasonKey, nflStateRef.current);
+      const { pkg, changed } = await refreshSleeperSeasonPackage(seasonKey, cached, range, {
+        onProgress: (done, total) => {
+          if (!cached && isCurrentRequest()) setStatsProgress(Math.round((done / total) * 100));
+        },
+      });
+      if (changed) applyPackage(pkg);
+      if (isCurrentRequest()) setStatsProgress(100);
     } catch (err) {
       console.error('Failed to load stats:', err);
-      if (isCurrentRequest()) setStatsEnhancing(false);
     } finally {
       if (isCurrentRequest()) {
         statsAbortRef.current = false;
         setStatsLoading(false);
       }
     }
-  }, [league, loadEspnLeagueSelection, platform, season, seasonStats, selectedLeagueId, weeklyStats]); // removed statsLoading — guarded by ref instead
+  }, [league, loadEspnLeagueSelection, platform, season, seasonStats, selectedLeagueId, storeSeasonPackage, weeklyStats]); // removed statsLoading — guarded by ref instead
 
   useEffect(() => {
     if (platform !== 'espn') return;
@@ -976,7 +1099,7 @@ export function FantasyProvider({ children }) {
     const normalizedCached = normalizeSeasonStatsPackage(cached, seasonKey);
     if (normalizedCached) {
       if (normalizedCached.seasonStats !== cached.seasonStats) {
-        setStatsBySeason((current) => ({ ...current, [seasonKey]: normalizedCached }));
+        storeSeasonPackage(seasonKey, normalizedCached);
       }
       return normalizedCached;
     }
@@ -985,51 +1108,24 @@ export function FantasyProvider({ children }) {
     if (inFlight) return inFlight;
 
     const request = (async () => {
-      // Persistent cache (IndexedDB) — completed seasons never expire.
-      const isCompletedSeason = Number(seasonKey) < Number(AVAILABLE_SLEEPER_SEASONS[0]);
-      const cachedEntry = await getCachedSeasonStats(`sleeper:${seasonKey}`);
-      if (isCompletedSeason || Date.now() - Number(cachedEntry?.ts ?? 0) < CURRENT_SEASON_TTL) {
-        const cachedPackage = normalizeSeasonStatsPackage({
-          season: seasonKey,
-          weeklyStats: cachedEntry?.weeklyStats,
-          seasonStats: cachedEntry?.seasonStats,
-          scheduleMap: cachedEntry?.scheduleMap ?? null,
-        }, seasonKey);
-        if (cachedPackage) {
-          setStatsBySeason((current) => ({ ...current, [seasonKey]: cachedPackage }));
-          return cachedPackage;
-        }
-      }
-
-      let failedWeeks = [];
-      let [weekly, schedule] = await Promise.all([
-        getAllWeeklyStats(seasonKey, 18, undefined, failedWeeks),
-        fetchSeasonSchedule(seasonKey).catch(() => null),
-      ]);
+      // Persistent cache (IndexedDB): completed weeks are kept permanently and
+      // only missing or still-open weeks are fetched.
+      const cached = toCachedSeasonPackage(await getCachedSeasonStats(`sleeper:${seasonKey}`), seasonKey);
+      const range = await resolveSeasonWeekRange(seasonKey, nflStateRef.current);
+      let { pkg, failedWeeks } = await refreshSleeperSeasonPackage(seasonKey, cached, range);
+      let nextPackage = normalizeSeasonStatsPackage(pkg, seasonKey);
 
       // A transient provider failure previously left an empty package in memory,
       // which looked like a completed load and permanently suppressed retries.
-      if (!isCacheableWeeklyStats(weekly)) {
-        failedWeeks = [];
-        [weekly, schedule] = await Promise.all([
-          getAllWeeklyStats(seasonKey, 18, undefined, failedWeeks),
-          schedule ? Promise.resolve(schedule) : fetchSeasonSchedule(seasonKey).catch(() => null),
-        ]);
+      // Failed weeks have no stored metadata, so a retry fetches only those.
+      if (!nextPackage && failedWeeks.length > 0) {
+        ({ pkg } = await refreshSleeperSeasonPackage(seasonKey, pkg, range));
+        nextPackage = normalizeSeasonStatsPackage(pkg, seasonKey);
       }
-
-      const nextPackage = normalizeSeasonStatsPackage({
-        season: seasonKey,
-        weeklyStats: weekly,
-        seasonStats: aggregateSeasonStats(weekly),
-        scheduleMap: schedule,
-      }, seasonKey);
       if (!nextPackage) {
         throw new Error(`Sleeper did not return usable ${seasonKey} player production.`);
       }
-      setStatsBySeason((current) => ({ ...current, [seasonKey]: nextPackage }));
-      if (isCacheableWeeklyStats(weekly, failedWeeks.length)) {
-        void putCachedSeasonStats(`sleeper:${seasonKey}`, { ...nextPackage, enhanced: false });
-      }
+      storeSeasonPackage(seasonKey, nextPackage);
       return nextPackage;
     })().finally(() => {
       statsLoadBySeasonRef.current.delete(seasonKey);
@@ -1037,7 +1133,7 @@ export function FantasyProvider({ children }) {
 
     statsLoadBySeasonRef.current.set(seasonKey, request);
     return request;
-  }, [season, weeklyStats, seasonStats, scheduleMap, statsBySeason]);
+  }, [season, weeklyStats, seasonStats, scheduleMap, statsBySeason, storeSeasonPackage]);
 
   const refreshLiveWeeklyStats = useCallback(async (requestedSeason = season, requestedWeek) => {
     const seasonKey = String(requestedSeason ?? '').trim();
@@ -1172,237 +1268,64 @@ export function FantasyProvider({ children }) {
     return request;
   }, [platform, season, selectedLeagueId]);
 
-  // Three-pass stats enhancement — see docs/Architecture Map.md › SleeperContext
+  // Game-time teams — see docs/Architecture Map.md › SleeperContext. Sleeper's
+  // weekly rows already carry each player's team and opponent for that week
+  // (sleeperWeekTeams.js), so no per-player lookup runs. This only fills rows
+  // that still have no team (a live-feed row for a player with no earlier
+  // row) from his current team and the schedule, as the old Pass 3 did.
   useEffect(() => {
     if (platform !== 'sleeper') return;
-    if (statsLoading || !weeklyStats || !players || !scheduleMap || qbOppSeasonRef.current === season) return;
+    if (statsLoading || !weeklyStats || !players || !scheduleMap) return;
+    const filled = fillScheduleWeekTeams(weeklyStats, players, scheduleMap);
+    if (!filled) return;
+    startTransition(() => {
+      setWeeklyStats((prev) => (
+        prev === weeklyStats ? filled : (fillScheduleWeekTeams(prev, players, scheduleMap) ?? prev)
+      ));
+    });
+  }, [platform, statsLoading, weeklyStats, players, scheduleMap]);
 
-    const capturedSeason = season;
-    const sameRunInputs =
-      enhancementRunRef.current.season === capturedSeason &&
-      enhancementRunRef.current.weeklyStats === weeklyStats &&
-      enhancementRunRef.current.players === players &&
-      enhancementRunRef.current.scheduleMap === scheduleMap;
-    if (sameRunInputs) return;
-
-    const token = enhancementRunRef.current.token + 1;
-    enhancementRunRef.current = {
-      token,
-      season: capturedSeason,
-      weeklyStats,
-      players,
-      scheduleMap,
-    };
-
-    const run = async () => {
-      // Build reverse-lookup maps from the scheduleMap so we can resolve
-      // ESPN event IDs and competitor IDs without any additional API calls.
-      const espnEventToWeek = {};      // { [espnEventId]: weekNumber }
-      const espnCompToTeam  = {};      // { [espnCompetitorId]: sleeperTeamAbbrev }
-      for (const [week, weekData] of Object.entries(scheduleMap)) {
-        for (const gameData of Object.values(weekData)) {
-          if (gameData.espnEventId)    espnEventToWeek[gameData.espnEventId]   = parseInt(week);
-          if (gameData.espnCompetitorId && gameData.opp !== undefined) {
-            // The competitor for this team entry is the team itself (not the opp).
-            // We need to resolve competitorId → the team key for this entry.
-            // We derive it from: find the teamAbbr whose entry has this competitorId.
-          }
-        }
+  // ESPN ids for players Sleeper lists without one, matched by name on their
+  // current team's ESPN roster. Headshots, search and the player drill-in read
+  // espnIdOverrides. Runs once per season, after first paint, a few rosters at
+  // a time; the rosters are cached for a day (playerApi.js fetchRoster).
+  useEffect(() => {
+    if (platform !== 'sleeper' || !weeklyStats || !players) return;
+    if (espnIdLookupSeasonRef.current === season) return;
+    const candidates = Object.keys(weeklyStats).filter((id) => {
+      const player = players[id];
+      return player && TEAM_BY_WEEK_POSITIONS.has(player.position) && !player.espn_id && player.team;
+    });
+    espnIdLookupSeasonRef.current = season;
+    if (!candidates.length) return;
+    const requestVersion = leagueSnapshotVersionRef.current;
+    runWhenIdle(async () => {
+      const teamsNeeded = [...new Set(candidates.map((id) => players[id].team.toUpperCase()))];
+      const rosterResults = await mapWithConcurrency(
+        teamsNeeded,
+        ESPN_ID_ROSTER_CONCURRENCY,
+        (team) => fetchRoster(team).catch(() => []),
+      );
+      if (requestVersion !== leagueSnapshotVersionRef.current) return;
+      const teamRosters = Object.fromEntries(teamsNeeded.map((team, index) => [team, rosterResults[index] ?? []]));
+      const normalizeName = (name) =>
+        (name ?? '').toLowerCase().replace(/\./g, '').replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '').trim();
+      const resolvedEspnIds = {};
+      for (const sleeperId of candidates) {
+        const player = players[sleeperId];
+        const roster = teamRosters[player.team.toUpperCase()] ?? [];
+        const normSleeper = normalizeName(player.full_name);
+        const match = roster.find((entry) => entry.displayName?.toLowerCase() === player.full_name?.toLowerCase())
+          ?? roster.find((entry) => normalizeName(entry.displayName) === normSleeper);
+        if (match) resolvedEspnIds[sleeperId] = match.id;
       }
-      // Build espnCompToTeam: iterate entries and match competitorId to team abbr.
-      for (const weekData of Object.values(scheduleMap)) {
-        for (const [teamAbbr, gameData] of Object.entries(weekData)) {
-          if (gameData.espnCompetitorId) {
-            espnCompToTeam[gameData.espnCompetitorId] = teamAbbr;
-          }
-        }
-      }
-
-      // All positions that need game-time team resolution (offense + IDP).
-      const ENHANCE_POSITIONS = new Set([
-        'QB', 'RB', 'WR', 'TE', 'K',
-        'DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS',
-      ]);
-
-      // Split players by whether Sleeper has an ESPN ID for them
-      const allEnhanceable = Object.keys(weeklyStats).filter(id => {
-        const p = players[id];
-        return p && ENHANCE_POSITIONS.has(p.position);
-      });
-      const withEspnId = allEnhanceable.filter(id => players[id]?.espn_id);
-      const noEspnId = allEnhanceable.filter(id => !players[id]?.espn_id);
-
-      const candidates = withEspnId;
-      // Collect all enhancement results across passes, then apply in one setWeeklyStats call.
-      // Each entry: { [sleeperId]: { [week]: { team, opp, source } } }
-      const allEnhancements = {};
-
-      // Helper: resolve eventlog maps into per-week team/opp data
-      const resolveEventMaps = (playerIds, eventMapsArr) => {
-        const result = {};
-        playerIds.forEach((sleeperId, i) => {
-          const eventMap = eventMapsArr[i];
-          if (!eventMap) return;
-          const weekMap = {};
-          for (const [eventId, compId] of Object.entries(eventMap)) {
-            const week = espnEventToWeek[eventId];
-            const team = espnCompToTeam[compId];
-            if (!week || !team) continue;
-            const opp = scheduleMap[week]?.[team]?.opp ?? null;
-            weekMap[week] = { team, opp };
-          }
-          if (Object.keys(weekMap).length > 0) result[sleeperId] = weekMap;
-        });
-        return result;
-      };
-
-      // ── Pass 1: ESPN eventlog for players with espn_id ─────────────────────
-      if (candidates.length > 0) {
-        const eventMaps = await Promise.all(
-          candidates.map(sleeperId =>
-            fetchPlayerGameTeamMap(String(players[sleeperId].espn_id), capturedSeason)
-              .catch(() => null)
-          )
-        );
-        if (enhancementRunRef.current.token !== token) return;
-
-        const pass1Data = resolveEventMaps(candidates, eventMaps);
-        Object.assign(allEnhancements, pass1Data);
-      }
-
-      // ── Pass 2: ESPN roster cross-reference for null-espn_id players ───────
-      // Some players have espn_id: null in Sleeper's players DB, excluding them
-      // from Pass 1. Fix: look up their ESPN athlete ID by fetching their
-      // current team's ESPN roster and matching by name, then run the same
-      // eventlog pipeline.
-      const noEspnCandidates = noEspnId.filter(id => players[id]?.team);
-
-      // ── Pass 3: Schedule-based verification for remaining players ──────────
-      // Players not resolved by Passes 1/2 (e.g. defensive players whose ESPN
-      // eventlog lacks statistics.$ref entries entirely) still need attribution.
-      // For each unenhanced player, verify player.team against the scheduleMap:
-      // if the team played that week, attribute the stats there and mark as
-      // 'schedule' source (confirmed via NFL schedule, not ESPN eventlog).
-      const stillUnresolved = allEnhanceable.filter(id => !allEnhancements[id]);
-      for (const sleeperId of stillUnresolved) {
-        const p = players[sleeperId];
-        const team = p?.team?.toUpperCase();
-        if (!team) continue;
-        const playerWeeks = weeklyStats[sleeperId];
-        if (!playerWeeks) continue;
-
-        const weekMap = {};
-        for (const wEntry of playerWeeks) {
-          // Already has ESPN-confirmed data from a partial enhancement? Skip.
-          if (wEntry._teamSource === 'espn') continue;
-          const schedEntry = scheduleMap?.[wEntry.week]?.[team];
-          if (schedEntry) {
-            weekMap[wEntry.week] = { team, opp: schedEntry.opp?.toUpperCase() ?? null, source: 'schedule' };
-          }
-        }
-        if (Object.keys(weekMap).length > 0) allEnhancements[sleeperId] = weekMap;
-      }
-
-      // ── Apply all enhancements in a single state update ────────────────────
-      const enhancedPlayerIds = Object.keys(allEnhancements);
-      const queueBackgroundPass2 = () => {
-        if (!noEspnCandidates.length) return;
-        const runBackgroundPass2 = async () => {
-          const teamsNeeded = [...new Set(noEspnCandidates.map(id => players[id].team.toUpperCase()))];
-          const rosterResults = await Promise.all(
-            teamsNeeded.map(t => fetchRoster(t).catch(() => []))
-          );
-          if (enhancementRunRef.current.token !== token) return;
-
-          const teamRosters = {};
-          teamsNeeded.forEach((t, i) => { teamRosters[t] = rosterResults[i]; });
-
-          const normalizeName = (name) =>
-            (name ?? '').toLowerCase().replace(/\./g, '').replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '').trim();
-
-          const resolvedEspnIds = {};
-          for (const sleeperId of noEspnCandidates) {
-            const p = players[sleeperId];
-            const roster = teamRosters[p.team.toUpperCase()] ?? [];
-            const normSleeper = normalizeName(p.full_name);
-            const match = roster.find(r => r.displayName.toLowerCase() === p.full_name?.toLowerCase())
-              ?? roster.find(r => normalizeName(r.displayName) === normSleeper);
-            if (match) resolvedEspnIds[sleeperId] = match.id;
-          }
-
-          const resolvedIds = Object.keys(resolvedEspnIds);
-          if (resolvedIds.length > 0) {
-            startTransition(() => {
-              setEspnIdOverrides(prev => ({ ...prev, ...resolvedEspnIds }));
-            });
-          }
-
-          if (resolvedIds.length > 0) {
-            const eventMaps2 = await Promise.all(
-              resolvedIds.map(id =>
-                fetchPlayerGameTeamMap(String(resolvedEspnIds[id]), capturedSeason)
-                  .catch(() => null)
-              )
-            );
-            if (enhancementRunRef.current.token !== token) return;
-
-            const pass2Data = resolveEventMaps(resolvedIds, eventMaps2);
-            const pass2PlayerIds = Object.keys(pass2Data);
-            if (pass2PlayerIds.length > 0) {
-              startTransition(() => {
-                setWeeklyStats(prev => {
-                  const next = { ...prev };
-                  for (const sleeperId of pass2PlayerIds) {
-                    if (!next[sleeperId]) continue;
-                    const weekMap = pass2Data[sleeperId];
-                    next[sleeperId] = next[sleeperId].map(wEntry => {
-                      const data = weekMap[wEntry.week];
-                      if (!data) return wEntry;
-                      return { ...wEntry, team: data.team, opp: data.opp, _teamSource: 'espn' };
-                    });
-                  }
-                  return next;
-                });
-              });
-            }
-          }
-        };
-
-        setTimeout(() => {
-          void runBackgroundPass2();
-        }, 0);
-      };
-
-      if (enhancedPlayerIds.length > 0) {
+      if (Object.keys(resolvedEspnIds).length > 0) {
         startTransition(() => {
-          setWeeklyStats(prev => {
-            const next = { ...prev };
-            for (const sleeperId of enhancedPlayerIds) {
-              if (!next[sleeperId]) continue;
-              const weekMap = allEnhancements[sleeperId];
-              next[sleeperId] = next[sleeperId].map(wEntry => {
-                const data = weekMap[wEntry.week];
-                if (!data) return wEntry;
-                const source = data.source ?? 'espn';
-                return { ...wEntry, team: data.team, opp: data.opp, _teamSource: source };
-              });
-            }
-            return next;
-          });
-          setStatsEnhancing(false);
-        });
-      } else {
-        startTransition(() => {
-          setStatsEnhancing(false);
+          setEspnIdOverrides((prev) => ({ ...prev, ...resolvedEspnIds }));
         });
       }
-
-      qbOppSeasonRef.current = capturedSeason;
-      queueBackgroundPass2();
-    };
-
-    run();
-  }, [platform, statsLoading, weeklyStats, players, scheduleMap, season]); // eslint-disable-line react-hooks/exhaustive-deps
+    });
+  }, [platform, weeklyStats, players, season]);
 
   useEffect(() => {
     if (platform !== 'espn') return;
