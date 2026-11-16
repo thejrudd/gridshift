@@ -3,6 +3,14 @@
 // snapshot deltas as feed events, and formats stat lines / game glances for
 // the Companion Live tab.
 
+import {
+  CLOCK_QUARTER_STATUS,
+  NFL_GAME_STATUS,
+  classifyNflGameStatus,
+  hasLiveStatusState,
+  isNflGameFinal,
+  isNflGameInProgress,
+} from './nflGameStatus.js';
 import { calcPoints } from './scoringEngine.js';
 import { splitDeltaIntoPlays } from './livePlaySplitting.js';
 
@@ -279,19 +287,10 @@ function getRawGameStatus(game) {
   return String(game?.status ?? '').trim().toLowerCase();
 }
 
-function getRawGameStatusState(game) {
-  return String(game?.status_state ?? game?.statusState ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ');
-}
-
 export function getGameStatusText(game) {
   const raw = String(game?.status ?? '').trim();
   return raw || 'Scheduled';
 }
-
-const CLOCK_QUARTER_STATUS = /^(\d{1,2}:\d{2})\s*(?:-|·)\s*(\d+)(?:st|nd|rd|th)(?:\s+(?:q|quarter))?$/i;
 
 /**
  * A game's quarter and time left. A live game may carry them only in a
@@ -309,32 +308,24 @@ export function getGameClock(game) {
   return { period, time: explicitTime || match?.[1] || null };
 }
 
+/**
+ * Being played right now, halftime included. A wrapper over the shared
+ * classifier (`nflGameStatus.js`), which also decides delays and finals.
+ */
 export function isLiveGame(game) {
-  const status = getRawGameStatus(game);
-  const state = getRawGameStatusState(game);
-  if (['completed', 'complete', 'final', 'post', 'closed', 'scheduled', 'pre', 'not started', 'upcoming', 'delayed', 'delay', 'postponed'].includes(state)) {
-    return false;
-  }
-  // BALLDONTLIE's raw Games response can expose an in-progress game as a
-  // clock-first status such as "4:12 - 1st". Statistics Scores normalizes that
-  // shape before rendering, while Fantasy Live consumes the raw response.
-  const clockQuarterStatus = CLOCK_QUARTER_STATUS.test(status);
-  return state === 'in progress'
-    || state === 'live'
-    || state === 'in'
-    || clockQuarterStatus
-    || status.includes('progress')
-    || status.includes('quarter')
-    || status.includes('qtr')
-    || status.includes('half')
-    || status.includes('live')
-    || status.includes('overtime')
-    || status === 'ot';
+  // A delay the provider still reports as in progress is a stoppage in a game
+  // already under way: its starters keep their remaining-game share.
+  const status = classifyNflGameStatus(game);
+  return isNflGameInProgress(game) || (status === NFL_GAME_STATUS.DELAYED && hasLiveStatusState(game));
 }
 
+/**
+ * Over, by the provider's own final text. Gates server caching and the
+ * finished-game archive, so a final `status_state` alone does not count
+ * (`finalFromState: false` in `nflGameStatus.js`).
+ */
 export function isFinalGame(game) {
-  const status = getRawGameStatus(game);
-  return status.includes('final') || status.includes('complete');
+  return isNflGameFinal(game, { finalFromState: false });
 }
 
 export const STARTER_GAME_STATE = Object.freeze({

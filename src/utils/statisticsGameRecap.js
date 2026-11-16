@@ -1,4 +1,4 @@
-import { parsePlayNarrative } from './nflPlays/playNarrative.js';
+import { readPlayNarrative } from './playByPlay/normalizePlay.js';
 
 // A plain-language recap assembled from the normalized play-by-play. It only
 // restates plays the provider reported: each scoring play or turnover reuses the
@@ -83,7 +83,7 @@ export function buildGameRecap(detail) {
     if ((!scoring && !turnover) || seen.has(play.id)) continue;
     seen.add(play.id);
 
-    const narrative = parsePlayNarrative(play);
+    const narrative = readPlayNarrative(play);
     const sentence = narrative.confident && narrative.sentence
       ? narrative.sentence
       : scoring ? scoringFallback(play, before, away, home) : null;

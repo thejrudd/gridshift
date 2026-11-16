@@ -36,8 +36,8 @@ import {
   parseFumble,
   parseInterception,
   parsePenaltyClause,
-  parsePlayNarrative,
 } from './playNarrative.js';
+import { readPlayNarrative } from '../playByPlay/normalizePlay.js';
 
 // Milliseconds at 1x. Travel time grows with distance but sub-linearly, so a
 // 60-yard bomb reads as longer than a 3-yard dive without taking twenty times
@@ -401,7 +401,7 @@ export function getPlayTimeline(play, { homeTeam, awayTeam, resolveName = (name)
   const geometry = getPlayTrajectory(play, { homeTeam, awayTeam });
   if (!geometry.drawable) return null;
 
-  const narrative = parsePlayNarrative(play);
+  const narrative = readPlayNarrative(play);
   const who = actorsBy(narrative);
   const named = (actor) => (actor ? resolveName(actor.name, actor.role) : null);
   const tacklerNames = who.tacklers.map((actor) => resolveName(actor.name, actor.role));

@@ -146,7 +146,10 @@ scoring engine when adding or changing a stat key:
   `bonus_rec_yd_100`, `bonus_tkl_10p`, `bonus_sack_2p`, `idp_pass_def_3p`, and
   the rest of `MILESTONE_BONUSES` in `livePlaysFeed.js`) are added to the play
   that carries the player across the line, priced through `calcPoints()` with
-  the position, and taken back by a play that drops them under it.
+  the position, and taken back by a play that drops them under it. "Carries
+  across" is judged in `sortPlaysChronologically()` order
+  (`playByPlay/playOrder.js`: game clock, then wallclock, then arrival); the old
+  key sorted plays without a wallclock ahead of every timed play.
 - `liveReconciliation.js` treats tackles as one family (`idp_tkl`, or
   `idp_tkl_solo` + `idp_tkl_ast`): plays confirm, fallback rows are sized, and
   fallback rows retire on the tackle count, and a fallback row mirrors the

@@ -16,6 +16,9 @@ import {
   normalizeCanonicalPlay,
   resolveOffenseDefenseTeams,
 } from './playByPlay/normalizePlay.js';
+import { attributePlayActors, collectPlayActors, getIndexedPlayerId } from './playByPlay/attributePlayActors.js';
+import { getGameProgress } from './playByPlay/gameClock.js';
+import { sortPlaysChronologically } from './playByPlay/playOrder.js';
 import {
   PLAY_MATCH_STATS,
   TEAM_DEFENSE_COVERAGE,
@@ -235,70 +238,17 @@ function getFantasyRoleForActor(actorRole, playerMeta, play) {
   return null;
 }
 
-const NARRATIVE_OFFENSIVE_ROLES = [
-  PLAY_ROLES.PASSER,
-  PLAY_ROLES.RECEIVER,
-  PLAY_ROLES.RUSHER,
-  PLAY_ROLES.KICKER,
-  PLAY_ROLES.PUNTER,
-  PLAY_ROLES.FUMBLER,
-];
-
-/**
- * The roster a named actor must belong to before they can be attributed.
- *
- * Defensive names in BDL's trailing tackle/recovery clauses can belong to
- * either side, so each role is pinned to the side its own clause implies —
- * otherwise an offensive player named after a recovery becomes an IDP.
- *
- * This reads the resolved offense/defense rather than the raw `play.teamAbbr`:
- * on a kick or a turnover BDL's `team` names whoever ends up with the ball, so
- * a passer or fumbler checked against `teamAbbr` would be compared to the wrong
- * side and dropped as a mismatch. See `resolveOffenseDefenseTeams` in
- * `playByPlay/normalizePlay.js`.
- *
- * A kick splits the two defensive-sounding roles across opposite sidelines: the
- * returner belongs to the receiving team (the resolved defense) while the
- * coverage players who bring him down belong to the kicking team (the resolved
- * offense). Sending every non-offensive role to the defense credited kick
- * tackles to the returning roster, where those players do not exist, and the
- * tackle silently disappeared.
- */
-function getActorExpectedTeam(play, actorRole, isKickReturn) {
-  if (NARRATIVE_OFFENSIVE_ROLES.includes(actorRole)) return play.offenseTeamAbbr;
-  // A blocked kick is the blocking side's play: the blocker and whoever
-  // scoops the ball belong to the team that was receiving the kick.
-  if (actorRole === PLAY_ROLES.KICK_BLOCKER || /blocked/.test(String(play?.type ?? ''))) return play.defenseTeamAbbr;
-  if (actorRole === PLAY_ROLES.RETURNER) return play.defenseTeamAbbr;
-  // The interception returner is stopped by the team that threw the pass.
-  if (actorRole === PLAY_ROLES.TACKLER && /intercept/i.test(play?.raw?.text ?? '')) return play.offenseTeamAbbr;
-  return isKickReturn ? play.offenseTeamAbbr : play.defenseTeamAbbr;
-}
-
-function surnameOf(name) {
-  const tokens = String(name ?? '').split(' ').filter((token) => !/^(?:jr|sr|ii|iii|iv|v)\.?$/i.test(token));
-  return tokens.length > 1 ? tokens.at(-1) : null;
-}
-
-function getIndexedPlayerId(nameIndex, record) {
-  if (!record) return null;
-  return [...nameIndex.meta.entries()].find(([, candidate]) => candidate === record)?.[0] ?? null;
-}
-
+// Which roster a named actor must belong to, the surname fallback, and the
+// defensive-actor merge are shared with Statistics Scores — see
+// `playByPlay/attributePlayActors.js`. Everything below is Fantasy's layer:
+// starter roles, team-defense credits, and the fumble/lateral credit passes.
 function matchNarrativeActors(play, nameIndex) {
-  const narrativeActors = play?.narrative?.confident && Array.isArray(play.narrative.actors)
-    ? play.narrative.actors
-    : [];
-  const defensiveActors = Array.isArray(play?.defensiveActors) ? play.defensiveActors : [];
-  if (!narrativeActors.length && !defensiveActors.length) return null;
-  const actors = [...narrativeActors];
-  defensiveActors.forEach((actor) => {
-    const duplicate = actors.some((candidate) => (
-      candidate.role === actor.role
-      && normalizeStarterName(candidate.name) === normalizeStarterName(actor.name)
-    ));
-    if (!duplicate) actors.push(actor);
+  const actors = collectPlayActors(play, {
+    narrative: play?.narrative,
+    defensiveActors: play?.defensiveActors,
+    normalize: normalizeStarterName,
   });
+  if (!actors.length) return null;
 
   const matches = new Map();
   const teamDefenseMatches = nameIndex.teamDefenseIds?.get?.(play.defenseTeamAbbr);
@@ -329,6 +279,12 @@ function matchNarrativeActors(play, nameIndex) {
   }
 
   const kickReturn = isKickReturnPlay(play);
+  const attributed = attributePlayActors(play, nameIndex, {
+    actors,
+    normalize: normalizeStarterName,
+    normalizeTeam: getTeamAbbr,
+    surnameFallback: true,
+  });
 
   // Special teams for team defenses, in Sleeper's keys: the receiving side's
   // return yards (and the score when the returner took it in), and the kicking
@@ -351,14 +307,7 @@ function matchNarrativeActors(play, nameIndex) {
     }
   }
 
-  actors.forEach((actor, textPos) => {
-    const expectedTeam = getTeamAbbr(actor.team) || getActorExpectedTeam(play, actor.role, kickReturn);
-    const record = lookupPlayerByName(nameIndex, actor.name, { team: expectedTeam, normalize: normalizeStarterName })
-      // The compact text can use a nickname the roster does not ("Bam Knight"
-      // for Zonovan Knight). The surname alone, on the expected team, is the
-      // same person when no other indexed player shares it.
-      ?? (actor.abbreviated ? null : lookupPlayerByName(nameIndex, surnameOf(actor.name), { team: expectedTeam, normalize: normalizeStarterName }));
-    const playerId = getIndexedPlayerId(nameIndex, record);
+  attributed.forEach(({ actor, textPos, record, playerId }) => {
     if (!playerId) return;
     const role = getFantasyRoleForActor(actor.role, record, play);
     if (!role) return;
@@ -658,19 +607,6 @@ function buildPlayGlance(play, game) {
   };
 }
 
-/** Sort key: newest first within one game. */
-function getPlayOrder(play) {
-  if (play?.wallclock != null && Number.isFinite(Number(play.wallclock))) {
-    return Number(play.wallclock);
-  }
-  const period = play.period ?? 0;
-  const clockParts = /(\d{1,2}):(\d{2})/.exec(play.clock ?? '');
-  const secondsLeft = clockParts ? Number(clockParts[1]) * 60 + Number(clockParts[2]) : 900;
-  return period * 10000 + (900 - secondsLeft);
-}
-
-const REGULATION_SECONDS = 3600;
-
 /**
  * How far into its own game a play happened, 0..1.
  *
@@ -678,16 +614,15 @@ const REGULATION_SECONDS = 3600;
  * slate: a 1pm game and a 4pm game are at completely different points of their
  * own stories at the same moment, and pace is about how far through a game a
  * team is, not what time it is. Overtime clamps to 1 rather than running past
- * the right edge.
+ * the right edge, and a play with no clock sits mid-quarter, the honest guess.
+ * The arithmetic is `playByPlay/gameClock.js`.
  */
 export function getPlayProgress(play) {
-  const period = Number(play?.period);
-  if (!Number.isFinite(period) || period < 1) return null;
-  const clockParts = /(\d{1,2}):(\d{2})/.exec(String(play?.clock ?? ''));
-  // Mid-quarter is the honest guess when a play carries no clock.
-  const secondsLeft = clockParts ? Number(clockParts[1]) * 60 + Number(clockParts[2]) : 450;
-  const elapsed = (period - 1) * 900 + (900 - Math.min(900, Math.max(0, secondsLeft)));
-  return Math.min(1, Math.max(0, elapsed / REGULATION_SECONDS));
+  return getGameProgress(play?.period, play?.clock, {
+    strict: false,
+    missingClockSecondsLeft: 450,
+    overtime: 'clamp',
+  });
 }
 
 function getGameKickoffMs(game) {
@@ -695,9 +630,8 @@ function getGameKickoffMs(game) {
   return Number.isFinite(kickoff) ? kickoff : null;
 }
 
-// `getPlayOrder()` is intentionally game-local so it remains useful while a
-// single provider response is being enriched. Feed ordering needs a shared
-// key, though: without a wallclock, yesterday's completed Q4 otherwise sorts
+// The per-game order (`sortPlaysChronologically`) is game-local. Feed
+// ordering needs a key shared across games, though: without a wallclock, yesterday's completed Q4 otherwise sorts
 // above today's live Q2. Kickoff plus the play's own progress preserves the
 // real slate order without changing the per-game progress used by scoring.
 function getPlayTimelineOrder(play, game, fallbackGameIndex = 0, fallbackStart = 0) {
@@ -891,9 +825,14 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
         // shared row when the snapshot is reconciled or grouped later.
         return { ...play, id: `${gameId}-${rawIndex}-${play.id}` };
       })
-      .filter(Boolean)
-      .sort((left, right) => getPlayOrder(left) - getPlayOrder(right));
-    const contextual = enrichPlaySequenceContext(normalized, context).map((play) => (
+      .filter(Boolean);
+    // One chronological order shared with Statistics Scores and the season
+    // dashboards (`playByPlay/playOrder.js`): game clock, then wallclock, then
+    // arrival order. The old key compared wallclock epochs against a
+    // period/clock number, so a row missing its wallclock sorted ahead of
+    // every row that had one — and milestone bonuses fired on the wrong play.
+    const ordered = sortPlaysChronologically(normalized);
+    const contextual = enrichPlaySequenceContext(ordered, context).map((play) => (
       play.inferredPasserName
         ? {
             ...normalizePlay(play.raw, gameId, { inferredPasserName: play.inferredPasserName, nameHints, playerNumbers }),

@@ -18,6 +18,8 @@ import {
 } from '../livePlaysFeed.js';
 import { buildPlayStatDelta } from '../playByPlay/playStatDelta.js';
 import { resolveOffenseDefenseTeams } from '../playByPlay/normalizePlay.js';
+import { getElapsedSeconds } from '../playByPlay/gameClock.js';
+import { sortPlaysChronologically } from '../playByPlay/playOrder.js';
 import { PLAY_ROLES } from '../nflPlays/playNarrative.js';
 import { getTeamAbbr, normalizeName } from '../liveScoringFeed.js';
 import { positionGroup } from '../playerMetrics.js';
@@ -39,9 +41,13 @@ const clockSecs = (clock) => {
   return (minutes || 0) * 60 + (seconds || 0);
 };
 
-/** Seconds elapsed since kickoff; overtime continues past 3600. */
+/**
+ * Seconds elapsed since kickoff; overtime continues past 3600 in ten-minute
+ * periods. A missing clock reads as the end of its period. NaN without a
+ * readable period. The arithmetic is `playByPlay/gameClock.js`.
+ */
 export function gameSecond(period, clock) {
-  return period <= 4 ? (period - 1) * 900 + (900 - clockSecs(clock)) : 3600 + (period - 5) * 600 + (600 - clockSecs(clock));
+  return getElapsedSeconds(period, clockSecs(clock), { overtimePeriodSeconds: 600, clampClock: false }) ?? Number.NaN;
 }
 
 const round = (value, digits = 3) => (value == null ? null : Number(Number(value).toFixed(digits)));
@@ -169,18 +175,8 @@ export function buildPlayerGame(detail, subject) {
     player: { full_name: withoutSuffix(row ? bdlName(row.player) : subject.name), team, position: subject.position },
   }]);
 
-  const ordered = (detail.plays ?? [])
-    .map((raw, index) => [raw, index])
-    .sort((left, right) => {
-      const a = left[0];
-      const b = right[0];
-      if (a?.period && b?.period) {
-        const delta = gameSecond(a.period, a.clock_display) - gameSecond(b.period, b.clock_display);
-        if (delta) return delta;
-      }
-      return left[1] - right[1];
-    })
-    .map(([raw]) => raw);
+  // Shared order (`playByPlay/playOrder.js`): game clock, wallclock, arrival.
+  const ordered = sortPlaysChronologically(detail.plays ?? []);
 
   const wp = [];
   const plays = [];

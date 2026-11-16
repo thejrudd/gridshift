@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildWinProbabilityTimeline } from '../../../utils/winProbability.js';
 import { getDriveNetYards, getPlayTrajectory, isFieldFlipped, teamLogo } from '../../../utils/nflPlays/fieldGeometry.js';
-import { parsePlayNarrative } from '../../../utils/nflPlays/playNarrative.js';
+import { readPlayNarrative } from '../../../utils/playByPlay/normalizePlay.js';
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
 import { DriveField } from '../../nflPlays/DriveField.jsx';
 import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
@@ -232,7 +232,7 @@ function scoreLabel(play, detail) {
 }
 
 function scoreKind(play) {
-  const narrative = parsePlayNarrative(play);
+  const narrative = readPlayNarrative(play);
   if (narrative.playKind === 'field-goal') return 'FG';
   if (narrative.playKind === 'touchdown') return 'TD';
   return /safety/i.test(play.typeSlug ?? play.description ?? '') ? 'SAF' : 'TD';
