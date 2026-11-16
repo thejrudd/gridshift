@@ -31446,3 +31446,9 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   color: inherit;
   opacity: 0.78;
 }
+
+/* Matchups rows: the stop reason matches the row's stat-line size so it never wraps the line on a phone. */
+.companion-matchup-live-status .live-game-clock__reason {
+  font-size: calc(var(--type-micro) - 1px);
+  letter-spacing: 0.04em;
+}
