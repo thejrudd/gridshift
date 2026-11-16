@@ -13,9 +13,13 @@ const STORE = 'seasonStats';
 const VERSION_KEY = 'gs_stats_cache_version';
 
 // Bump when the cached package shape changes independently of the app version.
-export const STATS_CACHE_SCHEMA_VERSION = 1;
+// v2: weekly rows carry Sleeper's game-time team (team/opp/_teamSource) and the
+// package stores per-week metadata `weeks: { [week]: { fetchedAt, final } }`,
+// so completed weeks are kept permanently and only open weeks are refetched.
+// The same store also holds the Sleeper players DB (sleeperApi.js).
+export const STATS_CACHE_SCHEMA_VERSION = 2;
 
-// Current-season packages go stale as games are played; matches playerCache TTL.stats.
+// A week that is not final yet (the current week) is refetched after this.
 export const CURRENT_SEASON_TTL = 1 * 60 * 60 * 1000; // 1 hour
 
 let dbPromise = null;
@@ -51,7 +55,7 @@ function requestToPromise(request) {
 
 /**
  * Read a cached season package. Returns the stored entry
- * `{ ts, schemaVersion, season, enhanced, weeklyStats, seasonStats, scheduleMap }`
+ * `{ ts, schemaVersion, season, weeks, weeklyStats, seasonStats, scheduleMap }`
  * or null on miss/any storage failure. TTL/staleness is the caller's decision
  * (the caller knows whether the season is completed).
  */
