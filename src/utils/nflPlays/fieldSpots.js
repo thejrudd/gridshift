@@ -5,9 +5,21 @@
 // "SEA -3" means three yards behind Seattle's goal line. Keeping that grammar
 // here prevents narrative parsing and field geometry from disagreeing about
 // whether the same provider spot is valid.
+//
+// Midfield belongs to neither team, so the gamebook writes it bare:
+// "INTERCEPTED by K.Medrano at 50". Only 50 is ever written that way; any
+// other bare number is a distance, never a spot.
 
-/** A captured field spot, including the provider's signed end-zone notation. */
-export const FIELD_SPOT_PATTERN = '([A-Z]{2,3}\\s+-?\\d{1,2})';
+/**
+ * A captured field spot, including the provider's signed end-zone notation and
+ * the bare midfield "50". One capture group, so callers can index it.
+ */
+export const FIELD_SPOT_PATTERN = '([A-Z]{2,3}\\s+-?\\d{1,2}|(?<![\\w-])50(?!\\d|\\s*(?:yards?|yds?)\\b))';
+
+/** True for the gamebook's bare midfield spot. */
+export function isMidfieldSpot(text) {
+  return String(text ?? '').trim() === '50';
+}
 
 const TEAM_ALIASES = new Map([
   ['ARZ', 'ARI'], ['BLT', 'BAL'], ['CLV', 'CLE'], ['HST', 'HOU'], ['WSH', 'WAS'],
@@ -32,6 +44,8 @@ function clamp(value, min, max) {
  * visual: an away-team `-3` is -3, while a home-team `-3` is 103.
  */
 export function possessionTextToPercent(text, { homeTeam } = {}) {
+  // Midfield is 50 from either goal line.
+  if (isMidfieldSpot(text)) return 50;
   const match = /^([A-Z]{2,3})\s+(-?\d{1,2})$/.exec(String(text ?? '').trim());
   if (!match || !homeTeam) return null;
   const [, team, yardLine] = match;

@@ -10,8 +10,8 @@
 // always drives left to right and the home team right to left, which is how
 // broadcast field graphics are read.
 
-import { authoritativeText, parseInterception, parsePassLaterals } from './playNarrative.js';
-import { canonicalTeam, FIELD_SPOT_PATTERN, possessionTextToPercent } from './fieldSpots.js';
+import { authoritativeText, parseInterception, parsePassLaterals, parseTurnoverChain } from './playNarrative.js';
+import { canonicalTeam, FIELD_SPOT_PATTERN, isMidfieldSpot, possessionTextToPercent } from './fieldSpots.js';
 
 export { canonicalTeam, possessionTextToPercent } from './fieldSpots.js';
 
@@ -111,8 +111,10 @@ export function isNonSnapPlay(play) {
  * filed a Houston possession under the Chargers and left the drive it ended
  * labelled "Drive" rather than "Fumble".
  *
- * A fumble the offense fell on itself keeps the ball, so a fumble only counts
- * when the slug says an opponent came up with it.
+ * A fumble the offense fell on itself keeps the ball. With the gamebook text
+ * the turnovers are counted through the chain (`parseTurnoverChain`); a row
+ * without it falls back to the slug, where a fumble only counts when the slug
+ * says an opponent came up with it.
  *
  * A made field goal is deliberately not here. Possession does change after it,
  * but the provider already files the play under the kicking team, and the ball
@@ -133,6 +135,7 @@ export function getPassLateralGeometry(play, { homeTeam, awayTeam } = {}) {
   const sequence = parsePassLaterals(play?.rawText ?? play?.description);
   if (!sequence) return null;
   const validSpot = (spot) => {
+    if (isMidfieldSpot(spot)) return true;
     const [team, yard] = String(spot).split(/\s+/);
     return [canonicalTeam(homeTeam), canonicalTeam(awayTeam)].includes(canonicalTeam(team))
       && Number(yard) >= -10 && Number(yard) <= 50;
@@ -185,6 +188,19 @@ function isPossessionChangingPlay(play, context = {}) {
   // capitalizes RECOVERED for a change of possession ("Z.Branch MUFFS catch,
   // RECOVERED by CHI-J.Blackwell"), and `team` already names the kicking team.
   if (isKickPossessionPlay(play)) return !kickingTeamRecovered(play);
+  // Every turnover on the snap, counted through the chain: a pick returned and
+  // fumbled back to the passing team, or a recovery fumbled away again, hands
+  // the ball over more than once, and possession changed only if it did so an
+  // odd number of times. The slug names one turnover (often the last), and a
+  // "fumble-recovery-own" row can follow an interception or a lost fumble, so
+  // the gamebook text is counted whenever it is there and the flag on it did
+  // not wipe the snap out.
+  const text = play?.rawText ?? play?.rawDescription ?? play?.raw?.text ?? play?.description ?? '';
+  const chain = /\bNo Play\b/i.test(authoritativeText(text)) ? null : parseTurnoverChain(text);
+  // A kick row filed under a fumble slug keeps the slug reading: on a return,
+  // the gamebook's capitals follow the kicking team, and a replayed ruling can
+  // print them the other way round (week 6 of 2026, KC at LAC).
+  if (chain?.complete && !chain.kick) return chain.changes % 2 === 1;
   if (/interception/.test(slug)) return true;
   // A fumble out of the defense's end zone is a touchback: their ball, though
   // the row keeps the run's slug ("rush") and names them as `team`.

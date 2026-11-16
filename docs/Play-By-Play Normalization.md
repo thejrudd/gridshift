@@ -111,6 +111,14 @@ accepts a canonical play or any play carrying the provider row at `.raw`.
    interceptions, opponent-recovered fumbles (`isPossessionChangingPlay`), and
    turnovers on downs (`isTurnoverOnDowns`). A fumble the offense fell on
    itself, a converted fourth down, a penalty, and a scoring play do not flip.
+   When the gamebook text is there (and no flag wiped the snap out), the
+   turnovers are counted through the chain (`parseTurnoverChain`, see
+   "Several turnovers on one snap"): possession changed only if the ball
+   changed hands an odd number of times. A pick returned and fumbled back to
+   the passing team is two changes, so `team` is the offense. The slug names
+   one turnover, often the last (`fumble-recovery-own` follows an interception
+   or a lost fumble), and is only the fallback for rows without text. A kick
+   row filed under a fumble slug keeps the slug reading.
 
 `normalizeTeam` lets a caller apply its own abbreviation aliasing so the
 comparison against home/away is like-for-like. Fantasy Live passes
@@ -182,6 +190,7 @@ not resolve on that roster stays unmatched — there is no league-wide fallback.
 
 | Actor | Roster |
 | --- | --- |
+| Any actor the parser placed on a side (`actor.side`, several turnovers on one snap; the try's kicker after a defensive or return touchdown) | That side |
 | Passer, receiver, rusher, kicker, punter, fumbler | Resolved offense |
 | Kick blocker, and every defensive role on a blocked kick | Resolved defense |
 | Returner | Resolved defense (the receiving side) |
@@ -336,10 +345,73 @@ render the official description.
   for a change of possession. A kick with `FUMBLES`/`MUFFS … RECOVERED by` has
   changed hands twice, `team` already names the kicking team, and
   `isPossessionChangingPlay()` does not flip it.
+- **Recovering your own side's fumble is no recovery.** The gamebook writes
+  "recovered by" (lowercase) when the side holding the ball kept it. That
+  recoverer carries `ownRecovery: true` and Fantasy Live credits them nothing
+  (no `idp_fr`, no team `fum_rec`), as Sleeper's lines read (week 3 of 2026,
+  LV at NO: A.Butler). Statistics Scores does not read the flag yet.
+- **A forcer correction note.** "… RECOVERED by HST-T.Togiai at HST 46. Fumble
+  Forced by 55-D.Hunter." replaces the defender in parentheses
+  (`parseFumbleCredit`, the chain); Sleeper credits the note's player (week 3
+  of 2026: D.Hunter, M.Crosby, D.Henley).
 - Fantasy Live's `describePassFumble()` wording is used only when the narrative
   did not parse the fumble (lateral chains). Otherwise the feed row, the shared
   Matchups row (`groupSharedPlayEvents`), and Statistics read the same
   sentence.
+
+## Several turnovers on one snap
+
+`parseTurnoverChain(rawText)` (`nflPlays/playNarrative.js`) reads every
+turnover in the standing gamebook text, in order: the interception (defender,
+the defender who tipped it, spot, return, the return's tacklers), then each
+`FUMBLES` clause (who had the ball, who forced it, who came up with it, and the
+return and its tacklers). Sides are relative to the snap: `offense` ran it. The
+gamebook capitalizes `RECOVERED` when the ball changes hands and writes
+"recovered by" when the side holding it kept it; checked against every fumble
+in weeks 1–9 of 2026 (410 rows: the chain's final holder is the provider's
+`team` on every one but turnovers on downs). A kick in the text starts the
+chain with the ball on the receiving side. `complete: false` means a clause
+this reader does not know; callers fall back.
+
+- **Possession** counts the chain (see the shared team-resolution rule).
+- **Narrative.** A snap with more than one turnover (`isCompoundTurnover`), or a
+  defensive score whose scoring summary replaced the play ("Jonas Sanker 87 Yd
+  Fumble Return"), is told from the chain: the play that started it from the
+  compact text when it can be read there (its gain is the official credit: "Pass
+  Complete for 16 Yds"), else from the gamebook; then one sentence per fumble
+  naming who had the ball ("Davison Igbinosun fumbled, forced by J.Ruckert, and
+  Jamien Myers recovered it."). The compact text cannot carry the rest: the
+  feed cuts it off and can list the fumblers out of order. Laterals keep their
+  own readers.
+- **`narrative.fumbles`** lists every fumbler with `side` and `lost` (the other
+  side came up with it); the matcher charges each one, looked up on that side's
+  roster, so an intercepter who fumbles is charged `fum` (and `fum_lost` when
+  the passing team recovered). `narrative.fumble` is the recovery that changed
+  hands, for the credited gain and the recovery's own advance.
+  `narrative.turnover` is true when the defense ended with the ball; a
+  touchdown then is the defense's, never the passer's, receiver's or runner's.
+- **Actors.** `parseDefensiveActors` gives each chain forcer, recoverer and
+  tackler a `side`. After a turnover the offense defends: a tight end who strips
+  the interception returner earns `idp_ff` and the tackle, as in Sleeper's lines
+  (week 3: J.Johnson, M.Alie-Cox; week 5: J.Chase).
+- **Midfield** is written bare ("INTERCEPTED by K.Medrano at 50").
+  `FIELD_SPOT_PATTERN` accepts a bare `50` (never another bare number or a
+  distance), and `possessionTextToPercent` / `spotPhrase` read it as midfield.
+- **Interceptions** credit the defender `idp_pd` as well as `idp_int`, and the
+  defender who tipped it ("INTERCEPTED by N.Pritchett (R.Thomas) at SEA 3") with
+  `idp_pd`: every interceptor's line in weeks 1–9 of 2026 (155 of 155) carries a
+  pass defensed per pick. A return that runs out of bounds or scores ("J.Trotter
+  for 38 yards, TOUCHDOWN") is read for its yards.
+- **The try after a defensive or return touchdown** rides on the scoring
+  summary ("Josiah Trotter 38 Yd Interception Return (Chase McLaughlin Kick)").
+  The feed has no separate extra-point row, so the kicker is an actor of that
+  row with `side` set to the side that scored. Every such kicker in weeks 1–9 of
+  2026 was one extra point short of Sleeper's line without it.
+
+Known gaps: tackles on a chain are priced by the play's whole tackler count, so
+two solo stops in different returns read as assisted; a summary-only pick row
+filed under `fumble-recovery-own` (week 9, LV at SF) is not flipped; Statistics
+Scores still counts an own-side recovery.
 
 ## Game context, penalties, and the remaining shapes (v9.3.8, second pass)
 
@@ -388,4 +460,4 @@ Over weeks 6–9 of 2026 every one of 7,939 rows now parses.
 | Game-clock arithmetic | `tests/unit/playByPlayGameClock.test.mjs` | `node --test tests/unit/playByPlayGameClock.test.mjs` |
 | Game status classifier and its wrappers | `tests/unit/nflGameStatus.test.mjs` | `node --test tests/unit/nflGameStatus.test.mjs` |
 | Possession correction itself | `tests/unit/nflFieldGeometry.test.mjs` | `node --test tests/unit/nflFieldGeometry.test.mjs` |
-| Compound fumbles, no-gain returns and picks, sacker-less sacks, kick recoveries, both-sides shared rows | `tests/unit/playNormalizationFumbles.test.mjs` | `node --test tests/unit/playNormalizationFumbles.test.mjs` |
+| Compound fumbles, no-gain returns and picks, sacker-less sacks, kick recoveries, both-sides shared rows, several turnovers on one snap (completed-week regressions) | `tests/unit/playNormalizationFumbles.test.mjs` | `node --test tests/unit/playNormalizationFumbles.test.mjs` |

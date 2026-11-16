@@ -11,7 +11,7 @@
 // an empty delta and it is the consumer's choice whether to drop it.
 
 import { calcPoints } from '../scoringEngine.js';
-import { PLAY_ROLES } from '../nflPlays/playNarrative.js';
+import { PLAY_ROLES, authoritativeText, parseTurnoverChain } from '../nflPlays/playNarrative.js';
 import { isKickPossessionPlay, kickingTeamRecovered } from '../nflPlays/fieldGeometry.js';
 
 // A kickoff or punt: its defensive credits are special-teams stats in Sleeper's
@@ -272,6 +272,11 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
     return delta;
   }
   const delta = buildInvolvementDelta(play, role, roleDetail, attributionRoles, credit?.fumble ?? null);
+  // A defender who fumbled after taking the ball away (an interception or a
+  // recovery returned and lost again) is charged like anyone else.
+  if (role === 'defense' && credit?.fumble && !/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) {
+    addFumble(delta, credit.fumble);
+  }
   // The kicker's own tackle on the return (see `buildSpecialTeamsDelta`).
   if (credit?.specialTeamsTackle && countTacklers(play) === 1) delta.st_tkl_solo = 1;
   if (credit?.returnTackle && !/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) {
@@ -348,7 +353,9 @@ function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble)
     play.raw?.text,
     roleDetail,
   ].filter(Boolean).join(' ');
-  const touchdown = play.scoring && (
+  // A touchdown after the other side took the ball away is theirs, not the
+  // passer's, receiver's, or runner's (week 5 of 2026: three fumble returns).
+  const touchdown = play.scoring && !(play.narrative?.turnover && ['passer', 'receiver', 'rusher'].includes(role)) && (
     /touchdown|return td/i.test(description)
     || /touchdown|return-touchdown|return_td/.test(type)
   );
@@ -513,6 +520,55 @@ function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble)
 // kicking side's coverage tackles. `detail` says which side this team was.
 export const TEAM_DEFENSE_RETURN = 'return';
 export const TEAM_DEFENSE_COVERAGE = 'coverage';
+// The offense's own team defense, when it took the ball back on the same snap.
+export const TEAM_DEFENSE_TAKEAWAY = 'takeaway';
+
+/**
+ * The snap's turnovers when the gamebook spells them out (`parseTurnoverChain`),
+ * or null: a kick, a flag that wiped the snap out, or a clause the reader does
+ * not know. Sides are relative to the snap (`offense` ran it).
+ */
+function readTurnoverChain(play) {
+  const text = String(play?.raw?.text ?? play?.rawText ?? '');
+  if (!text || isKickPossessionPlay({ typeSlug: play?.type ?? play?.typeSlug ?? play?.raw?.type_slug })) return null;
+  if (play?.narrative?.negated || /\bno play\b/i.test(authoritativeText(text))) return null;
+  const chain = parseTurnoverChain(text);
+  return chain?.complete && !chain.kick ? chain : null;
+}
+
+/**
+ * Takeaways one side of the snap earned, the way Sleeper's team lines count
+ * them (checked against weeks 1–9 of 2026): `int` (and its return yards) to
+ * the side that picked it off; `fum_rec` (and return yards) only when the
+ * recovering side is not the side that fumbled — falling on your own fumble is
+ * no recovery; `def_ff` only for a force by the side that was on defense, since
+ * Sleeper files a force by the offense after a turnover as `ff_misc` (IND, NO
+ * and CIN in weeks 3 and 5), which no league scores.
+ */
+function chainTakeaways(chain, side) {
+  const delta = {};
+  const add = (key, value) => { if (value) delta[key] = (delta[key] ?? 0) + value; };
+  chain.events.forEach((event) => {
+    if (event.type === 'interception') {
+      if (side !== 'defense') return;
+      add('int', 1);
+      add('int_ret_yd', event.returnYards);
+      return;
+    }
+    if (side === 'defense' && event.forcerSide === 'defense' && event.forcedBy.length) add('def_ff', 1);
+    if (event.changed && event.outcome === 'recovered' && event.recovererSide === side) {
+      add('fum_rec', 1);
+      add('fum_ret_yd', event.returnYards);
+    }
+  });
+  return delta;
+}
+
+/** The offense took the ball back after a turnover on the same snap. */
+export function isOffenseTakeawayPlay(play) {
+  const chain = readTurnoverChain(play);
+  return Boolean(chain && chainTakeaways(chain, 'offense').fum_rec);
+}
 
 function isReturnTouchdown(play) {
   const type = String(play?.type ?? play?.typeSlug ?? play?.raw?.type_slug ?? '').toLowerCase();
@@ -556,6 +612,8 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
     }
     return delta;
   }
+  const chain = readTurnoverChain(play);
+  if (detail === TEAM_DEFENSE_TAKEAWAY) return chain ? chainTakeaways(chain, 'offense') : delta;
   const interception = /intercept|picked off|pick six/i.test(description);
   const fumble = /fumble/i.test(description);
   // A touchdown is the defense's only when the defense scored it: a pick, a
@@ -566,9 +624,12 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
   // A summary-only "fumble return touchdown" row cannot say which side fell
   // on the ball (an offense recovering its own fumble in the end zone uses the
   // same slug), so without the gamebook's RECOVERED it is not the defense's.
-  const defenseScored = interception
-    || /blocked/.test(type)
-    || (fumble && /\bRECOVERED by\b/.test(String(play.raw?.text ?? '')));
+  // With the gamebook's turnover chain, whoever held the ball at the end.
+  const defenseScored = chain
+    ? chain.finalSide === 'defense'
+    : interception
+      || /blocked/.test(type)
+      || (fumble && /\bRECOVERED by\b/.test(String(play.raw?.text ?? '')));
   const touchdown = play.scoring && /touchdown/i.test(scoringText(play)) && defenseScored;
   // A blocked kick returned for a score is a special-teams touchdown in
   // Sleeper's lines (`def_st_td`), ESPN's `blk_kick_ret_td`, not `def_td`.
@@ -583,7 +644,7 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
   if (!play.narrative?.negated && !/\bno play\b/i.test(String(play.raw?.text ?? ''))) {
     // The defense came up with a fumble (the gamebook capitalizes RECOVERED
     // for a change of possession).
-    if (fumble && /\bFUMBLES\b[^]*?\bRECOVERED by\b/.test(String(play.raw?.text ?? ''))) delta.fum_rec = 1;
+    if (!chain && fumble && /\bFUMBLES\b[^]*?\bRECOVERED by\b/.test(String(play.raw?.text ?? ''))) delta.fum_rec = 1;
     // A stop behind the line: a sack for a loss, or a run or catch tackled for
     // a loss. The team counts it however many defenders shared it.
     const loss = (sack && Math.abs(play.yards || 0) > 0)
@@ -592,24 +653,35 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
     if (loss) delta.tkl_loss = 1;
     if (play.turnoverOnDowns) delta.def_4_and_stop = 1;
   }
-  if (interception) delta.int = 1;
+  if (chain) Object.assign(delta, chainTakeaways(chain, 'defense'));
+  else if (interception) delta.int = 1;
   if (/safety/i.test(description)) delta.safe = 1;
-  if (/pass (?:defensed|defended|broken up)|pass breakup|incomplete/i.test(description)) delta.def_pass_def = 1;
+  // Sleeper's team pass defensed is its defenders' own: each one the gamebook
+  // names breaking a pass up, tipping it, or intercepting it. An incompletion
+  // nobody is credited with is not one.
+  const passDefenders = new Set((play.defensiveActors ?? [])
+    .filter((actor) => actor.role === PLAY_ROLES.PASS_DEFENDER)
+    .map((actor) => actor.name));
+  if (passDefenders.size) delta.def_pass_def = passDefenders.size;
   // Sleeper's D/ST forced fumble needs a defender who forced it; a fumbled
   // snap or a ball dropped untouched is not one.
   const forced = (play.defensiveActors ?? []).some((actor) => actor.role === PLAY_ROLES.FORCER)
     || /forced fumble|fumble forced/i.test(description);
-  if (forced) delta.def_ff = 1;
+  // "Fumble Forced by 98-M.Crosby" stands in for a force the clause omits.
+  if (!chain && forced) delta.def_ff = 1;
+  else if (chain && !delta.def_ff && /forced fumble|fumble forced/i.test(description)
+    && chain.events.some((event) => event.type === 'fumble' && event.forcerSide === 'defense')) delta.def_ff = 1;
   if (blockedKickScore) {
     delta.def_st_td = 1;
     delta.blk_kick_ret_td = 1;
   } else if (touchdown) {
     delta.def_td = 1;
-    if (interception) {
+    const scored = chain?.events.filter((event) => event.type === 'interception' || event.changed).at(-1);
+    if (scored ? scored.type === 'interception' : interception) {
       delta.def_int_td = 1;
       delta.int_ret_yd = extractReturnYards(description) || play.yards || 0;
       if (delta.int_ret_yd >= 50) delta.bonus_def_int_td_50p = 1;
-    } else if (fumble) {
+    } else if (scored || fumble) {
       delta.def_fum_td = 1;
       delta.fum_ret_yd = extractReturnYards(description) || play.yards || 0;
       if (delta.fum_ret_yd >= 50) delta.bonus_def_fum_td_50p = 1;

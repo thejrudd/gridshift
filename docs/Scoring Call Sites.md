@@ -139,6 +139,26 @@ scoring engine when adding or changing a stat key:
   the defense that allowed it. `def_ff` requires a defender who forced the
   fumble. A summary-only "fumble return touchdown" row cannot tell an
   offensive end-zone recovery from a defensive one and credits no defense.
+- Takeaways follow the gamebook's turnover chain (`parseTurnoverChain`) and
+  Sleeper's team lines (weeks 1–9 of 2026): `int` and `int_ret_yd` (every
+  return, not only a score) to the side that picked it off; `fum_rec` and
+  `fum_ret_yd` only when the recovering side is not the side that fumbled —
+  falling on your own side's fumble earns no `fum_rec` and no `idp_fr`;
+  `def_ff` only for a force by the side that was on defense, because Sleeper
+  files a force by the offense after a turnover as `ff_misc` (scored by no
+  league). When the offense takes the ball back on the same snap (a pick
+  returned and fumbled to the passing team) its own team defense gets
+  `fum_rec` through `TEAM_DEFENSE_TAKEAWAY`; no completed week has shown that
+  case yet, so it follows the owner's rule rather than a Sleeper line.
+- The team's `def_pass_def` is the number of defenders the gamebook credits
+  with a pass defensed on the snap (breakups, tips, interceptions), not every
+  incompletion. An interception is also the intercepter's `idp_pd`.
+- A defender who fumbles after taking the ball away is charged `fum` (and
+  `fum_lost` when the other side recovered) like any carrier; a touchdown after
+  the defense took the ball away is never the passer's, receiver's or runner's.
+- The try after a defensive or return touchdown is the scoring side's kicker's
+  `xpm` / `xpmiss`, read from the scoring summary row (the feed has no separate
+  extra-point row).
 - `STAT_TO_SCORING_KEY` maps Sleeper's `def_st_td`, `def_st_ff`,
   `def_st_fum_rec`, `st_ff` and `st_fum_rec`; Sleeper's D/ST forced fumble
   `ff` (stat line and `scoring_settings`) maps to the internal `def_ff`.
@@ -154,6 +174,15 @@ scoring engine when adding or changing a stat key:
   `idp_tkl_solo` + `idp_tkl_ast`): plays confirm, fallback rows are sized, and
   fallback rows retire on the tackle count, and a fallback row mirrors the
   tackle keys Sleeper reported so it scores exactly as Sleeper's line would.
+- Reconciliation audit for the turnover-chain pass: the new or wider
+  emissions are `idp_pd` on every interceptor (in `PLAY_MATCH_STATS`, aliased
+  to Sleeper's `idp_pass_def`, so the play now confirms against a pass defensed
+  Sleeper already counted instead of leaving a surplus), `xpm` / `xpmiss` on a
+  return touchdown's try (in the set; the kicker's line confirms it), `fum` on
+  a defender (not in the set; `fum_lost` is, and confirms as for any carrier),
+  and team `int_ret_yd`, `fum_ret_yd`, a counted `def_pass_def`, and the
+  `takeaway` team-defense row (outside the set, so team defense rows stay with
+  the points step, as before). No new key can create a `Stat update` row.
 - `PLAY_MATCH_STATS` in `playStatDelta.js` is the reconciliation coverage set,
   not a second scoring profile. Every positive key used to confirm an
   individual provider play or create a `Stat update` fallback must be covered,

@@ -23,11 +23,13 @@ import {
   PLAY_MATCH_STATS,
   TEAM_DEFENSE_COVERAGE,
   TEAM_DEFENSE_RETURN,
+  TEAM_DEFENSE_TAKEAWAY,
   buildPlayStatDelta,
   estimatePlayPoints,
   getKickCoverageCredit,
   getPlayEventClassification,
   isSpecialTeamsPlay,
+  isOffenseTakeawayPlay,
   isTeamDefenseScoringPlay,
 } from './playByPlay/playStatDelta.js';
 import { calcPoints } from './scoringEngine.js';
@@ -204,7 +206,7 @@ export function buildStarterNameIndex(rows) {
 
 const PASSER_POSITIONS = new Set(['QB']);
 
-function getFantasyRoleForActor(actorRole, playerMeta, play) {
+function getFantasyRoleForActor(actorRole, playerMeta, play, actor = null) {
   if (actorRole === PLAY_ROLES.PASSER) return 'passer';
   if (actorRole === PLAY_ROLES.RECEIVER) return 'receiver';
   if (actorRole === PLAY_ROLES.RUSHER) return 'rusher';
@@ -212,6 +214,12 @@ function getFantasyRoleForActor(actorRole, playerMeta, play) {
   if (actorRole === PLAY_ROLES.PUNTER) return 'punter';
   if (actorRole === PLAY_ROLES.RETURNER) return 'returner';
   if (actorRole === PLAY_ROLES.TACKLER && /intercept/i.test(play?.raw?.text ?? '')
+    && playerMeta?.team && playerMeta.team === play.offenseTeamAbbr) return 'defense';
+  // After a turnover the offense defends: a tight end who strips the
+  // interception returner, or tackles the recovery, earns the IDP credit
+  // Sleeper gives it (week 3 of 2026: J.Johnson, M.Alie-Cox; week 5:
+  // J.Chase). The parser places such actors on the offense's side.
+  if (actor?.side === 'offense' && [PLAY_ROLES.TACKLER, PLAY_ROLES.FORCER, PLAY_ROLES.RECOVERER].includes(actorRole)
     && playerMeta?.team && playerMeta.team === play.offenseTeamAbbr) return 'defense';
   // On a kick, coverage and return-team players at any position earn
   // special-teams credit (a running back's coverage tackle is `st_tkl_solo`).
@@ -261,6 +269,13 @@ function matchNarrativeActors(play, nameIndex) {
       detail: null,
     }));
   }
+  // The offense's own team defense, when it took the ball back after a
+  // turnover on the same snap (an interception returned and fumbled to it).
+  if (!isSpecialTeamsPlay(play) && isOffenseTakeawayPlay(play)) {
+    nameIndex.teamDefenseIds?.get?.(play.offenseTeamAbbr)?.forEach((playerId) => {
+      if (!matches.has(playerId)) matches.set(playerId, { playerId, role: 'team_defense', textPos: -1, detail: TEAM_DEFENSE_TAKEAWAY });
+    });
+  }
 
   if (play.inferredPasserName) {
     const record = lookupPlayerByName(nameIndex, play.inferredPasserName, {
@@ -309,7 +324,9 @@ function matchNarrativeActors(play, nameIndex) {
 
   attributed.forEach(({ actor, textPos, record, playerId }) => {
     if (!playerId) return;
-    const role = getFantasyRoleForActor(actor.role, record, play);
+    // Falling on your own side's fumble is no recovery in Sleeper's lines.
+    if (actor.role === PLAY_ROLES.RECOVERER && actor.ownRecovery) return;
+    const role = getFantasyRoleForActor(actor.role, record, play, actor);
     if (!role) return;
     const existing = matches.get(playerId);
     if (existing) {
@@ -390,7 +407,9 @@ function withFumbleCredit(matches, play, nameIndex) {
   if (Array.isArray(listed) && listed.length) {
     let next = matches;
     listed.forEach((entry, index) => {
-      const record = lookupFumbler(nameIndex, entry.fumbler, play.offenseTeamAbbr, matches);
+      // An interception returner or a defender who recovered and fumbled
+      // again is on the defense's roster.
+      const record = lookupFumbler(nameIndex, entry.fumbler, entry.side === 'defense' ? play.defenseTeamAbbr : play.offenseTeamAbbr, matches);
       const playerId = getIndexedPlayerId(nameIndex, record);
       if (!playerId) return;
       const credit = { lost: Boolean(entry.lost) };
@@ -510,6 +529,11 @@ export function matchPlayToStarters(play, nameIndex) {
   if (teamDefenseMatches && isTeamDefenseScoringPlay(play)) {
     teamDefenseMatches.forEach((playerId) => {
       if (!matches.has(playerId)) matches.set(playerId, -1);
+    });
+  }
+  if (!isSpecialTeamsPlay(play) && isOffenseTakeawayPlay(play)) {
+    teamDefenseIds?.get?.(play.offenseTeamAbbr)?.forEach((playerId) => {
+      if (!matches.has(playerId)) matches.set(playerId, { playerId, role: 'team_defense', textPos: -1, detail: TEAM_DEFENSE_TAKEAWAY, attributionRoles: [] });
     });
   }
 

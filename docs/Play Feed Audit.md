@@ -14,7 +14,7 @@ The BALLDONTLIE key is read from `.env` and stays local. Raw downloads are cache
 
 Output per week, in `tmp/play-audit/<season>/week-<n>/`:
 
-- `summary.md`: the match rate for each stat and the mismatch list.
+- `summary.md`: the match rate for each stat, the team defense table, and both mismatch lists.
 - `mismatches.json`: one row per player and stat, with GridShift's value, Sleeper's official value, ESPN's box-score value where ESPN has one, whether the two official sources agree, the plays that credited the stat, and any feed rows naming the player that credited nothing.
 
 ## How it compares
@@ -22,6 +22,7 @@ Output per week, in `tmp/play-audit/<season>/week-<n>/`:
 - Plays go through `buildPlayEvents()` exactly as Fantasy Live reads them, with the name index built from both full rosters plus everyone the game's ESPN box score lists, on the team they played for (players traded since are still found).
 - Official values are Sleeper's final weekly stat lines, using the reconciler's aliases (`idp_pass_def`, `idp_qb_hit`, `idp_fum_rec`); tackles are compared as one total. ESPN's box score is the cross-check.
 - Every stat must match exactly. Audit scoring gives counts a weight of 1 and yards 0.01, so no play is dropped as worth nothing.
+- Team defense lines (Sleeper's DEF rows, keyed by team abbreviation) are compared separately, in Sleeper's keys: `int`, `int_ret_yd`, `fum_rec`, `fum_ret_yd`, `ff` (GridShift's `def_ff`), `sack`, `sack_yd`, `safe`, `def_td`, `blk_kick`, `tkl_loss`, `def_pass_def`, `def_4_and_stop`, and the special-teams `def_st_*`, `def_kr_yd`, `def_pr_yd`. They have their own table and mismatch list (`teamMismatches`) and never mix into the player totals. Sleeper files a force or tackle by the offense after a turnover as `ff_misc` / `tkl_solo_misc`, which no league scores and the audit does not compare.
 
 ## Reading mismatches
 

@@ -79,6 +79,11 @@ function isLostFumbleReturnTackler(play, name, offenseTeam, normalizeTeam) {
  * team, the side that ended up with the ball — which is the recoverer's side
  * on a lost fumble, an own recovery, and a kick recovery alike. A tackler
  * named only in a lost fumble's return clause is the original offense.
+ *
+ * `actorSide` is the side of the snap the parser placed the actor on when
+ * several turnovers make the role alone ambiguous (`parseTurnoverChain`): the
+ * tight end who strips an interception returner, or the kicker of the extra
+ * point after a defensive touchdown. It wins over the role.
  */
 export function getActorExpectedTeam(play, actorRole, {
   offenseTeam = null,
@@ -86,8 +91,11 @@ export function getActorExpectedTeam(play, actorRole, {
   possessionTeam = null,
   kickReturn = isKickReturnPlay(play),
   actorName = null,
+  actorSide = null,
   normalizeTeam = (value) => value ?? null,
 } = {}) {
+  if (actorSide === 'offense') return offenseTeam;
+  if (actorSide === 'defense') return defenseTeam;
   if (NARRATIVE_OFFENSIVE_ROLES.includes(actorRole)) return offenseTeam;
   // A blocked kick is the blocking side's play: the blocker and whoever
   // scoops the ball belong to the team that was receiving the kick.
@@ -183,7 +191,7 @@ export function attributePlayActors(play, nameIndex, {
   };
   return list.map((actor, textPos) => {
     const expectedTeam = normalizeTeam(actor.team)
-      || getActorExpectedTeam(play, actor.role, { ...sides, actorName: actor.name });
+      || getActorExpectedTeam(play, actor.role, { ...sides, actorName: actor.name, actorSide: actor.side ?? null });
     const record = lookupActor(nameIndex, actor, expectedTeam, { normalize, surnameFallback });
     return { actor, textPos, expectedTeam, record, playerId: getIndexedPlayerId(nameIndex, record) };
   });
