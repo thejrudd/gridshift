@@ -648,12 +648,19 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
   await expect(page.locator('.scores-possession')).toHaveCount(1);
   await expect(page.locator('.scores-possession')).toHaveAttribute('aria-label', 'Tennessee Titans possession');
   await expect(page.locator('.scores-scorebug-situation')).toContainText('1st & 10');
+  // A completed pass in bounds keeps the clock running: the shared clock ticks
+  // down from the provider sample, with no held reason.
+  await page.clock.fastForward(3_000);
+  await expect(status).toContainText('Q1 · 4:09');
+  await expect(status.locator('.live-game-clock__reason')).toHaveCount(0);
   const liveWeekRequestsBeforePlay = liveWeekRequests;
   serveUpdatedPlay = true;
   await page.clock.fastForward(8_000);
   await expect.poll(() => liveWeekRequests).toBeGreaterThan(liveWeekRequestsBeforePlay);
   await expect(page.locator('.scores-latest-play')).toContainText('Penalty');
+  // The flag's sample is authoritative: the display moves to it and holds.
   await expect(status).toContainText('3:52');
+  await expect(status.locator('.live-game-clock__reason')).toHaveText('Flag');
   await expect(page.locator('.scores-scorebug-team').nth(0).locator('b')).toHaveText('10');
   await expect(page.locator('.scores-scorebug-team').nth(1).locator('b')).toHaveText('7');
   await page.clock.fastForward(5_000);
@@ -665,14 +672,23 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
   await page.getByRole('button', {
     name: 'Open Tennessee Titans at San Francisco 49ers game details',
   }).click();
+  // The drilldown hero reads the same shared clock as the scorecard.
   await expect(page.locator('.scores-detail-status > strong')).toContainText('3:52');
+  await expect(page.locator('.scores-detail-status > strong .live-game-clock__reason')).toHaveText('Flag');
   await expect(page.locator('.scores-detail-team.is-away > em')).toHaveText('10');
   await expect(page.locator('.scores-detail-team.is-home > em')).toHaveText('7');
 
   const liveWeekRequestsBeforeUpdate = liveWeekRequests;
   await page.clock.fastForward(30_000);
   await expect.poll(() => liveWeekRequests).toBeGreaterThan(liveWeekRequestsBeforeUpdate);
-  await expect(page.locator('.scores-detail-status > strong')).toContainText('3:42');
+  // The new sample sits ten seconds below the held 3:52, so the display eases
+  // down to it (never upward) and then runs: the game clock has moved past the
+  // flag, so the flag no longer explains a held clock and no reason shows.
+  const heroClock = page.locator('.scores-detail-status > strong');
+  await expect(heroClock).toContainText('Q1 · 3:47');
+  await page.clock.fastForward(1_000);
+  await expect(heroClock).toContainText(/Q1 · 3:4[12]/);
+  await expect(page.locator('.scores-detail-status > strong .live-game-clock__reason')).toHaveCount(0);
   await expect(page.locator('.scores-detail-team.is-away > em')).toHaveText('10');
   await expect(page.locator('.scores-detail-team.is-home > em')).toHaveText('7');
 });

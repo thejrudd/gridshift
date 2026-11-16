@@ -391,8 +391,9 @@ export default function StatisticsScores({
   }, [canOpenGame, routedGame]);
   const selectedGameRouteId = selectedGame ? scoresGameRouteId(selectedGame) : null;
   // The live-week response already contains the canonical provider game and
-  // latest-play snapshot. Scorecards must not run a second polling or clock
-  // interpolation path on top of it.
+  // latest-play snapshot. Scorecards must not run a second polling path on top
+  // of it. The ticking clock is the shared LiveGameClock leaf, which reads the
+  // provider anchor on each game; this component never ticks a clock itself.
   const scorecardWeek = selectedWeek;
   useEffect(() => {
     if (DEVELOPER_SOURCE_ENABLED && developerSource !== STATISTICS_SCORES_PROVIDERS.BALLDONTLIE) {

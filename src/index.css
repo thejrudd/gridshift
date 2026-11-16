@@ -2018,7 +2018,9 @@ body {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 .companion-defense-pinned__label:first-child { color: var(--color-label); }
 
@@ -2197,7 +2199,9 @@ body {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .companion-defense-upcoming {
@@ -11727,7 +11731,9 @@ body {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .player-dash-eyebrow.is-spaced { margin-left: 8px; }
@@ -12291,7 +12297,9 @@ button.player-dash-rank__dot::after { content: ''; position: absolute; inset: -1
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .player-dash-zone-field__head.is-side { writing-mode: vertical-rl; transform: rotate(180deg); }
@@ -12772,7 +12780,9 @@ button.team-dash-leader:hover { background: var(--color-fill-tertiary); }
   font-weight: 900;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 .team-dash-depth-table thead th:first-child { width: 72px; }
 .team-dash-depth-table abbr { text-decoration: none; }
@@ -15791,7 +15801,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 800;
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .scout-source-link,
@@ -16187,7 +16199,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .scout-pick-list,
@@ -17287,7 +17301,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .stats-team-card {
@@ -17401,7 +17417,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .stats-honors__title {
@@ -17528,7 +17546,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .companion-heatmap-drilldown-close {
@@ -17559,7 +17579,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   letter-spacing: 0.14em;
   line-height: 1;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .companion-heatmap-drilldown-matchup {
@@ -18288,7 +18310,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 800;
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .scout-cmp-close {
@@ -28736,7 +28760,9 @@ button.companion-matchup-masthead__axis:focus-visible {
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 .matchup-preview__key-text {
   margin: 4px 0 0;
@@ -28985,7 +29011,9 @@ button.companion-matchup-masthead__axis:focus-visible {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 .matchup-preview__moment > b {
   display: block;
@@ -29110,7 +29138,9 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .companion-schedule-edge-heading {
@@ -29246,7 +29276,9 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .companion-schedule-stat__value {
@@ -29514,7 +29546,9 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 .companion-schedule-pair {
@@ -29555,7 +29589,9 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-label-secondary);
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }
 
 /* Playoff weeks are never seeded here, so the block states the boundary
@@ -31385,4 +31421,28 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
     margin-left: 4px;
     vertical-align: middle;
   }
+}
+
+/* Shared live game clock (src/components/shared/LiveGameClock.jsx). The time
+   uses tabular figures so each second keeps the same width; the reason sits
+   beside it only while the clock is held for a known reason. */
+.live-game-clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+  white-space: nowrap;
+}
+
+.live-game-clock__time {
+  font-variant-numeric: tabular-nums;
+}
+
+.live-game-clock__reason {
+  font-size: var(--type-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* Inherits the status colour (live red, favourite or hero foreground). */
+  color: inherit;
+  opacity: 0.78;
 }

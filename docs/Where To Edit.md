@@ -139,7 +139,7 @@ The live layer inside Fantasy Matchups (the separate Live tab was retired; `/fan
 | `src/components/companion/TeamScoringDrilldown.jsx` / `.css` | Team scoring drilldown from a team scorecard (Projection board / Scoreboard / Beat or missed) |
 | `src/components/companion/matchup/MatchupPointSourcesCard.jsx`, `src/utils/matchupPointSources.js` | Scorecard hover card: points by position (projected pregame, scored so far live, official vs projection final), summing to the masthead total |
 | `src/utils/teamScoringDrilldownModel.js` | Team drilldown model: lineup spots, grouped projected/actual categories, totals matching the masthead |
-| `src/utils/livePlaysFeed.js` | Starter matching, feed events, play → 0..1 game progress (`getPlayProgress()`); play normalization and stat deltas come from `playByPlay/` |
+| `src/utils/livePlaysFeed.js` | Starter roles over the shared actor matcher, feed events, play → 0..1 game progress (`getPlayProgress()`); play normalization, actor matching, ordering, clock maths, and stat deltas come from `playByPlay/` |
 | `scripts/play-feed-audit.mjs` (`npm run audit:plays`) | Rebuilds completed weeks' stat lines from the play feed and diffs them against official stats; read [[Play Feed Audit]] before changing play parsing or pricing |
 | `src/utils/liveReconciliation.js` | Plays reconciled against Sleeper: pending/confirmed status, residual adjustment, displayed totals, stat-update fallback |
 | `src/utils/liveWinProbability.js` | `explainWinProbability()`, `resolveStarterProjection()` |
@@ -216,7 +216,7 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/api/statisticsScoresApi.js` | Browser-to-sidecar Scores requests |
 | `server/statisticsScoresHandlers.js` | Provider selection, pagination/cache, ESPN snapshots, drilldown aggregation |
 | `src/utils/statisticsScoresProvider.js`, `src/utils/balldontlieNflScoreboard.js`, `src/utils/espnNflScoreboard.js` | Source eligibility, normalized scoreboard adapters |
-| `src/utils/statisticsPlayerQuarterStats.js` | Conservative play-derived quarter splits for expandable BALLDONTLIE player rows; the provider's full-game player totals remain authoritative |
+| `src/utils/statisticsPlayerQuarterStats.js` | Conservative play-derived quarter splits for expandable BALLDONTLIE player rows and `attributePlays()` for Team Stats, over the shared `playByPlay/attributePlayActors.js` matcher; the provider's full-game player totals remain authoritative |
 | `src/utils/statisticsPlayerSort.js` | Display-value parsing and stable ascending/descending sorting for Statistics Scores player groups |
 | `src/data/statisticsScoresFixtures.js` | Normalized local fixture contract |
 
@@ -233,6 +233,10 @@ Read first: [[Statistics Scores]] before production data wiring.
 | `src/utils/nflPlays/playBeats.js` | Play as scrubbable timeline; `estimateAirYards()` positions the ball but must never appear as a number in beat text |
 | `src/utils/nflPlays/playSequenceContext.js` | Bounded cross-play inference (e.g. omitted passer on scoring-summary turnovers) |
 | `src/utils/playByPlay/normalizePlay.js` | Canonical BALLDONTLIE play shape shared by Statistics Scores and Fantasy Live, plus `resolveOffenseDefenseTeams()`; returns every raw row — filtering is the consumer's: [[Play-By-Play Normalization]] |
+| `src/utils/playByPlay/attributePlayActors.js` | Named actor → roster record for both surfaces: which roster each role is checked against, the lookup, no cross-team fallback |
+| `src/utils/playByPlay/playOrder.js` | `sortPlaysChronologically()`: game clock, wallclock, arrival — the only play order |
+| `src/utils/playByPlay/gameClock.js` | Clock parsing, seconds elapsed, 0..1 progress (explicit strict / missing-clock / overtime arguments) |
+| `src/utils/nflGameStatus.js` | Game lifecycle classifier; `isLiveGame` / `isFinalGame` and the Scores scorecard status wrap it |
 | `src/utils/playByPlay/playStatDelta.js` | Per-play fantasy stat attribution, team-defense/IDP deltas, `estimatePlayPoints()`, `getPlayEventClassification()`, `PLAY_MATCH_STATS`; keys must match `scoringEngine.js` |
 | `src/components/nflPlays/` | `fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`, `WinProbabilityChart.jsx`, `NflPlays.css` — all field visuals go through `fieldX` and the shared kick helper |
 | `src/components/shared/PlayerAvatar.jsx` | Headshot → team mark → initials avatar (uses `live/liveVisuals.js` image sources) |
@@ -254,8 +258,10 @@ Read first: [[Live Data Server Architecture]] before changing provider cadence, 
 | `server/livePlaysArchive.js` | SQLite archive of finished games' play-by-play (see [[Live Data Server Architecture]]) |
 | `src/api/liveApi.js`, `src/api/statisticsScoresApi.js`, `src/api/playerDesignationsApi.js` | Browser-to-sidecar client contracts |
 | `src/hooks/useMatchupLiveFeed.js`, `src/components/statistics/scores/StatisticsScores.jsx` | Browser refresh triggers, visibility/offline behavior — neither owns provider play truth |
+| `src/utils/providerAnchoredGameClock.js`, `src/utils/liveClockTicker.js`, `src/hooks/useLiveGameClock.js`, `src/components/shared/LiveGameClock.jsx` | The one shared live game clock: resolver and stoppage classifier, the 1s ticker with per-game display memory, and the leaf every surface renders (Clock Contract in [[Live Data Server Architecture]]) |
+| `src/utils/matchupLiveClockState.js` | Fantasy Matchups' clock games: folds the live feed's games and latest plays into the same `bdl:<id>` clock games Scores builds, without touching `liveGames` |
 | `.env.example`, `docker-compose.yml`, `nginx.conf`, `vite.config.js` | Secrets, sidecar topology, proxy boundaries |
-| `tests/unit/balldontlieGateway.test.mjs`, `playerDesignationHandlers.test.mjs`, `publicRequestGuard.test.mjs`, `liveConfigStatus.test.mjs`, `statisticsScoresHandlers.test.mjs`, `providerAnchoredGameClock.test.mjs` + live/Scores/Injuries E2E specs | Boundary coverage |
+| `tests/unit/balldontlieGateway.test.mjs`, `playerDesignationHandlers.test.mjs`, `publicRequestGuard.test.mjs`, `liveConfigStatus.test.mjs`, `statisticsScoresHandlers.test.mjs`, `providerAnchoredGameClock.test.mjs`, `liveClockTicker.test.mjs` + live/Scores/Injuries E2E specs | Boundary coverage |
 
 Rules: any change here must audit both Statistics Scores and Fantasy Live. Count every provider cursor page and retry. Keep browser throttling separate from the account-wide provider budget. No multiple sidecar replicas until the shared-store/leader phase ships.
 
@@ -319,7 +325,7 @@ Snap percentages are an optional game-log enrichment from nflverse's PFR snap-co
 | `src/utils/playerApi.js` | Player fetching: sidecar first, direct ESPN fallback; rosters, profiles and bio measurements, depth charts, team defense, schedules |
 | `src/utils/snapCounts.js` | nflverse snap-count CSV parsing, ESPN-to-PFR ID matching, and position-aware per-game percentage selection |
 | `src/utils/playerDataCache.js` | IndexedDB payload cache for season stats, career stats, and game logs |
-| `src/utils/playerCache.js` | `localStorage` cache for rosters, bios, and smaller ESPN responses; release version bust |
+| `src/utils/playerCache.js` | `localStorage` cache for rosters, bios, and smaller ESPN responses; concurrent loads of one key share a request; TTL may depend on the cached data; release version bust |
 | `server/playerDataHandlers.js` | `/api/players` routes, freshness rules, stale fallback, negative cache, incremental game-log refresh |
 | `server/playerDataStore.js` | SQLite store (`player-data.sqlite` on the data volume): gzip bodies, size cap, least-recently-read eviction |
 | `server/playerDataUpstream.js` | The only path to ESPN: concurrency limit, request spacing, circuit breaker |
@@ -339,7 +345,9 @@ Read first: [[Player Dashboard]]. Play credit reuses Fantasy Live's attribution 
 | `src/utils/playerSeason/leaguePools.js` | Sleeper weekly rows → season rank pools per group and team-week offense lines |
 | `src/utils/playerSeason/playerSeasonGames.js` | One game's detail → the player's box line, team stats, win-probability series, and credited plays |
 | `src/utils/playerSeason/dashboardModel.js` | Rank metrics and pool rules per group, aggregations, play kinds, opponent context and ranks |
-| `src/hooks/usePlayerSeasonDashboard.js`, `src/api/playerSeasonApi.js` | Loading both payloads; swapping in the rank group's pools |
+| `server/finishedGameDetails.js` | One in-memory copy of each finished game's Scores detail, shared by the player and team dashboards |
+| `src/hooks/usePlayerSeasonDashboard.js`, `src/api/playerSeasonApi.js` | Loading both payloads; swapping in the rank group's pools; the browser cache and background revalidation |
+| `src/utils/requestCache.js` | Bounded in-memory request cache with in-flight sharing and a synchronous `peek` (both dashboard hooks) |
 | `src/components/statistics/player/PlayerDashboard.jsx` | Tabs per group, season picker, game and player navigation; Seasons hosts the existing profile content |
 | `src/components/statistics/player/OverviewTab.jsx` | Stat rail, game cards with win-probability lines, opponent scatter, rank strips |
 | `src/components/statistics/player/OffenseTabs.jsx`, `DefenseTabs.jsx` | Passing, Rushing, Receiving, Kicking; Pass rush, Tackling, Coverage |
@@ -357,7 +365,7 @@ Read first: [[Team Dashboard]]. It reuses the player dashboard's components and 
 | `src/utils/teamSeason/teamSeasonModel.js` | One game for a team (box lines, team stats, quarters, drives, scoring plays), standings, unit ranks |
 | `src/utils/teamSeason/teamDashboardModel.js` | Season totals, fantasy scoring of box lines, depth-chart roles and starter/backup labels, leader specs, name linking |
 | `src/utils/playerApi.js` — `fetchDepthChartUnits` | ESPN depth chart by unit and slot, in order |
-| `src/hooks/useTeamSeasonDashboard.js`, `src/api/teamSeasonApi.js` | Loading the team season |
+| `src/hooks/useTeamSeasonDashboard.js`, `src/api/teamSeasonApi.js` | Loading the team season; the browser cache and background revalidation |
 | `src/components/TeamPage.jsx` | Hero; mounts the dashboard |
 | `src/components/statistics/team/TeamHero.jsx` | Team hero: identity, season record and division pods, franchise honors, View Schedule, next game |
 | `src/components/statistics/team/TeamDashboard.jsx` | Season picker, fantasy switch, tabs, name linking, game and player navigation |
