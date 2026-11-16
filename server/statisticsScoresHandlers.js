@@ -1,12 +1,20 @@
 import express from 'express';
 import process from 'node:process';
 import { createBalldontlieGateway } from './balldontlieGateway.js';
+import { readThroughFinishedArchive } from './finishedGameArchive.js';
 import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createPublicRequestGuard } from './publicRequestGuard.js';
+import { isNflSeasonCompleted } from '../src/utils/nflSeason.js';
 
 const ESPN_NFL_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const DEFAULT_PER_PAGE = 100;
 const SCORE_CACHE_TTL_MS = 30_000;
+// Finished games' box scores can still be corrected for about a week; inside
+// that window a stored copy is rechecked every 6 hours, then kept for good.
+export const BOX_SCORE_CORRECTION_WINDOW_MS = 7 * 24 * 60 * 60_000;
+export const BOX_SCORE_REVALIDATE_MS = 6 * 60 * 60_000;
+// A completed season's game list cannot change, so it is held for a day.
+const COMPLETED_SEASON_TTL_MS = 24 * 60 * 60_000;
 const ESPN_SCORE_CACHE_TTL_MS = 6_000;
 const ESPN_SCORE_CACHE = new Map();
 const ESPN_SCORE_IN_FLIGHT = new Map();
@@ -90,6 +98,24 @@ function isLiveBdlGame(game) {
     || /\b(?:1st|2nd|3rd|4th|ot)\b/.test(status)
     || status.includes('halftime')
     || status.includes('delay');
+}
+
+// A season is over once its Super Bowl is (see isNflSeasonCompleted); with
+// every listed game final its game list can no longer change.
+export function isCompletedSeason(season, nowMs = Date.now()) {
+  return isNflSeasonCompleted(season, nowMs);
+}
+
+// Browser cache lifetime for a dashboard's season payload: a completed season
+// whose payload is complete cannot change, so it is kept for a day; the
+// current season, or any payload built from partial data, for a minute.
+export function seasonCacheControl(season, { complete = true, nowMs = Date.now() } = {}) {
+  return complete && isCompletedSeason(season, nowMs) ? 'private, max-age=86400' : 'private, max-age=60';
+}
+
+function isAllFinal(games) {
+  return Array.isArray(games) && games.length > 0
+    && games.every((game) => /^final/i.test(String(game?.status ?? '')));
 }
 
 function toCompatCache(result) {
@@ -200,6 +226,7 @@ export async function fetchStatisticsScoresGames({
   fetcher = fetch,
   env = process.env,
   gateway,
+  now = () => Date.now(),
 } = {}) {
   const parsedSeason = parseSeason(season);
   if (!parsedSeason) throw new Error('A valid NFL season is required.');
@@ -210,14 +237,17 @@ export async function fetchStatisticsScoresGames({
   if (status.provider !== STATISTICS_SCORES_SOURCES.BALLDONTLIE) {
     return { ...status, season: parsedSeason, phase: resolvedPhase, games: [], meta: null };
   }
+  const completed = isCompletedSeason(parsedSeason, now());
   const result = await resolvedGateway.request({
     path: '/nfl/v1/games',
     params: buildBdlGamesParams(parsedSeason, resolvedPhase),
     capability: 'games',
     paginate: true,
     cacheTtlMs: SCORE_CACHE_TTL_MS,
-    staleTtlMs: 5 * 60_000,
+    staleTtlMs: completed ? COMPLETED_SEASON_TTL_MS : 5 * 60_000,
     refreshAfterMs: SCORE_CACHE_TTL_MS,
+    // A past season whose every game is final keeps its list for the long TTL.
+    resolveCacheTtlMs: (payload, ttlMs) => (completed && isAllFinal(payload?.data) ? COMPLETED_SEASON_TTL_MS : ttlMs),
   });
   return {
     ...status,
@@ -305,6 +335,23 @@ export async function fetchStatisticsScoresLatestPlay({
   };
 }
 
+// An archived box score stands in for the gateway results it replaced, so the
+// detail's cache, freshness and accounting summaries read the same either way.
+function archivedFreshnessResult(cacheInfo, nowMs) {
+  return {
+    cache: { hit: true, coalesced: false, stale: false, archived: true },
+    freshness: {
+      providerFetchedAt: cacheInfo.fetchedAt,
+      receivedAt: new Date(nowMs).toISOString(),
+      ageMs: cacheInfo.ageMs,
+      stale: false,
+      refreshAfterMs: 0,
+      nextRefreshAt: new Date(nowMs).toISOString(),
+    },
+    accounting: { pageCount: 0, upstreamRequests: 0 },
+  };
+}
+
 export async function fetchStatisticsScoresGameDetail({
   gameId,
   phase,
@@ -314,6 +361,9 @@ export async function fetchStatisticsScoresGameDetail({
   env = process.env,
   gateway,
   snapshotStore,
+  // The on-disk archive of finished games (livePlaysArchive.js), or null.
+  archive = null,
+  now = () => Date.now(),
 } = {}) {
   const parsedGameId = parseGameId(gameId);
   if (!parsedGameId) {
@@ -337,33 +387,62 @@ export async function fetchStatisticsScoresGameDetail({
     lane,
     ...options,
   });
+  const supportsStats = resolvedGateway.supports('stats');
+  const supportsTeamStats = resolvedGateway.supports('teamStats');
 
-  const gameRequest = requestResource({
-    path: `/nfl/v1/games/${parsedGameId}`,
-    capability: 'games',
+  // The game, its player stats and its team stats are read through the
+  // finished-games archive as one record: once the game is final and both box
+  // scores have landed they are served from disk, never from the provider
+  // again. `data` carries the game only when the record is complete, which is
+  // what the archive keys its finished check on, so a final game whose box
+  // score is still empty is refetched instead of archived. Live games always
+  // follow the short gateway TTL. Without an archive this is a plain fetch.
+  const boxScoreRequest = readThroughFinishedArchive({
+    archive,
+    now,
+    correctionWindowMs: BOX_SCORE_CORRECTION_WINDOW_MS,
+    revalidateAfterMs: BOX_SCORE_REVALIDATE_MS,
+    key: `scores-detail:${seasonType}:${parsedGameId}`,
+    fetchFresh: async () => {
+      const [gameResult, playerResult, teamResult] = await Promise.all([
+        requestResource({ path: `/nfl/v1/games/${parsedGameId}`, capability: 'games' }),
+        supportsStats
+          ? requestResource({ path: '/nfl/v1/stats', params: playerParams, capability: 'stats', paginate: true })
+          : Promise.resolve(null),
+        supportsTeamStats
+          ? requestResource({ path: '/nfl/v1/team_stats', params: teamParams, capability: 'teamStats', paginate: true })
+          : Promise.resolve(null),
+      ]);
+      const game = gameResult.payload?.data ?? null;
+      const playerStats = playerResult?.payload?.data ?? [];
+      const teamStats = teamResult?.payload?.data ?? [];
+      const complete = (!supportsStats || playerStats.length > 0) && (!supportsTeamStats || teamStats.length > 0);
+      return {
+        payload: {
+          data: complete ? game : null,
+          game,
+          playerStats,
+          teamStats,
+          meta: { teamStats: teamResult?.payload?.meta ?? null, playerStats: playerResult?.payload?.meta ?? null },
+        },
+        cacheInfo: { results: [gameResult, playerResult, teamResult].filter(Boolean) },
+      };
+    },
   });
-  const playerRequest = resolvedGateway.supports('stats')
-    ? requestResource({ path: '/nfl/v1/stats', params: playerParams, capability: 'stats', paginate: true })
-    : Promise.resolve(null);
-  const teamRequest = resolvedGateway.supports('teamStats')
-    ? requestResource({ path: '/nfl/v1/team_stats', params: teamParams, capability: 'teamStats', paginate: true })
-    : Promise.resolve(null);
   const playRequest = includePlays && resolvedGateway.supports('plays')
     ? resolvedSnapshotStore.getPlays({ gameId: parsedGameId, seasonType })
     : Promise.resolve(null);
 
-  const [gameResult, playerResult, teamResult, playResult] = await Promise.all([
-    gameRequest,
-    playerRequest,
-    teamRequest,
-    playRequest,
-  ]);
-  const game = gameResult.payload?.data ?? null;
-  const playerStats = playerResult?.payload?.data ?? [];
-  const teamStats = teamResult?.payload?.data ?? [];
+  const [boxScore, playResult] = await Promise.all([boxScoreRequest, playRequest]);
+  const game = boxScore.payload?.game ?? null;
+  const playerStats = boxScore.payload?.playerStats ?? [];
+  const teamStats = boxScore.payload?.teamStats ?? [];
   const plays = playResult?.plays ?? [];
   const scoringPlays = plays.filter((play) => play?.scoring_play === true);
-  const freshnessResults = [gameResult, playerResult, teamResult, playResult].filter(Boolean);
+  const boxScoreResults = boxScore.cacheInfo?.archived
+    ? [archivedFreshnessResult(boxScore.cacheInfo, now())]
+    : boxScore.cacheInfo?.results ?? [];
+  const freshnessResults = [...boxScoreResults, playResult].filter(Boolean);
   const oldestFreshness = freshnessResults
     .map((result) => result.freshness)
     .sort((left, right) => Date.parse(left.providerFetchedAt) - Date.parse(right.providerFetchedAt))[0];
@@ -388,8 +467,8 @@ export async function fetchStatisticsScoresGameDetail({
     },
     capabilities: gatewayStatus.capabilities,
     meta: {
-      teamStats: teamResult?.payload?.meta ?? null,
-      playerStats: playerResult?.payload?.meta ?? null,
+      teamStats: boxScore.payload?.meta?.teamStats ?? null,
+      playerStats: boxScore.payload?.meta?.playerStats ?? null,
       plays: playResult?.payload?.meta ?? null,
     },
     cache: {
@@ -702,6 +781,7 @@ export async function fetchStatisticsScoresWeekExport({
   env = process.env,
   gateway,
   snapshotStore,
+  archive = null,
 } = {}) {
   const parsedSeason = parseSeason(season);
   const parsedWeek = parseWeek(week);
@@ -791,6 +871,7 @@ export async function fetchStatisticsScoresWeekExport({
           env,
           gateway: resolvedGateway,
           snapshotStore: resolvedSnapshotStore,
+          archive,
         });
         return { gameId, status: 'complete', detail: detailPayload, error: null };
       } catch (error) {
@@ -864,6 +945,9 @@ export function createStatisticsScoresRouter({
   env = process.env,
   gateway: injectedGateway,
   snapshotStore: injectedSnapshotStore,
+  // The on-disk archive of finished games (livePlaysArchive.js): finished
+  // games' detail (game, player stats, team stats) is escrowed there.
+  archive = null,
   liveWeekGuard = createPublicRequestGuard(),
 } = {}) {
   const router = express.Router();
@@ -946,6 +1030,7 @@ export function createStatisticsScoresRouter({
         env,
         gateway,
         snapshotStore,
+        archive,
       });
       return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
     } catch (error) {
@@ -994,6 +1079,7 @@ export function createStatisticsScoresRouter({
         env,
         gateway,
         snapshotStore,
+        archive,
       });
       return res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
     } catch (error) {
