@@ -88,13 +88,16 @@ function liveGame({ clock = '8:14', period = '2', changedAt = START, key = null,
   };
 }
 
-test('only live BALLDONTLIE-sourced games with an anchor tick', () => {
-  assert.equal(isTickingClockGame(liveGame()), true);
-  assert.equal(isTickingClockGame({ ...liveGame(), provider: 'espn' }), false);
+test('only live BALLDONTLIE-sourced games with an anchor and a play sample tick', () => {
+  const withPlay = (extra = {}) => ({ ...liveGame({ latestPlay: { play: { period: 2, clock_display: '8:40', type_slug: 'rush' } } }), ...extra });
+  assert.equal(isTickingClockGame(withPlay()), true);
+  // Without play-by-play the clock cannot see stoppages, so it stays stepped.
+  assert.equal(isTickingClockGame(liveGame()), false);
+  assert.equal(isTickingClockGame(withPlay({ provider: 'espn' })), false);
   // An ESPN overlay keeps BALLDONTLIE detail identity but owns the clock.
-  assert.equal(isTickingClockGame({ ...liveGame(), scoreboardProvider: 'espn' }), false);
-  assert.equal(isTickingClockGame({ ...liveGame(), status: 'halftime' }), false);
-  assert.equal(isTickingClockGame({ ...liveGame(), live: { period: '2', clock: '8:14' } }), false);
+  assert.equal(isTickingClockGame(withPlay({ scoreboardProvider: 'espn' })), false);
+  assert.equal(isTickingClockGame(withPlay({ status: 'halftime' })), false);
+  assert.equal(isTickingClockGame(withPlay({ live: { period: '2', clock: '8:14' } })), false);
   assert.equal(getLiveClockGameKey(liveGame()), 'bdl:42');
   assert.equal(getLiveClockGameKey({ id: 'bdl-42' }), 'bdl:42');
   assert.equal(formatLiveClockLabel('3', '4:09'), 'Q3 · 4:09');

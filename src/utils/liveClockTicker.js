@@ -35,6 +35,10 @@ export function isTickingClockGame(game) {
   if (!game || game.status !== 'live') return false;
   const source = game.scoreboardProvider ?? game.provider;
   if (source !== BALLDONTLIE) return false;
+  // Only a game with a play-by-play sample can tell when the clock stops; any
+  // other game keeps the stepped provider clock rather than run through a
+  // stoppage it cannot see.
+  if (!game.latestPlay?.play) return false;
   const anchor = game.live?.providerClockAnchor;
   return Boolean(anchor && game.live?.clock && parseProviderGameClock(game.live.clock) != null);
 }

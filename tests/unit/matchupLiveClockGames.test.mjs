@@ -79,7 +79,10 @@ test('a live BALLDONTLIE row becomes a ticking clock game anchored at receipt mi
   assert.equal(game.live.clock, '10:03');
   assert.equal(game.live.providerClockAnchor.changedAt, T0 - 400);
   assert.equal(game.live.providerClockAnchor.sampleAgeMs, 400);
-  assert.equal(isTickingClockGame(game), true);
+  // No play sample yet: it cannot see stoppages, so it stays stepped.
+  assert.equal(isTickingClockGame(game), false);
+  const withPlay = pollPlays(state, '7001', [rawPlay({ clock_display: '10:20' })], T0 + 500);
+  assert.equal(isTickingClockGame(withPlay.clockGames.get('7001')), true);
 });
 
 test('Fantasy and Scores share one clock key for a game', () => {
