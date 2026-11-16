@@ -130,16 +130,17 @@ test('uses a newer BDL play clock without overwriting a newer game snapshot', ()
   const fromPlay = mergeBdlLatestPlayClock(baseGame, {
     play: latestPlay,
     updatedAt: Date.parse('2026-09-06T01:02:06.000Z'),
-    clockAnchorAt: latestPlay.wallclock,
   });
 
   assert.equal(fromPlay.live.period, '1');
+  assert.equal(fromPlay.statusLabel, 'Q1 · 9:58');
   assert.equal(fromPlay.live.clock, '9:58');
   assert.equal(fromPlay.live.possession, 'BAL');
   assert.equal(fromPlay.live.downDistance, '2nd & 11');
   assert.equal(fromPlay.live.fieldPosition, 'BAL 18');
   assert.equal(fromPlay.live.redZone, true);
-  assert.equal(fromPlay.live.providerClockAnchor.changedAt, Date.parse('2026-09-06T01:02:05.000Z'));
+  // Anchored at the plays response, never the play's provider-side wallclock.
+  assert.equal(fromPlay.live.providerClockAnchor.changedAt, Date.parse('2026-09-06T01:02:06.000Z'));
 
   const newerSnapshot = mergeBdlLatestPlayClock({
     ...baseGame,
@@ -147,7 +148,6 @@ test('uses a newer BDL play clock without overwriting a newer game snapshot', ()
   }, {
     play: latestPlay,
     updatedAt: Date.parse('2026-09-06T01:02:06.000Z'),
-    clockAnchorAt: latestPlay.wallclock,
   });
   assert.equal(newerSnapshot.live.clock, '9:42');
 });
@@ -340,7 +340,6 @@ test('uses an official timeout clock to correct a locally advanced scorebug and 
   const fromPlay = mergeBdlLatestPlayClock(baseGame, {
     play: timeoutPlay,
     updatedAt: Date.parse('2026-09-06T01:02:06.000Z'),
-    clockAnchorAt: timeoutPlay.wallclock,
   });
 
   assert.equal(fromPlay.live.clock, '12:48');

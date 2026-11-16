@@ -163,14 +163,32 @@ function normalizeBdlGame(game, {
   };
 }
 
-function attachInitialBdlClockAnchor(game, payload) {
+function finiteAgeMs(value) {
+  if (value == null || value === '') return null;
+  const age = Number(value);
+  return Number.isFinite(age) && age >= 0 ? age : null;
+}
+
+// The server's own sample age for a live payload: `freshness.ageMs`, else the
+// cache's. Receipt minus this age is the fetch moment in this device's clock.
+function payloadAgeMs(payload) {
+  return finiteAgeMs(payload?.freshness?.ageMs) ?? finiteAgeMs(payload?.cache?.ageMs);
+}
+
+function attachInitialBdlClockAnchor(game, payload, { receivedAt = null } = {}) {
   if (!game?.live?.clock) return game;
   const providerFetchedAt = payload?.freshness?.providerFetchedAt;
-  const observedAt = payload?.freshness?.receivedAt ?? providerFetchedAt;
+  const ageMs = payloadAgeMs(payload);
+  // `freshness.receivedAt` is the server's clock. Paired with the sample age,
+  // only this device's own receipt gives a skew-free anchor.
+  const observedAt = ageMs != null
+    ? receivedAt ?? Date.now()
+    : payload?.freshness?.receivedAt ?? providerFetchedAt;
   if (!providerFetchedAt && !observedAt) return game;
   return reconcileProviderClockAnchor(null, game, {
     observedAt,
     providerFetchedAt,
+    ageMs,
     feedStale: payload?.freshness?.stale === true || payload?.cache?.stale === true,
   });
 }
@@ -236,8 +254,9 @@ export function normalizeBdlScoreboardWeek(payload, {
   season = new Date().getFullYear(),
   phase = NFL_SEASON_PHASES.REGULAR,
   week = 1,
+  receivedAt = null,
 } = {}) {
-  const normalizedSeason = normalizeBdlScoreboardSeason(payload, { season, phase });
+  const normalizedSeason = normalizeBdlScoreboardSeason(payload, { season, phase, receivedAt });
   if (phase === NFL_SEASON_PHASES.PRESEASON) {
     const sourceGames = getRawGames(payload)
       .filter((game) => getBdlGamePhase(game) === phase);
@@ -266,6 +285,8 @@ export function normalizeBdlScoreboardWeek(payload, {
 export function normalizeBdlScoreboardSeason(payload, {
   season = new Date().getFullYear(),
   phase = NFL_SEASON_PHASES.REGULAR,
+  // This device's receipt of the payload (default: now), for the clock anchor.
+  receivedAt = null,
 } = {}) {
   const weekCount = phase === NFL_SEASON_PHASES.PRESEASON ? PRESEASON_WEEK_COUNT : REGULAR_WEEK_COUNT;
   const capabilities = payload?.capabilities ?? null;
@@ -280,7 +301,7 @@ export function normalizeBdlScoreboardSeason(payload, {
   const games = sourceGames
     .map((game) => normalizeBdlGame(game, { phase, detailsAvailable, playByPlayAvailable }))
     .filter(Boolean)
-    .map((game) => attachInitialBdlClockAnchor(game, payload));
+    .map((game) => attachInitialBdlClockAnchor(game, payload, { receivedAt }));
   if (phase === NFL_SEASON_PHASES.PRESEASON) {
     const sortedGames = [...games].sort((left, right) => Date.parse(left.kickoff) - Date.parse(right.kickoff));
     const ordinaryGames = sortedGames.filter((game) => !isHallOfFameGame(game));
@@ -330,11 +351,13 @@ export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
   providerFetchedAt = payload?.freshness?.providerFetchedAt
     ?? payload?.freshness?.receivedAt
     ?? payload?.cache?.fetchedAt,
+  ageMs = payloadAgeMs(payload),
 } = {}) {
   const replacement = normalizeBdlScoreboardWeek(payload, {
     season: seasonData?.season,
     phase: seasonData?.phase ?? NFL_SEASON_PHASES.REGULAR,
     week: weekNumber,
+    receivedAt: observedAt,
   });
   const feedStale = payload?.freshness?.stale === true || payload?.cache?.stale === true;
   const liveSnapshotsByGameId = new Map((payload?.liveGameSnapshots ?? [])
@@ -368,32 +391,25 @@ export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
         network: game.network === 'TV TBD' ? previousGame?.network ?? game.network : game.network,
         broadcasts: game.broadcasts?.length ? game.broadcasts : previousGame?.broadcasts ?? [],
       };
-      const withGameSnapshot = reconcileProviderClockAnchor(previousGame, merged, {
+      const liveSnapshot = liveSnapshotsByGameId.get(providerId);
+      const latestPlay = liveSnapshot?.latestPlay
+        ? buildBdlLatestPlaySample(liveSnapshot.latestPlay, merged, {
+          observedAt,
+          providerFetchedAt: liveSnapshot.freshness?.providerFetchedAt
+            ?? liveSnapshot.freshness?.receivedAt
+            ?? liveSnapshot.cache?.fetchedAt
+            ?? providerFetchedAt,
+          ageMs: payloadAgeMs(liveSnapshot),
+          stale: liveSnapshot.freshness?.stale === true || liveSnapshot.cache?.stale === true,
+        })
+        : null;
+      return resolveBdlLiveClockGame(previousGame, merged, {
         observedAt,
         providerFetchedAt,
+        ageMs,
         feedStale,
-      });
-      const liveSnapshot = liveSnapshotsByGameId.get(providerId);
-      if (!liveSnapshot?.latestPlay) return withGameSnapshot;
-      const play = normalizeBdlScorePlay(liveSnapshot.latestPlay, withGameSnapshot);
-      const updatedAt = liveSnapshot.freshness?.providerFetchedAt
-        ?? liveSnapshot.freshness?.receivedAt
-        ?? liveSnapshot.cache?.fetchedAt
-        ?? providerFetchedAt;
-      const latestPlay = {
-        status: 'ready',
-        play,
-        stale: liveSnapshot.freshness?.stale === true || liveSnapshot.cache?.stale === true,
-        updatedAt,
-        observedAt,
-        clockAnchorAt: play?.wallclock ?? updatedAt,
-        error: null,
-      };
-      const withCanonicalPlay = mergeBdlLatestPlayClock(
-        mergeBdlLatestPlayScore(withGameSnapshot, latestPlay),
         latestPlay,
-      );
-      return { ...withCanonicalPlay, latestPlay };
+      });
     });
 
     (week.games ?? []).forEach((game) => {
@@ -403,6 +419,7 @@ export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
           ? reconcileProviderClockAnchor(game, game, {
             observedAt,
             providerFetchedAt,
+            ageMs,
             feedStale: true,
           })
           : game;
@@ -605,43 +622,197 @@ function latestPlaySituation(game, play) {
   };
 }
 
-/**
- * Apply a newer BDL play clock to a live scorecard without allowing an older
- * play response to replace a fresher game snapshot. The play clock is a
- * discrete provider-verified value; the UI does not interpolate it.
- */
-export function mergeBdlLatestPlayClock(game, latestPlay) {
-  if (game?.provider !== 'balldontlie' || game.status !== 'live' || !game.live) return game;
-  if (!latestPlay?.play || latestPlay.stale === true) return game;
+// The latest play's clock and situation applied to a live scorecard, without
+// touching its clock anchor. `adopted` says whether the play's period and
+// clock replaced the games clock. A non-snap play (timeout, two-minute
+// warning, end of period) is authoritative even when its clock is above the
+// games clock; any other older play never rolls the clock back up.
+function applyBdlLatestPlayClock(game, latestPlay) {
+  if (game?.provider !== 'balldontlie' || game.status !== 'live' || !game.live) return { game, adopted: false };
+  if (!latestPlay?.play || latestPlay.stale === true) return { game, adopted: false };
 
   const playPeriod = latestPlay.play.period;
   const playClock = latestPlay.play.time;
   const playProgress = getBdlClockProgress(playPeriod, playClock);
   const mergedSituation = latestPlaySituation(game, latestPlay.play);
   if (playProgress == null) {
-    return { ...game, live: mergedSituation };
+    return { game: { ...game, live: mergedSituation }, adopted: false };
   }
 
   const gameProgress = getBdlClockProgress(game.live.period, game.live.clock);
   const providerClockFrozen = isNonSnapPlay(latestPlay.play);
-  if (gameProgress != null && playProgress < gameProgress && !providerClockFrozen) return game;
+  if (gameProgress != null && playProgress < gameProgress && !providerClockFrozen) return { game, adopted: false };
 
-  const observedAt = timestampValue(latestPlay.observedAt) ?? timestampValue(latestPlay.updatedAt);
-  const providerFetchedAt = timestampValue(latestPlay.clockAnchorAt) ?? observedAt;
-  const merged = {
-    ...game,
-    live: {
-      ...mergedSituation,
-      period: String(playPeriod),
-      clock: playClock,
+  return {
+    game: {
+      ...game,
+      // The same label getStatusLabel() builds from the games feed.
+      statusLabel: `Q${playPeriod} · ${playClock}`,
+      live: {
+        ...mergedSituation,
+        period: String(playPeriod),
+        clock: playClock,
+      },
     },
-  };
-  return reconcileProviderClockAnchor(game, merged, {
-    observedAt,
-    providerFetchedAt,
-    feedStale: latestPlay.stale === true,
+    adopted: true,
     providerClockFrozen,
+  };
+}
+
+// Anchor timing for a latest-play sample: this device's receipt less the
+// server's sample age when known. The play's own `wallclock` is provider time
+// and never anchors the clock.
+function latestPlayClockTiming(latestPlay) {
+  const observedAt = timestampValue(latestPlay?.observedAt) ?? timestampValue(latestPlay?.updatedAt);
+  return {
+    observedAt,
+    providerFetchedAt: timestampValue(latestPlay?.updatedAt) ?? observedAt,
+    ageMs: finiteAgeMs(latestPlay?.ageMs),
+  };
+}
+
+/**
+ * Apply a newer BDL play clock to a live scorecard without allowing an older
+ * play response to replace a fresher game snapshot. The play clock is a
+ * discrete provider-verified value; the UI does not interpolate it.
+ */
+export function mergeBdlLatestPlayClock(game, latestPlay) {
+  const applied = applyBdlLatestPlayClock(game, latestPlay);
+  if (!applied.adopted) return applied.game;
+  return reconcileProviderClockAnchor(game, applied.game, {
+    ...latestPlayClockTiming(latestPlay),
+    feedStale: false,
+    providerClockFrozen: applied.providerClockFrozen,
   });
+}
+
+/**
+ * One latest-play sample for the clock: the provider play normalized against
+ * its game, with the timing of the response that carried it.
+ */
+export function buildBdlLatestPlaySample(rawPlay, game, {
+  observedAt = null,
+  providerFetchedAt = null,
+  ageMs = null,
+  stale = false,
+} = {}) {
+  if (!rawPlay) return null;
+  const play = normalizeBdlScorePlay(rawPlay, game);
+  if (!play) return null;
+  return {
+    status: 'ready',
+    play,
+    stale: stale === true,
+    updatedAt: providerFetchedAt,
+    observedAt,
+    ageMs: finiteAgeMs(ageMs),
+    error: null,
+  };
+}
+
+/**
+ * A live BALLDONTLIE game's clock for this sample, shared by Statistics Scores
+ * and Fantasy Matchups: the latest play's score and clock (when it is newer, or
+ * a non-snap stoppage) applied first, then the clock anchor reconciled once
+ * against the previous sample's game. Deciding the final clock before
+ * reconciling keeps `changedAt` steady across polls while the same play's
+ * clock stands in for the games clock.
+ */
+export function resolveBdlLiveClockGame(previousGame, game, {
+  observedAt,
+  providerFetchedAt,
+  ageMs = null,
+  feedStale = false,
+  latestPlay = null,
+} = {}) {
+  const scored = latestPlay ? mergeBdlLatestPlayScore(game, latestPlay) : game;
+  const applied = latestPlay ? applyBdlLatestPlayClock(scored, latestPlay) : { game: scored, adopted: false };
+  const timing = applied.adopted
+    ? { ...latestPlayClockTiming(latestPlay), feedStale: false, providerClockFrozen: applied.providerClockFrozen }
+    : { observedAt, providerFetchedAt, ageMs: finiteAgeMs(ageMs), feedStale };
+  const anchored = reconcileProviderClockAnchor(previousGame, applied.game, timing);
+  return latestPlay ? { ...anchored, latestPlay } : anchored;
+}
+
+function sameLatestPlay(left, right) {
+  const a = left?.play;
+  const b = right?.play;
+  if (!a || !b) return a === b;
+  return a.id === b.id && a.period === b.period && a.time === b.time && a.typeSlug === b.typeSlug;
+}
+
+// Clock-relevant equality: the fields the shared ticker resolves from. The
+// anchor's observation times move on every poll and do not count.
+function sameClockGame(left, right) {
+  const a = left?.live?.providerClockAnchor;
+  const b = right?.live?.providerClockAnchor;
+  return left.status === right.status
+    && left.statusLabel === right.statusLabel
+    && left.live?.period === right.live?.period
+    && left.live?.clock === right.live?.clock
+    && a?.key === b?.key
+    && a?.changedAt === b?.changedAt
+    && a?.feedStale === b?.feedStale
+    && a?.providerClockFrozen === b?.providerClockFrozen
+    && sameLatestPlay(left.latestPlay, right.latestPlay);
+}
+
+/**
+ * Fantasy Matchups' ticking-clock games: provider game id -> a normalized live
+ * game (`bdlGameId`, `provider`, `status`, `live` with its clock anchor, and
+ * `latestPlay`) built by the same rules as Statistics Scores
+ * (`resolveBdlLiveClockGame`), so the shared ticker (`liveClockTicker.js`)
+ * shows one second for a game on both surfaces.
+ *
+ * - `rawGames`: the provider's game rows (Fantasy's `/api/live/games` data).
+ * - `gamesSample`: `{ observedAt, providerFetchedAt, ageMs, feedStale }` of the
+ *   response that carried them (observedAt is this device's receipt).
+ * - `latestPlays`: provider game id -> `{ play (provider row), observedAt,
+ *   providerFetchedAt, ageMs, stale }` from that game's plays response.
+ * - `enabled: false` (the dev sandbox) returns an empty map.
+ *
+ * Only live games with a clock anchor are included. An entry whose clock is
+ * unchanged keeps its previous object, and an unchanged map is returned as
+ * `previous`. Presentation only: never feed it into win probability, pace,
+ * progress, replay, reconciliation, or charts.
+ */
+export function buildBdlLiveClockGames(previous, rawGames, {
+  gamesSample = null,
+  latestPlays = null,
+  enabled = true,
+} = {}) {
+  const previousMap = previous instanceof Map ? previous : new Map();
+  if (!enabled || !gamesSample || !Array.isArray(rawGames) || !rawGames.length) {
+    return previousMap.size ? new Map() : previousMap;
+  }
+  const next = new Map();
+  let changed = false;
+  rawGames.forEach((rawGame) => {
+    const normalized = rawGame ? normalizeBdlScoreboardGame(rawGame) : null;
+    if (!normalized || normalized.status !== 'live' || !normalized.live?.clock) return;
+    const gameId = String(rawGame.id);
+    const previousGame = previousMap.get(gameId) ?? null;
+    const playSample = latestPlays?.[gameId] ?? null;
+    const latestPlay = playSample?.play
+      ? buildBdlLatestPlaySample(playSample.play, normalized, playSample)
+      : null;
+    const resolved = resolveBdlLiveClockGame(previousGame, {
+      ...normalized,
+      scoreboardProvider: 'balldontlie',
+    }, {
+      observedAt: gamesSample.observedAt,
+      providerFetchedAt: gamesSample.providerFetchedAt,
+      ageMs: gamesSample.ageMs,
+      feedStale: gamesSample.feedStale === true,
+      latestPlay,
+    });
+    if (!resolved?.live?.providerClockAnchor) return;
+    const entry = previousGame && sameClockGame(previousGame, resolved) ? previousGame : resolved;
+    if (entry !== previousGame) changed = true;
+    next.set(gameId, entry);
+  });
+  if (!changed && next.size === previousMap.size) return previousMap;
+  return next;
 }
 
 /**
