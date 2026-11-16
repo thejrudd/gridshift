@@ -49,14 +49,29 @@ function archivedResult(row, now) {
 /**
  * `fetchFresh()` resolves `{ payload, cacheInfo }` from the provider gateway.
  * Without an archive this is just `fetchFresh()`.
+ *
+ * `correctionWindowMs` is how long after a game ends its data may still be
+ * corrected (default: the play-by-play window). `revalidateAfterMs`, when set,
+ * refetches a stored row inside that window once it is older than this, so
+ * corrections show up during the window instead of only when it closes.
  */
-export async function readThroughFinishedArchive({ archive, key, fetchFresh, now = () => Date.now() }) {
+export async function readThroughFinishedArchive({
+  archive,
+  key,
+  fetchFresh,
+  now = () => Date.now(),
+  correctionWindowMs = PLAY_CORRECTION_WINDOW_MS,
+  revalidateAfterMs = null,
+}) {
   if (!archive) return fetchFresh();
   let row = null;
   try { row = archive.get(key); } catch { row = null; }
   // Only finished data is ever archived, so a stored row needs no status check.
   if (row?.verified) return archivedResult(row, now);
-  if (row && now() - row.gameEndedAt < PLAY_CORRECTION_WINDOW_MS) return archivedResult(row, now);
+  if (row && now() - row.gameEndedAt < correctionWindowMs) {
+    const due = revalidateAfterMs != null && now() - row.fetchedAt >= revalidateAfterMs;
+    if (!due) return archivedResult(row, now);
+  }
 
   let fresh;
   try {
@@ -70,7 +85,7 @@ export async function readThroughFinishedArchive({ archive, key, fetchFresh, now
     try {
       archive.put(key, fresh.payload, {
         gameEndedAt: endedAt,
-        verified: now() - endedAt >= PLAY_CORRECTION_WINDOW_MS,
+        verified: now() - endedAt >= correctionWindowMs,
       });
     } catch {
       // The archive is an optimization; a failed write still serves the data.
