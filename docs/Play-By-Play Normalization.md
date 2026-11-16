@@ -18,6 +18,10 @@ with the consumer.
 | File | Owns |
 | --- | --- |
 | `src/utils/playByPlay/normalizePlay.js` | `normalizeCanonicalPlay()`, `resolveOffenseDefenseTeams()`; re-exports the stat-delta surface |
+| `src/utils/playByPlay/attributePlayActors.js` | `attributePlayActors()`, `collectPlayActors()`, `getActorExpectedTeam()`, `lookupActor()`: named actor → roster record, shared by Fantasy Live and Statistics Scores (see Actor attribution) |
+| `src/utils/playByPlay/playOrder.js` | `sortPlaysChronologically()`: the one chronological order (see Game clock and ordering) |
+| `src/utils/playByPlay/gameClock.js` | `parseClockSeconds()`, `getElapsedSeconds()`, `getGameProgress()`: game-clock arithmetic with explicit strictness, missing-clock, and overtime arguments |
+| `src/utils/nflGameStatus.js` | `classifyNflGameStatus()`: scheduled \| live \| halftime \| delayed \| postponed \| final (see Game status) |
 | `src/utils/playByPlay/playStatDelta.js` | `buildPlayStatDelta()`, `buildTeamDefensePlayDelta()`, `isTeamDefenseScoringPlay()`, `estimatePlayPoints()`, `getPlayEventClassification()`, `isFirstDownPlay()`, `extractYardsFromText()`, `extractReturnYards()`, `PLAY_MATCH_STATS` |
 | `src/utils/nflPlays/fieldGeometry.js` | Still the single owner of the possession correction (`getOffenseTeam()`, `isPossessionChangingPlay()`, `isTurnoverOnDowns()`). The resolver calls it; it does not restate it |
 | `src/utils/nflPlays/playNarrative.js` | Still the single owner of play text → sentence + actors. The canonical normalizer calls it |
@@ -25,7 +29,13 @@ with the consumer.
 Consumers:
 
 - `src/utils/balldontlieNflScoreboard.js` — `normalizeBdlScorePlay()` is a thin
-  Statistics Scores adapter over the canonical play.
+  Statistics Scores adapter over the canonical play. Its Scores-only fields are
+  presentation (`time`, `quarter`, `down`, `spot`, `description`, `score`); it
+  also carries the canonical `narrative` (the full parse, confident or not),
+  `offenseTeam`, `defenseTeam`, and `defensiveActors`, so no Scores consumer
+  re-parses. Consumers read the narrative through `readPlayNarrative(play)`
+  (`normalizePlay.js`), which falls back to a fresh parse for ESPN, fixture, and
+  hand-built plays.
 - `src/utils/livePlaysFeed.js` — `normalizePlay()` is a thin Fantasy Live
   adapter, and re-exports the stat-delta surface for its existing importers
   (`liveReconciliation.js` imports `PLAY_MATCH_STATS` from `livePlaysFeed.js`;
@@ -67,6 +77,7 @@ filter at all.
 | `rawDescription` | string \| null | `text` / `description` / `short_text` / `desc`, verbatim; **may be null** |
 | `shortText` | string \| null | `short_text` |
 | `narrative` | object \| null | `parsePlayNarrative()` output, non-null only when the parser is confident. Parsing is always attempted, including without a description |
+| `parsedNarrative` | object | The same parse, confident or not (Statistics Scores reads `playKind`, `penalty`, `administrative` off unconfident parses). The parser's `statYardage` input reads reported values only: a null `stat_yardage` stays unknown (`yards: null`) rather than `Number(null) = 0` |
 | `team` | string \| null | The provider's possession team, **uncorrected** — whoever holds the ball when the play ends |
 | `offenseTeam` | string \| null | Who ran the play (see below) |
 | `defenseTeam` | string \| null | The other side |
@@ -137,8 +148,8 @@ defense. The named players do not all follow the possession, though:
 | Returner | `defenseTeamAbbr` (receiving team) |
 | Coverage tackler / recoverer / sacker | `offenseTeamAbbr` (kicking team) |
 
-`matchNarrativeActors` in `livePlaysFeed.js` is the gate, via
-`getActorExpectedTeam(play, actorRole, isKickReturnPlay(play))`. Sending every
+`getActorExpectedTeam()` in `playByPlay/attributePlayActors.js` is the gate,
+for Fantasy Live and Statistics Scores alike. Sending every
 non-offensive role to the resolved defense checked kick-coverage tacklers
 against the returning roster, where they do not exist, and their `idp_tkl`
 events vanished silently. `isKickReturnPlay()` is exported from the shared
@@ -157,7 +168,95 @@ kicking roster. No captured fixture play (0 of 514) produces such an actor
 today, because `parsePlayNarrative` is not confident on gamebook-only
 blocked-kick text and emits no actors for those rows. If the narrative parser
 learns those shapes, route blocker/recoverer on `field-goal-blocked` and onside
-recoveries to `defenseTeamAbbr` and pin it with a test.
+recoveries to the resolved defense in `getActorExpectedTeam` and pin it with a
+test. (A recoverer with no team in the text now goes to the possession team.)
+
+## Actor attribution
+
+`attributePlayActors(play, nameIndex, options)` returns every named actor with
+the roster record it resolves to: `[{ actor, textPos, expectedTeam, record,
+playerId }]`. It is the only owner of which roster an actor is checked
+against (`getActorExpectedTeam`) and of the lookup itself
+(`nflPlays/playerNameIndex.lookupPlayerByName`). With a team, a name that does
+not resolve on that roster stays unmatched — there is no league-wide fallback.
+
+| Actor | Roster |
+| --- | --- |
+| Passer, receiver, rusher, kicker, punter, fumbler | Resolved offense |
+| Kick blocker, and every defensive role on a blocked kick | Resolved defense |
+| Returner | Resolved defense (the receiving side) |
+| Tackler on an interception | Resolved offense (the team that threw) |
+| Tackler named only in a lost fumble's return clause | Resolved offense |
+| Recoverer | Its own team from the text, else the possession team (whoever ended with the ball) |
+| Other defensive roles on a kick | Resolved offense (coverage) |
+| Other defensive roles | Resolved defense |
+
+The consumer layers on top:
+
+- **Fantasy Live** (`livePlaysFeed.matchPlayToStarters`): merges the gamebook's
+  `defensiveActors`, uses `normalizeStarterName` and a surname fallback for
+  full-name nicknames, then assigns starter roles, team-defense credits, and the
+  fumble/lateral passes, and prices the result.
+- **Statistics Scores** (`statisticsPlayerQuarterStats.attributePlays` and
+  `buildPlayerQuarterStats`): the narrative's actors plus a recovered passer on
+  an interception, the shared name index keyed by box-score row key, sides from
+  the play's carried `offenseTeam`/`defenseTeam` (else
+  `resolveOffenseDefenseTeams` with `canonicalTeam`). Quarter buckets and Team
+  Stats tallies are built from the matches. `matchName(name, team)` resolves a
+  name the narrative did not list; with `team: null` it must be unique in the
+  game.
+
+Fixed in Statistics Scores by moving onto the shared rule (Fantasy Live
+already behaved this way): kick-coverage tacklers were checked against the
+receiving roster; an interception returner's tackler against the intercepting
+roster; a provider `defense_team` was ignored; and any name that failed the
+team check was matched league-wide. On the two fixture games with a roster of
+every full-name actor, quarter splits, Team Stats breakdowns, and play-stat
+tallies are unchanged: the old league-wide fallback had been papering over the
+wrong team choices. The pinned cases are in
+`tests/unit/playByPlayAttributeActors.test.mjs`.
+
+## Game clock and ordering
+
+`sortPlaysChronologically(plays)` orders by game clock (period and time left,
+read from `clock_display` / `clock` / `time`), then wallclock, then arrival
+order, and returns a new array. Fantasy Live's feed build
+(`buildPlayEvents`), Statistics Scores' drive grouping and latest play
+(`groupBdlPlaysIntoDrives`, `getLatestBdlScorePlay`, which the server's
+snapshot store also calls), and the player season dashboard
+(`playerSeasonGames.buildPlayerGame`) all use it.
+
+Fantasy Live's old key mixed scales — wallclock epoch ms for timed rows,
+`period × 10000 + elapsed` for untimed ones — so every row missing a wallclock
+sorted ahead of every row with one, and a milestone bonus (`bonus_rush_yd_100`
+and the rest) could fire on the wrong play. The season dashboard read a missing
+clock as the end of its period and had no wallclock tie-break; it now falls
+through to wallclock and arrival order.
+
+`gameClock.js` owns the arithmetic. Each caller states its own choices:
+
+| Caller | Clock | Missing clock | Overtime |
+| --- | --- | --- | --- |
+| `livePlaysFeed.getPlayProgress` (pace axis), `parseGlanceProgress` | Loose (`"Q3 7:12"`) | Mid-quarter (450 s left) | Progress clamps to 1 |
+| `matchupReplay.getLiveGameProgress` | Strict | null | Progress clamps to 1 |
+| `balldontlieNflScoreboard` scorecard merges and final-terminal clock | Strict | null | 900 s periods |
+| `playerSeasonGames.gameSecond` | Its own `M:SS` split | End of period | 600 s periods |
+
+## Game status
+
+`classifyNflGameStatus(game)` (`src/utils/nflGameStatus.js`) reads `status` and
+`status_state`. First match wins: postponed → final → delayed → halftime →
+scheduled (explicit state) → live → scheduled. A final game is never live.
+
+- `balldontlieNflScoreboard` scorecard status is the classifier.
+- `liveScoringFeed.isLiveGame` is live or halftime, plus a delay the provider
+  still reports as in progress.
+- `liveScoringFeed.isFinalGame` gates server caching and the finished-game
+  archive, so it uses `finalFromState: false`: final only on the provider's
+  final text, never on `status_state` alone.
+- `isNflGameActive` (live, halftime, or delayed) is for a poller that keeps
+  watching a stopped game; the server's private `isLiveBdlGame` can move onto
+  it.
 
 ## Per-player sentences
 
@@ -284,5 +383,9 @@ Over weeks 6–9 of 2026 every one of 7,939 rows now parses.
 | Completeness, canonical fields, shared team resolution, team-defense/IDP deltas, `estimatePlayPoints` equivalence | `tests/unit/playByPlayNormalizePlay.test.mjs` | `node --test tests/unit/playByPlayNormalizePlay.test.mjs` |
 | Statistics Scores adapter output and drive grouping | `tests/unit/balldontlieNflScoreboard.test.mjs` | `node --test tests/unit/balldontlieNflScoreboard.test.mjs` |
 | Fantasy Live adapter, matching, and feed events | `tests/unit/livePlayGrouping.test.mjs`, `tests/unit/livePlayText.test.mjs`, `tests/unit/liveFeedClassification.test.mjs` | `node --test tests/unit/livePlayGrouping.test.mjs` |
+| Shared actor attribution: coverage tackler, no cross-team match, `defense_team`, interception tackler, carried narrative | `tests/unit/playByPlayAttributeActors.test.mjs` | `node --test tests/unit/playByPlayAttributeActors.test.mjs` |
+| Chronological order with mixed wallclocks; milestone bonus on the crossing play | `tests/unit/playByPlayOrder.test.mjs` | `node --test tests/unit/playByPlayOrder.test.mjs` |
+| Game-clock arithmetic | `tests/unit/playByPlayGameClock.test.mjs` | `node --test tests/unit/playByPlayGameClock.test.mjs` |
+| Game status classifier and its wrappers | `tests/unit/nflGameStatus.test.mjs` | `node --test tests/unit/nflGameStatus.test.mjs` |
 | Possession correction itself | `tests/unit/nflFieldGeometry.test.mjs` | `node --test tests/unit/nflFieldGeometry.test.mjs` |
 | Compound fumbles, no-gain returns and picks, sacker-less sacks, kick recoveries, both-sides shared rows | `tests/unit/playNormalizationFumbles.test.mjs` | `node --test tests/unit/playNormalizationFumbles.test.mjs` |

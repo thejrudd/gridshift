@@ -14,7 +14,8 @@ import { useState } from 'react';
 import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
 import { PlayTrajectoryStrip } from '../../nflPlays/PlayTrajectoryStrip.jsx';
 import { formatFieldSpot, getPlayTrajectory } from '../../../utils/nflPlays/fieldGeometry.js';
-import { parsePlayNarrative, getRoleLabel } from '../../../utils/nflPlays/playNarrative.js';
+import { getRoleLabel } from '../../../utils/nflPlays/playNarrative.js';
+import { readPlayNarrative } from '../../../utils/playByPlay/normalizePlay.js';
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
 import { getPlayTag } from '../../../utils/nflPlays/playPresentation.js';
 
@@ -29,7 +30,7 @@ function resolveActors(actors, participants, teamAbbr) {
 
 export function PlayCard({ play, participants, homeTeam, awayTeam, awayTheme, homeTheme, barColor, flipped = false }) {
   const [expanded, setExpanded] = useState(false);
-  const narrative = parsePlayNarrative(play);
+  const narrative = readPlayNarrative(play);
 
   if (narrative.administrative) {
     return (

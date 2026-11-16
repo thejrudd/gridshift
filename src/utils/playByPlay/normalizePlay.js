@@ -60,6 +60,11 @@ function isReported(value) {
   return value !== null && value !== undefined && value !== '';
 }
 
+/** `firstFinite` over reported values only: a null `stat_yardage` stays unknown, never 0. */
+function firstReportedFinite(...values) {
+  return firstFinite(...values.filter(isReported));
+}
+
 /** Statistics Scores' `asNumberOrNull`: unreported stays null, never 0. */
 function asNumberOrNull(value) {
   if (!isReported(value)) return null;
@@ -179,6 +184,18 @@ export function resolveOffenseDefenseTeams(play, {
 }
 
 /**
+ * The parsed narrative for any play shape: the one the adapter carried
+ * (`parsedNarrative`, or a Statistics Scores play's full `narrative`), else a
+ * fresh parse. ESPN, fixture, and hand-built plays reach the same presentation
+ * code without a carried parse, so the fallback stays.
+ */
+export function readPlayNarrative(play) {
+  if (play?.parsedNarrative && typeof play.parsedNarrative === 'object') return play.parsedNarrative;
+  if (play?.narrative && typeof play.narrative === 'object') return play.narrative;
+  return parsePlayNarrative(play);
+}
+
+/**
  * One canonical play object per raw provider row.
  *
  * Returns null only for a null/undefined row. A row with no description, no
@@ -211,7 +228,9 @@ export function normalizeCanonicalPlay(raw, {
     shortText,
     rawText: rawDescription,
     description: rawDescription,
-    statYardage: firstFinite(raw.stat_yardage, raw.yards_gained, raw.yards, raw.net_yards),
+    // Reported values only: `Number(null)` is 0, and a 0 here read a kickoff
+    // or punt with no `stat_yardage` as a measured zero-yard gain.
+    statYardage: firstReportedFinite(raw.stat_yardage, raw.yards_gained, raw.yards, raw.net_yards),
     // Full names spelled out elsewhere in the game (`collectPlayNames`), for
     // sentences built from the abbreviated official description.
     nameHints,
@@ -238,6 +257,10 @@ export function normalizeCanonicalPlay(raw, {
     rawDescription,
     shortText,
     narrative: narrative?.confident ? narrative : null,
+    // The parser's full answer, confident or not. Statistics Scores reads
+    // `playKind`, `penalty`, and `administrative` off unconfident parses too;
+    // `narrative` above stays null-when-unconfident for Fantasy Live.
+    parsedNarrative: narrative,
     defensiveActors,
 
     team,
