@@ -12,7 +12,7 @@
 // rather than showing an invented sentence or a wrong name.
 
 import { TEAM_NAMES } from '../../data/teamColors.js';
-import { canonicalTeam, FIELD_SPOT_PATTERN } from './fieldSpots.js';
+import { canonicalTeam, FIELD_SPOT_PATTERN, isMidfieldSpot } from './fieldSpots.js';
 
 export const PLAY_ROLES = Object.freeze({
   PASSER: 'passer',
@@ -244,9 +244,10 @@ const GRAMMARS = [
   },
   {
     kind: 'fumble-return',
-    pattern: rx(`(${NAME}) (-?\\d+) Yd Fumble (?:Return|Recovery)`),
+    // "Gracen Halton Fumble Recovery in End Zone": recovered where it scored.
+    pattern: rx(`(${NAME}) (?:(-?\\d+) Yd )?Fumble (?:Return|Recovery)(?: in End Zone)?`),
     build: ([, recoverer, yards]) => ({
-      returnYards: Number(yards),
+      returnYards: Number(yards ?? 0),
       actors: [{ role: PLAY_ROLES.RECOVERER, name: recoverer }],
     }),
   },
@@ -295,6 +296,9 @@ function normalizeKickOutcome(outcome) {
 
 const SPOT_TEXT = FIELD_SPOT_PATTERN;
 const ABBREV = "[A-Z][A-Za-z.'’-]*\\.[A-Za-z.'’-]+";
+// A surname the gamebook writes with a space ("A.Van Ginkel"), where the name
+// is followed by a known word ("at", a bracket) that ends it.
+const ABBREV_SPACED = `${ABBREV}(?: [A-Z][A-Za-z'’-]+)?`;
 
 /**
  * The part of the description that actually stands.
@@ -384,10 +388,13 @@ export function parseInterception(rawText) {
   // or "by N.Pritchett (R.Thomas) at SEA 3"). It is not the interceptor and
   // must not make the otherwise-complete play unparseable.
   // Some feeds also prefix every player with their jersey number ("28-J.Jobe").
-  const picked = new RegExp(`INTERCEPTED by (?:\\d+-)?(${ABBREV})(?:\\s+(?:\\[[^\\]]+\\]|\\([^)]*\\)))* at ${SPOT_TEXT}`, 'i').exec(text);
+  const picked = new RegExp(`INTERCEPTED by (?:\\d+-)?(${ABBREV_SPACED})(?:\\s+(?:\\[[^\\]]+\\]|\\([^)]*\\)))* at ${SPOT_TEXT}`, 'i').exec(text);
   if (!picked) return null;
   const tail = text.slice(picked.index + picked[0].length);
-  const returned = new RegExp(`\\bto ${SPOT_TEXT} for (-?\\d+) yards?`, 'i').exec(tail);
+  // The return ends "to", "ran ob at", or "pushed ob at" a spot, or in the end
+  // zone ("J.Trotter for 38 yards, TOUCHDOWN").
+  const returned = new RegExp(`^[^]*?\\b(?:to|ran ob at|pushed ob at) ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)`, 'i').exec(tail.split(/\bFUMBLES\b/)[0])
+    ?? new RegExp(`^[^]*?\\bfor (-?\\d+) yards?, TOUCHDOWN`, 'i').exec(tail.split(/\bFUMBLES\b/)[0]);
   return {
     passer: new RegExp(`(?:\\d+-)?(${ABBREV}) pass`, 'i').exec(text)?.[1] ?? null,
     // "A.St. Brown": an abbreviation ending in a period runs on to the surname.
@@ -395,8 +402,8 @@ export function parseInterception(rawText) {
     depth: /\b(short|deep) (left|middle|right)\b/i.exec(text)?.[0]?.toLowerCase() ?? null,
     defender: picked[1],
     at: picked[2],
-    returnTo: returned?.[1] ?? null,
-    returnYards: returned ? Number(returned[2]) : 0,
+    returnTo: returned && returned.length > 2 ? returned[1] ?? null : null,
+    returnYards: returned ? Number((returned.length > 2 ? returned[2] : returned[1]) ?? 0) : 0,
   };
 }
 
@@ -412,12 +419,20 @@ export function parseInterception(rawText) {
 // What the gamebook can put between "FUMBLES" and the recovery: who forced it,
 // a bracketed quarterback hit, and a "touched at" spot.
 const FUMBLE_FORCE = '(?:\\s*\\(([^)]+)\\))?(?:\\s*\\[[^\\]]*\\])?';
-const FUMBLE_BETWEEN = '(?:,\\s*touched at [A-Z]{2,3} \\d+)?';
+const FUMBLE_BETWEEN = `(?:,\\s*touched at ${FIELD_SPOT_PATTERN.replace('(', '(?:')})?`;
 
 function firstAbbreviatedName(text) {
   // The carrier is the first name in the description, once the formation note
   // that sometimes opens it is out of the way.
   return new RegExp(`(${ABBREV})`).exec(text.replace(/^\s*\([^)]*\)\s*/, ''))?.[1] ?? null;
+}
+
+// "… RECOVERED by HST-T.Togiai at HST 46. Fumble Forced by 55-D.Hunter." The
+// note corrects the defender in parentheses, and Sleeper credits the note's
+// (week 3 of 2026: D.Hunter, M.Crosby and D.Henley over W.Anderson, J.Chinn
+// and K.Mack).
+function forcedByNote(text) {
+  return new RegExp(`\\bFumble Forced by (?:\\d+-)?(${ABBREV_SPACED})(?=[.,;\\s]|$)`).exec(String(text ?? ''))?.[1]?.replace(/\.$/, '') ?? null;
 }
 
 /**
@@ -447,7 +462,7 @@ export function parseFumbleCredit(rawText) {
   return {
     fumbledBy: (lateral && lateral.index > (sentenceStarts.at(-1)?.index ?? 0) ? lateral[1] : null)
       ?? receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text),
-    forcedBy: fumble[1]?.trim() || null,
+    forcedBy: forcedByNote(text) ?? (fumble[1]?.trim() || null),
     recoveredByTeam: recovery ? canonicalTeam(recovery[1]) : null,
   };
 }
@@ -468,6 +483,150 @@ export function parseFumble(rawText) {
     returnTo: returned?.[1] ?? null,
     returnYards: returned ? Number(returned[2] ?? 0) : 0,
   };
+}
+
+// The carrier who opens the sentence that ends in a FUMBLES clause (see
+// `parseFumbleCredit`): a lateral's last carrier, a completed pass's receiver,
+// or the sentence's first name.
+function carrierBefore(before, text) {
+  const lateral = [...before.matchAll(new RegExp(`\\blateral to (${ABBREV})\\b`, 'gi'))].at(-1);
+  const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV})`, 'g'))];
+  const start = sentenceStarts.at(-1)?.index ?? 0;
+  const sentence = before.slice(start);
+  const receiver = /\bsacked\b/i.test(sentence)
+    ? null
+    : new RegExp(`\\bpass\\b[^.]*?\\bto (${ABBREV})`, 'i').exec(sentence)?.[1] ?? null;
+  return (lateral && lateral.index > start ? lateral[1] : null)
+    ?? receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text);
+}
+
+// The play itself, without the replay ruling, injury notes, or flags after it.
+function actionText(rawText) {
+  return authoritativeText(rawText).split(
+    /\n|\*\* Injury Update|The Replay Official|PENALTY on| was injured during the play/i,
+  )[0];
+}
+
+const OTHER_SIDE = Object.freeze({ offense: 'defense', defense: 'offense' });
+
+const FUMBLE_OUTCOME = new RegExp(
+  `^FUMBLES${FUMBLE_FORCE}(?:\\s+at ${SPOT_TEXT})?${FUMBLE_BETWEEN}`
+  + `(?:,?\\s*(?:(?<recovered>RECOVERED|recovered) by (?<team>[A-Z]{2,3})-(?:\\d+-)?(?<recoverer>${ABBREV_SPACED}) at (?<recoveredAt>${SPOT_TEXT})`
+  + `|(?<recovers>and recovers) at (?<recoversAt>${SPOT_TEXT})`
+  + `|(?<outOfBounds>ball out of bounds)(?<outTail>[^.]*)))?`,
+);
+
+/**
+ * Every turnover on one snap, in order, from the official description: the
+ * interception, then each FUMBLES clause with who had the ball, who forced it,
+ * and who came up with it. A pick returned and fumbled back, or a recovery
+ * fumbled again, is several turnovers in one row ("… INTERCEPTED by
+ * D.Igbinosun at 50. D.Igbinosun to NYJ 33 for 17 yards (J.Ruckert; B.Hall).
+ * FUMBLES (J.Ruckert), RECOVERED by NYJ-J.Myers at NYJ 23.").
+ *
+ * Sides are relative to the snap: `offense` ran the play. The gamebook
+ * capitalizes RECOVERED when the ball changes hands and writes "recovered by"
+ * when the side holding it kept it (checked against every fumble in weeks 1–9
+ * of 2026), so the chain needs no team abbreviations to track possession.
+ *
+ * Returns null when the description has no turnover. `complete` is false when
+ * a FUMBLES clause has an outcome this reader does not know; callers then fall
+ * back to their single-turnover reading.
+ */
+export function parseTurnoverChain(rawText) {
+  const text = actionText(rawText);
+  const markers = [...text.matchAll(/\bINTERCEPTED by\b|\bFUMBLES\b/g)];
+  if (!markers.length) return null;
+  const events = [];
+  let complete = true;
+  // A kick hands the ball over before anything else happens: the kicking team
+  // is the offense, and the returner who fumbles is on the other side.
+  const kick = new RegExp(`^\\s*(?:\\([^)]*\\)\\s*)?(?:\\d+-)?${ABBREV} (?:punts|kicks)\\b`).test(text);
+  let side = kick ? 'defense' : 'offense';
+  let changes = kick ? 1 : 0;
+  const baseTacklers = parseTacklers(text.slice(0, markers[0].index));
+  markers.forEach((marker, index) => {
+    const end = markers[index + 1]?.index ?? text.length;
+    const clause = text.slice(marker.index, end);
+    if (/^INTERCEPTED/.test(marker[0])) {
+      const pick = parseInterception(text);
+      const head = new RegExp(`^INTERCEPTED by (?:\\d+-)?${ABBREV_SPACED}((?:\\s+(?:\\[[^\\]]+\\]|\\([^)]*\\)))*) at ${SPOT_TEXT}`).exec(clause);
+      if (!pick || !head) { complete = false; return; }
+      side = 'defense';
+      changes += 1;
+      events.push({
+        type: 'interception',
+        defender: pick.defender,
+        side,
+        // "INTERCEPTED by N.Pritchett (R.Thomas) at SEA 3": the defender who
+        // tipped it. Square brackets are the quarterback hit.
+        deflectors: [...head[1].matchAll(/\(([^)]+)\)/g)].flatMap((group) => group[1].split(/[;,]/))
+          .map((name) => name.trim()).filter((name) => TACKLER_PART.test(name)),
+        at: pick.at,
+        returnTo: pick.returnTo,
+        returnYards: pick.returnYards,
+        tacklers: parseTacklers(clause.slice(head[0].length)),
+        tacklerSide: OTHER_SIDE[side],
+        touchdown: /\bTOUCHDOWN\b/.test(clause),
+      });
+      return;
+    }
+    const outcome = FUMBLE_OUTCOME.exec(clause);
+    const fumblerSide = side;
+    const groups = outcome?.groups ?? {};
+    const forcedBy = String(outcome?.[1] ?? '').split(';').map((name) => name.trim()).filter((name) => TACKLER_PART.test(name));
+    const fumbledBy = carrierBefore(text.slice(0, marker.index), text);
+    let kind = null;
+    let changed = false;
+    if (groups.recovered) {
+      kind = 'recovered';
+      changed = groups.recovered === 'RECOVERED';
+    } else if (groups.recovers) {
+      kind = 'recovers';
+    } else if (groups.outOfBounds) {
+      kind = 'out-of-bounds';
+      // Out of the defense's end zone: their ball on a touchback.
+      changed = /in End Zone, Touchback/i.test(groups.outTail ?? '');
+    } else {
+      complete = false;
+    }
+    if (changed) {
+      side = OTHER_SIDE[side];
+      changes += 1;
+    }
+    const after = outcome ? clause.slice(outcome[0].length) : '';
+    const recoverer = groups.recoverer ?? (kind === 'recovers' ? fumbledBy : null);
+    const returned = recoverer
+      ? new RegExp(`^\\.?\\s*(?:\\d+-)?${recoverer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (?:(?:to|ran ob at|pushed ob at) ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)|for (-?\\d+) yards?)`).exec(after)
+      : null;
+    events.push({
+      type: 'fumble',
+      fumbledBy,
+      fumblerSide,
+      forcedBy,
+      forcerSide: OTHER_SIDE[fumblerSide],
+      outcome: kind,
+      changed,
+      recoveredByTeam: groups.team ? canonicalTeam(groups.team) : null,
+      recoveredBy: recoverer,
+      recovererSide: side,
+      at: groups.recoveredAt ?? groups.recoversAt ?? null,
+      returnYards: returned ? Number(returned[2] ?? returned[3] ?? 0) : 0,
+      tacklers: recoverer ? parseTacklers(after) : [],
+      tacklerSide: OTHER_SIDE[side],
+      touchdown: /\bTOUCHDOWN\b/.test(after),
+    });
+  });
+  // A forcer correction note applies to the snap's one fumble.
+  const fumbleEvents = events.filter((event) => event.type === 'fumble');
+  const corrected = forcedByNote(text);
+  if (corrected && fumbleEvents.length === 1) fumbleEvents[0].forcedBy = [corrected];
+  return { events, complete, kick, changes, finalSide: side, baseTacklers };
+}
+
+/** A pick returned and fumbled, or a recovery fumbled again: more than one turnover. */
+export function isCompoundTurnover(chain) {
+  return Boolean(chain?.complete && chain.events.length > 1);
 }
 
 /** A fully described completion and lateral chain. Unknown clauses fail closed. */
@@ -612,24 +771,60 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
     });
   };
 
+  // Sleeper credits every interception as a pass defensed too, and the
+  // defender the gamebook says tipped it ("INTERCEPTED by N.Pritchett
+  // (R.Thomas) at SEA 3") with one: checked against every interceptor's line
+  // in weeks 1–9 of 2026 (155 of 155 carry at least one per pick).
   const interception = parseInterception(text);
-  if (interception?.defender) add(PLAY_ROLES.INTERCEPTER, interception.defender);
+  const chain = parseTurnoverChain(text);
+  if (interception?.defender) {
+    add(PLAY_ROLES.INTERCEPTER, interception.defender);
+    add(PLAY_ROLES.PASS_DEFENDER, interception.defender);
+    chain?.events.find((event) => event.type === 'interception')?.deflectors
+      .forEach((name) => add(PLAY_ROLES.PASS_DEFENDER, name));
+  }
   const summaryInterception = /^(.+?)\s+-?\d+\s+Yd Interception Return\b/i.exec(text.trim());
   if (!interception && summaryInterception) {
     add(PLAY_ROLES.INTERCEPTER, summaryInterception[1]);
+    add(PLAY_ROLES.PASS_DEFENDER, summaryInterception[1]);
   }
 
-  const fumble = parseFumble(text);
-  const fumbleCredit = parseFumbleCredit(text);
-  if (fumbleCredit) {
-    String(fumbleCredit.forcedBy ?? '')
-      .split(';')
-      .map((name) => name.trim())
-      // "FUMBLES (Aborted)" is a botched snap, not a defender.
-      .filter((name) => TACKLER_PART.test(name))
-      .forEach((name) => add(PLAY_ROLES.FORCER, name));
+  // A kick's credits are special teams (see playStatDelta), read as before.
+  const kick = Boolean(chain?.kick) || /kickoff|punt/i.test(String(typeSlug ?? ''));
+  // Several turnovers on one snap: each clause's forcer, recoverer, and the
+  // tacklers of each return, with the side of the snap each one is on — a
+  // tight end who strips the interception returner is the offense.
+  const compound = !kick && isCompoundTurnover(chain) && !/\blateral to\b/i.test(text);
+  if (compound) {
+    chain.events.forEach((event) => {
+      if (event.type !== 'fumble') return;
+      event.forcedBy.forEach((name) => add(PLAY_ROLES.FORCER, name, { side: event.forcerSide }));
+      if (event.recoveredBy && event.outcome === 'recovered') {
+        add(PLAY_ROLES.RECOVERER, event.recoveredBy, {
+          team: event.recoveredByTeam,
+          side: event.recovererSide,
+          // Recovering your own side's fumble is no recovery in Sleeper's lines.
+          ...(event.changed ? {} : { ownRecovery: true }),
+        });
+      }
+    });
+  } else {
+    const fumble = parseFumble(text);
+    const fumbleCredit = parseFumbleCredit(text);
+    if (fumbleCredit) {
+      String(fumbleCredit.forcedBy ?? '')
+        .split(';')
+        .map((name) => name.trim())
+        // "FUMBLES (Aborted)" is a botched snap, not a defender.
+        .filter((name) => TACKLER_PART.test(name))
+        .forEach((name) => add(PLAY_ROLES.FORCER, name));
+    }
+    // The gamebook writes "recovered by" when the side holding the ball kept
+    // it: no recovery credit, the way Sleeper's lines read (week 3 of 2026,
+    // LV at NO: A.Butler, none all game).
+    const own = !kick && chain?.complete && chain.events.find((event) => event.type === 'fumble')?.changed === false;
+    if (fumble) add(PLAY_ROLES.RECOVERER, fumble.recoveredBy, { team: canonicalTeam(fumble.recoveredByTeam), ...(own ? { ownRecovery: true } : {}) });
   }
-  if (fumble) add(PLAY_ROLES.RECOVERER, fumble.recoveredBy, { team: canonicalTeam(fumble.recoveredByTeam) });
 
   const tacklers = parseTacklers(text);
   const sack = /\bsack(?:ed)?\b/i.test(`${typeSlug ?? ''} ${text}`);
@@ -652,8 +847,14 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
       const fumbleAt = text.search(/\bFUMBLES\b/i);
       (fumbleAt >= 0 ? parseTacklers(text.slice(0, fumbleAt)) : tacklers).forEach((name) => add(PLAY_ROLES.SACKER, name));
     }
+  } else if (compound) {
+    chain.baseTacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name, { side: 'defense' }));
   } else {
     tacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name));
+  }
+  // Each return in a chain has its own stop, made by whichever side lost it.
+  if (compound) {
+    chain.events.forEach((event) => event.tacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name, { side: event.tacklerSide })));
   }
 
   const tackledBy = /\btackled by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
@@ -980,6 +1181,9 @@ function returnPhrase(yards, returner) {
  * the catch, the sacked passer, the returner); a fumble by anyone else (a
  * botched snap the quarterback then threw from) stays unparsed.
  */
+// The try appended to a defensive or return touchdown's scoring summary.
+const RETURN_TRY = new RegExp(`^(.*\\b(?:Interception Return(?:, No Gain)?|Fumble Return|Fumble Recovery(?: in End Zone)?|Punt Return|Kickoff Return|return of blocked (?:punt|field goal|FG|kick)))\\s+\\((${NAME}|${ABBREV}) ([Kk]ick|Extra Point|PAT [Ff]ailed|PAT [Bb]locked)\\)$`);
+
 const FUMBLE_CLAUSE = new RegExp(`^(.+?) Fumble(?: (${NAME}) (-?\\d+) Yd Fumble Recovery)?(?: (.+))?$`);
 // Who can be holding the ball when it comes loose, by the kind of play. A
 // passer named as the fumbler of a pass play fumbled the snap before throwing,
@@ -1125,6 +1329,7 @@ const SHARED_CITY_TEAMS = new Set(['NYG', 'NYJ', 'LAC', 'LAR']);
 const TEAM_NAME_KEYS = new Map([['WAS', 'wsh'], ['LAR', 'la']]);
 
 export function spotPhrase(spot) {
+  if (isMidfieldSpot(spot)) return 'at midfield';
   const match = /^([A-Z]{2,3})\s+(-?\d{1,2})$/.exec(String(spot ?? '').trim());
   if (!match) return null;
   const team = canonicalTeam(match[1]);
@@ -1391,7 +1596,7 @@ function capitalize(text) {
 function ballSpot(play, penalty = null) {
   if (penalty?.offsetting?.length > 1) return ' The down is replayed.';
   const spot = String(play.endPossessionText ?? '').trim();
-  const phrase = /^50$/.test(spot) ? 'at midfield' : spotPhrase(spot);
+  const phrase = spotPhrase(spot);
   return phrase && phrase !== 'in the end zone' ? ` Ball ${phrase}.` : '';
 }
 
@@ -1423,6 +1628,117 @@ function wipedOutSentence({ kind, parsed, built, flag, spotAfter, touchdown, raw
 }
 
 
+// ── Several turnovers on one snap ───────────────────────────────────────────
+// The compact text cannot carry them: it is cut off at the feed's length and
+// can list the fumblers out of order ("… to Chig Okonkwo Rachaad White Fumble
+// Chig Okonkwo Fumble …"). The play that started it is read from the compact
+// text when it can be (it states the gain the catch or run is officially
+// credited), and everything after from the gamebook (`parseTurnoverChain`).
+
+// The ball carrier the base play hands the first turnover to.
+function chainCarrierMatches(matched, first) {
+  if (!matched) return false;
+  if (first.type === 'interception') {
+    return matched.kind === 'interception'
+      && matched.parsed.actors.some((actor) => sameAbbreviatedName(actor.name, first.defender));
+  }
+  const carrierRole = BALL_CARRIER_ROLES[matched.kind];
+  return Boolean(carrierRole) && matched.kind !== 'aborted-snap' && matched.parsed.actors.some((actor) => (
+    actor.role === carrierRole && (sameAbbreviatedName(actor.name, first.fumbledBy) || actor.name === first.fumbledBy)
+  ));
+}
+
+// The base play from the compact text: everything before the first fumbler's
+// clause, with the fumbler's name (which runs straight on) trimmed off.
+function chainBaseFromCompact(compact, first) {
+  const at = compact.search(/ Fumble(?! Recovery| Return)(?= |$)/);
+  if (at < 0) return null;
+  const tokens = compact.slice(0, at).split(' ');
+  // The fumbler's name always precedes " Fumble", so at least one word goes.
+  for (let drop = 1; drop <= 4 && drop < tokens.length; drop += 1) {
+    const matched = matchGrammar(canonicalizeShortText(tokens.slice(0, tokens.length - drop).join(' ')));
+    if (chainCarrierMatches(matched, first)) return matched;
+  }
+  return null;
+}
+
+// The base play from the gamebook, when the compact text is a scoring summary
+// that replaced it ("Jonas Sanker 87 Yd Fumble Return").
+function chainBaseFromGamebook(rawText, first, play, compact) {
+  const text = actionText(rawText).replace(/^\s*\([^)]*\)\s*/, '');
+  const actor = (role, value) => {
+    const full = nameFor(value, play, compact);
+    return { role, name: full, abbreviated: full === value };
+  };
+  if (first.type === 'interception') {
+    return { kind: 'interception', parsed: { yards: first.returnYards, actors: [actor(PLAY_ROLES.INTERCEPTER, first.defender)] } };
+  }
+  const sacked = new RegExp(`^(${ABBREV}) sacked at ${SPOT_TEXT} for (-?\\d+) yards?`).exec(text);
+  if (sacked && sacked[1] === first.fumbledBy) {
+    return { kind: 'sack', parsed: { yards: Number(sacked[3]), actors: [actor(PLAY_ROLES.PASSER, sacked[1])] } };
+  }
+  const yards = (value) => (value != null ? Number(value) : 0);
+  const pass = new RegExp(`^(${ABBREV}) pass(?: (?:short|deep) (?:left|middle|right))? to (${ABBREV}) to ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)`).exec(text);
+  if (pass && pass[2] === first.fumbledBy) {
+    return { kind: 'pass', parsed: { yards: yards(pass[4]), actors: [actor(PLAY_ROLES.PASSER, pass[1]), actor(PLAY_ROLES.RECEIVER, pass[2])] } };
+  }
+  const run = new RegExp(`^(${ABBREV})(?: (?:up the middle|(?:left|right) (?:end|tackle|guard)))? to ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)`).exec(text);
+  if (run && run[1] === first.fumbledBy) {
+    return { kind: 'rush', parsed: { yards: yards(run[3]), actors: [actor(PLAY_ROLES.RUSHER, run[1])] } };
+  }
+  return null;
+}
+
+// "Davison Igbinosun fumbled, forced by Jeremy Ruckert, and Jamien Myers
+// recovered it." One sentence per fumble, each naming who had the ball.
+function chainFumbleSentence(event, play, compact, { touchdown }) {
+  const name = (value) => nameFor(value, play, compact);
+  const fumbler = name(event.fumbledBy);
+  const forced = event.forcedBy.length ? `, forced by ${listNames(event.forcedBy.map(name))},` : '';
+  const score = touchdown ? ' for a touchdown' : '';
+  if (event.outcome === 'out-of-bounds') {
+    return `${fumbler} fumbled${forced.replace(/,$/, '')} ${event.changed ? 'out of the end zone for a touchback' : 'out of bounds'}.`;
+  }
+  const recoverer = event.recoveredBy ? name(event.recoveredBy) : null;
+  if (!recoverer) return `${fumbler} fumbled${forced.replace(/,$/, '')}.`;
+  const advance = event.returnYards > 0 ? ` and returned it ${yardPhrase(event.returnYards)}` : '';
+  if (recoverer === fumbler) return `${fumbler} fumbled${forced} and recovered it${advance}${score}.`;
+  return `${fumbler} fumbled${forced} and ${recoverer} recovered it${advance}${score}.`;
+}
+
+function turnoverChainMatch(play, rawText, compact, chain, { gamebookBase = false } = {}) {
+  const first = chain.events[0];
+  // The compact text first, for the officially credited gain; the gamebook
+  // when the compact text is a scoring summary, missing, or unreadable.
+  const base = (!gamebookBase && compact ? chainBaseFromCompact(compact, first) : null)
+    ?? chainBaseFromGamebook(rawText, first, play, compact);
+  if (!base) return null;
+  const fumbleEvents = chain.events.filter((event) => event.type === 'fumble');
+  // The recovery that changed hands carries the recovery's own advance.
+  const firstFumble = fumbleEvents.find((event) => event.changed) ?? fumbleEvents[0];
+  const name = (value) => nameFor(value, play, compact);
+  return {
+    ...base,
+    parsed: { ...base.parsed, turnover: chain.finalSide === 'defense' },
+    // The first fumble, in the shape a single fumble has, for the credited
+    // gain (`creditedYards`) and the recovery's advance.
+    fumble: firstFumble ? {
+      fumbler: name(firstFumble.fumbledBy),
+      recoverer: firstFumble.recoveredBy ? name(firstFumble.recoveredBy) : null,
+      returnYards: firstFumble.recoveredBy ? firstFumble.returnYards : null,
+      snap: false,
+    } : null,
+    // Every fumbler, with the side of the snap they were on and whether the
+    // other side came up with it: the matcher charges each one.
+    fumbles: !isCompoundTurnover(chain) ? null : fumbleEvents.map((event) => ({
+      fumbler: event.fumbledBy,
+      lost: event.changed,
+      side: event.fumblerSide,
+    })),
+    turnoverChain: chain,
+  };
+}
+
 /**
  * Parse one normalized play into `{ confident, sentence, actors, ... }`.
  *
@@ -1444,17 +1760,45 @@ export function parsePlayNarrative(play) {
   const shortText = playShortText;
   const rawText = String(play.rawText ?? play.description ?? '');
   const penalty = parsePenaltyClause(rawText);
-  const compact = shortText || shortTextFromGamebook(rawText, play);
-  if (!compact) return { confident: false, actors: [], sentence: null, playKind: slug, administrative: false, penalty };
+  const compact = shortText || shortTextFromGamebook(rawText, play) || '';
+  const earlyChain = compact ? null : parseTurnoverChain(rawText);
+  // Several turnovers read from the gamebook alone; anything else needs the
+  // compact text.
+  if (!compact && !(isCompoundTurnover(earlyChain) && !earlyChain.kick && !/kickoff|punt/.test(slug)
+    && !/\blateral to\b/i.test(authoritativeText(rawText)))) {
+    return { confident: false, actors: [], sentence: null, playKind: slug, administrative: false, penalty };
+  }
 
-  const base = canonicalizeShortText(penalty
-    ? stripPenaltySuffix(stripDeclinedPenalty(compact), penalty)
-    : stripDeclinedPenalty(compact));
+  // The try after a defensive or return touchdown rides on the scoring
+  // summary ("Josiah Trotter 38 Yd Interception Return (Chase McLaughlin
+  // Kick)"). No other row carries that kick, so its kicker is credited here,
+  // on the side that scored: every such kicker in weeks 1–9 of 2026 was one
+  // extra point short of Sleeper's line without it.
+  const returnTry = RETURN_TRY.exec(compact);
+  const compactPlay = returnTry ? returnTry[1] : compact;
+  const stripped = penalty
+    ? stripPenaltySuffix(stripDeclinedPenalty(compactPlay), penalty)
+    : stripDeclinedPenalty(compactPlay);
+  const base = canonicalizeShortText(stripped);
 
-  const split = matchGrammar(base) ? null : splitFumbleClause(base, rawText);
+  // More than one turnover on the snap, or a defensive score whose summary
+  // replaced the play: read through the gamebook's turnover chain.
+  const chain = parseTurnoverChain(rawText);
+  // Laterals keep their own readers (`lateralNarrative`, `snapLateralNarrative`).
+  const chainUsable = Boolean(chain?.complete) && !chain.kick && !/kickoff|punt/.test(slug)
+    && !/\bNo Play\b|\blateral to\b/i.test(authoritativeText(rawText));
+  const summaryReplaced = chainUsable && chain.events.length === 1 && chain.events[0].type === 'fumble'
+    && chain.events[0].changed && matchGrammar(base)?.kind === 'fumble-return'
+    && letters(rawText) !== letters(play.shortText);
+  const chainMatched = chainUsable && isCompoundTurnover(chain)
+    ? turnoverChainMatch(play, rawText, stripped, chain)
+    : summaryReplaced ? turnoverChainMatch(play, rawText, compact, chain, { gamebookBase: true }) : null;
+
+  const split = chainMatched || matchGrammar(base) ? null : splitFumbleClause(base, rawText);
   // A fumbler who kept the play going after recovering is a loose snap told
   // in the wrong order, unless the gamebook shows the snap came first.
-  const matched = matchGrammar(base)
+  const matched = chainMatched
+    ?? matchGrammar(base)
     ?? (split && (split.fumble.snap || !fumbleContinues(rawText)) ? split : null)
     ?? splitMuffedPunt(base, rawText)
     ?? lateralNarrative(play, rawText, compact)
@@ -1482,7 +1826,8 @@ export function parsePlayNarrative(play) {
     return { confident: false, actors: [], sentence: null, playKind: slug, administrative: false, penalty };
   }
 
-  const { kind, parsed, fumble = null, fumbles = null } = matched;
+  const { kind, parsed, fumble = null, fumbles = null, turnoverChain = null } = matched;
+  const chainFumbles = turnoverChain ? turnoverChain.events.filter((event) => event.type === 'fumble') : [];
   // A defensive recovery read from its summary line only stands when the row
   // is that summary alone; with an official description the fumble's own
   // players (the sacked passer, say) would go unnamed.
@@ -1540,7 +1885,25 @@ export function parsePlayNarrative(play) {
   // Fumble actors join the list after the play's own, never `parsed.actors`:
   // the sentence builders read that positionally ("intended for <second>").
   const fumbleActors = [];
-  if (fumble) {
+  if (turnoverChain) {
+    // Each fumbler is charged through `fumbles`; each recoverer is named with
+    // their team and the side of the snap they were on.
+    chainFumbles.forEach((event) => {
+      if (event.outcome !== 'recovered' || !event.recoveredBy) return;
+      fumbleActors.push({
+        role: PLAY_ROLES.RECOVERER,
+        name: nameFor(event.recoveredBy, play, compact),
+        team: event.recoveredByTeam,
+        side: event.recovererSide,
+        ...(event.changed ? {} : { ownRecovery: true }),
+      });
+    });
+    if (SCRIMMAGE_KINDS.has(kind) && !Number.isFinite(parsed.yards)) {
+      const gains = [...authoritativeText(tackleText).matchAll(/\bfor (?:(-?\d+) yards?|(no gain))/gi)];
+      const last = gains.at(-1);
+      if (last) parsed.yards = last[2] ? 0 : Number(last[1]);
+    }
+  } else if (fumble) {
     // The fumbler is already in the play as its carrier, catch, sacked passer,
     // or returner, and keeps that role: a second FUMBLER entry would be checked
     // against a different roster on a kick and credit the returner as a rusher.
@@ -1597,9 +1960,24 @@ export function parsePlayNarrative(play) {
   const qbHitterNames = passerName ? defensiveNames(PLAY_ROLES.QB_HITTER) : [];
   const direction = parseDirection(rawText);
 
+  // The try's kicker after a defensive or return touchdown, on the side that
+  // scored: the defense, unless the chain shows the offense fell on it.
+  const tryKicker = returnTry ? {
+    role: PLAY_ROLES.KICKER,
+    name: returnTry[2],
+    abbreviated: returnTry[2].includes('.'),
+    detail: /kick|extra point/i.test(returnTry[3]) ? 'extra point good' : 'extra point failed',
+    side: turnoverChain || (kind === 'fumble-return' && chainUsable) ? chain.finalSide
+      // A summary alone cannot say who fell on it; the slug can.
+      : kind === 'fumble-return' && /own/.test(slug) ? 'offense' : 'defense',
+  } : null;
+  if (tryKicker) parsed.patResult = tryKicker.detail === 'extra point good' ? 'Kick' : 'PAT Failed';
+  // On an interception the tacklers chase the returner: the offense.
+  const tacklerSide = turnoverChain ? (turnoverChain.events[0].type === 'interception' ? 'offense' : 'defense') : null;
   const actors = [
     ...[...parsed.actors, ...fumbleActors].map((actor) => ({ abbreviated: false, detail: null, ...actor })),
-    ...tacklerNames.map((name) => ({ role: PLAY_ROLES.TACKLER, name, abbreviated: true, detail: null })),
+    ...tacklerNames.map((name) => ({ role: PLAY_ROLES.TACKLER, name, abbreviated: true, detail: null, ...(tacklerSide ? { side: tacklerSide } : {}) })),
+    ...(tryKicker ? [tryKicker] : []),
     ...(penalty?.name ? [{ role: PLAY_ROLES.PENALIZED, name: penalty.name, abbreviated: true, detail: penalty.infraction }] : []),
   ];
 
@@ -1610,7 +1988,23 @@ export function parsePlayNarrative(play) {
 
   const outOfBounds = fumbleAt >= 0 && /\bout of bounds\b/i.test(standing.slice(fumbleAt));
   const sentenceTacklers = fumble ? tacklerNames.filter((name) => !forcerNames.includes(name)) : tacklerNames;
-  const built = kind === 'aborted-snap' && fumble
+  const built = turnoverChain
+    ? [
+        // A defensive score after the fumble is told with the fumble, not
+        // credited to the catch or run that came before it.
+        buildSentence(kind, parsed, {
+          touchdown: touchdown && !parsed.turnover,
+          tacklerNames: sentenceTacklers,
+          penalty,
+          kneel,
+          passDefenderNames,
+          forcerNames,
+        }),
+        ...chainFumbles.map((event, index) => chainFumbleSentence(event, play, compact, {
+          touchdown: touchdown && parsed.turnover && index === chainFumbles.length - 1,
+        })),
+      ].join(' ')
+    : kind === 'aborted-snap' && fumble
     ? fumbleSentence(fumble, forcerNames, { snap: true })
     : fumble?.muff
       ? muffSentence(parsed, fumble, sentenceTacklers.length ? `, tackled by ${listNames(sentenceTacklers)}` : '')
@@ -1651,8 +2045,13 @@ export function parsePlayNarrative(play) {
   // from this row, so they need their own sentence: the play sentence names
   // only the scorer.
   const kicker = parsed.patResult ? actors.find((actor) => actor.role === PLAY_ROLES.KICKER) : null;
-  const scorerRole = kind === 'rush' ? PLAY_ROLES.RUSHER : kind === 'return-touchdown' ? PLAY_ROLES.RETURNER : PLAY_ROLES.RECEIVER;
-  const scorer = actors.find((actor) => actor.role === scorerRole);
+  const scorerRole = turnoverChain && parsed.turnover ? PLAY_ROLES.RECOVERER
+    : kind === 'rush' ? PLAY_ROLES.RUSHER
+      : kind === 'return-touchdown' ? PLAY_ROLES.RETURNER
+        : kind === 'interception' ? PLAY_ROLES.INTERCEPTER
+          : kind === 'fumble-return' || kind === 'blocked-kick-return' ? PLAY_ROLES.RECOVERER
+            : PLAY_ROLES.RECEIVER;
+  const scorer = (turnoverChain && parsed.turnover ? [...actors].reverse() : actors).find((actor) => actor.role === scorerRole);
   const extraPoint = kicker && !negated
     ? {
         good: parsed.patResult === 'Kick',

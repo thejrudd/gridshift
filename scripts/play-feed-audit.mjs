@@ -34,11 +34,24 @@ export const AUDIT_STATS = {
   defense: ['idp_tkl', 'idp_sack', 'idp_int', 'idp_ff', 'idp_fr', 'idp_pd', 'idp_qbhit'],
 };
 const ALL_STATS = Object.values(AUDIT_STATS).flat();
+// Team defense lines (Sleeper's DEF rows, keyed by team abbreviation), in
+// Sleeper's keys. Compared separately from player lines, so a team's takeaways
+// and returns show up as their own mismatches.
+export const TEAM_DEFENSE_STATS = [
+  'int', 'int_ret_yd', 'fum_rec', 'fum_ret_yd', 'ff', 'sack', 'sack_yd', 'safe', 'def_td',
+  'blk_kick', 'tkl_loss', 'def_pass_def', 'def_4_and_stop',
+  'def_st_td', 'def_st_ff', 'def_st_fum_rec', 'def_st_tkl_solo', 'def_kr_yd', 'def_pr_yd',
+];
+// GridShift's key for a Sleeper DEF key, where they differ (scoringEngine's
+// STAT_TO_SCORING_KEY maps Sleeper's `ff` to the internal `def_ff`).
+const TEAM_DEFENSE_OURS = { ff: 'def_ff' };
 // A weight for every compared stat, so no involvement is dropped as "worth
 // nothing" before it reaches the stat line: play points round to hundredths,
 // so counts weigh 1 and yards 0.01 (a -3 yard carry still nets 0.97).
-const AUDIT_SCORING = Object.fromEntries([...ALL_STATS, 'idp_tkl_solo', 'idp_tkl_ast']
-  .map((key) => [key, key.endsWith('_yd') ? 0.01 : 1]));
+const AUDIT_SCORING = Object.fromEntries([
+  ...ALL_STATS, 'idp_tkl_solo', 'idp_tkl_ast',
+  ...TEAM_DEFENSE_STATS.map((key) => TEAM_DEFENSE_OURS[key] ?? key),
+].map((key) => [key, key.endsWith('_yd') ? 0.01 : 1]));
 const TACKLE_KEYS = ['idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast'];
 
 function parseArgs(argv) {
@@ -248,7 +261,41 @@ export function auditGame({ game, plays, players, sleeperStats, espnLines = null
   const playerIds = new Set([...lines.keys(), ...espnBySleeperId.keys()]);
   const checks = [];
   const mismatches = [];
+  const teamChecks = [];
+  const teamMismatches = [];
+  for (const team of teams) {
+    const official = sleeperStats?.[team];
+    if (!official) continue;
+    const ours = lines.get(team)?.stats ?? {};
+    for (const key of TEAM_DEFENSE_STATS) {
+      const oursKey = TEAM_DEFENSE_OURS[key] ?? key;
+      const oursValue = Number(ours[oursKey]) || 0;
+      const sleeperValue = Number(official[key]) || 0;
+      if (!oursValue && !sleeperValue) continue;
+      const match = round(oursValue) === round(sleeperValue);
+      teamChecks.push({ key, match });
+      if (match) continue;
+      teamMismatches.push({
+        gameId: String(game.id),
+        matchup: `${getTeamAbbr(game.visitor_team)} @ ${getTeamAbbr(game.home_team)}`,
+        team,
+        stat: key,
+        gridshift: round(oursValue),
+        official: round(sleeperValue),
+        creditedPlays: (lines.get(team)?.events ?? [])
+          .filter((event) => Number(event.stats?.[oursKey]))
+          .map((event) => ({
+            id: String(event.play?.raw?.id ?? event.sharedPlayId),
+            clock: event.glance?.clock ?? null,
+            type: event.play?.raw?.type_slug ?? null,
+            value: Number(event.stats?.[oursKey]),
+            text: event.play?.raw?.text ?? null,
+          })),
+      });
+    }
+  }
   for (const playerId of playerIds) {
+    if (teams.has(playerId)) continue;
     const official = sleeperStats?.[playerId];
     if (!official) continue;
     const ours = lines.get(playerId)?.stats ?? {};
@@ -300,7 +347,7 @@ export function auditGame({ game, plays, players, sleeperStats, espnLines = null
       });
     }
   }
-  return { checks, mismatches };
+  return { checks, mismatches, teamChecks, teamMismatches };
 }
 
 function espnLinesForGame(game, espnBoxScores) {
@@ -332,6 +379,19 @@ function summarize(season, week, results) {
     if (!row) return;
     lines.push(`| ${group} | ${key} | ${row.compared} | ${row.matched} | ${(100 * row.matched / row.compared).toFixed(1)}% |`);
   }));
+  const byTeamStat = new Map();
+  results.teamChecks.forEach(({ key, match }) => {
+    const row = byTeamStat.get(key) ?? { compared: 0, matched: 0 };
+    row.compared += 1;
+    if (match) row.matched += 1;
+    byTeamStat.set(key, row);
+  });
+  lines.push('', `Team defense stats compared: ${results.teamChecks.length}; mismatches: ${results.teamMismatches.length}.`, '',
+    '| Stat | Compared | Matched | Rate |', '|---|---:|---:|---:|');
+  TEAM_DEFENSE_STATS.forEach((key) => {
+    const row = byTeamStat.get(key);
+    if (row) lines.push(`| ${key} | ${row.compared} | ${row.matched} | ${(100 * row.matched / row.compared).toFixed(1)}% |`);
+  });
   lines.push('', '## Mismatches', '');
   results.mismatches
     .slice()
@@ -339,6 +399,10 @@ function summarize(season, week, results) {
     .forEach((row) => {
       lines.push(`- ${row.matchup} · ${row.name} (${row.position}) · ${row.stat}: GridShift ${row.gridshift}, official ${row.official}${row.espn != null ? `, ESPN ${row.espn}` : ''}`);
     });
+  if (results.teamMismatches.length) lines.push('', '## Team defense mismatches', '');
+  results.teamMismatches.forEach((row) => {
+    lines.push(`- ${row.matchup} · ${row.team} DEF · ${row.stat}: GridShift ${row.gridshift}, official ${row.official}`);
+  });
   return lines.join('\n');
 }
 
@@ -363,9 +427,9 @@ async function main() {
 
   for (const week of weeks) {
     const data = await loadWeek(season, week, args.refresh);
-    const results = { season, week, gamesTotal: data.games.length, gamesAudited: data.finalGames.length, checks: [], mismatches: [] };
+    const results = { season, week, gamesTotal: data.games.length, gamesAudited: data.finalGames.length, checks: [], mismatches: [], teamChecks: [], teamMismatches: [] };
     for (const game of data.finalGames) {
-      const { checks, mismatches } = auditGame({
+      const { checks, mismatches, teamChecks, teamMismatches } = auditGame({
         game,
         plays: data.playsByGame[String(game.id)],
         players,
@@ -374,13 +438,16 @@ async function main() {
       });
       results.checks.push(...checks);
       results.mismatches.push(...mismatches);
+      results.teamChecks.push(...teamChecks);
+      results.teamMismatches.push(...teamMismatches);
     }
     const outDir = path.join(ROOT, String(season), `week-${week}`);
     fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(path.join(outDir, 'mismatches.json'), JSON.stringify({ ...results, checks: undefined, generatedAt: new Date().toISOString() }, null, 2));
+    fs.writeFileSync(path.join(outDir, 'mismatches.json'), JSON.stringify({ ...results, checks: undefined, teamChecks: undefined, generatedAt: new Date().toISOString() }, null, 2));
     fs.writeFileSync(path.join(outDir, 'summary.md'), summarize(season, week, results));
     const matched = results.checks.filter((check) => check.match).length;
-    console.log(`Week ${week}: ${results.gamesAudited}/${results.gamesTotal} games, ${matched}/${results.checks.length} stats match, ${results.mismatches.length} mismatches → ${path.relative(process.cwd(), outDir)}/`);
+    const teamMatched = results.teamChecks.filter((check) => check.match).length;
+    console.log(`Week ${week}: ${results.gamesAudited}/${results.gamesTotal} games, ${matched}/${results.checks.length} player stats match, ${results.mismatches.length} mismatches; team defense ${teamMatched}/${results.teamChecks.length}, ${results.teamMismatches.length} mismatches → ${path.relative(process.cwd(), outDir)}/`);
   }
 }
 
