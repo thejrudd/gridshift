@@ -5,6 +5,8 @@ import { readThroughFinishedArchive } from './finishedGameArchive.js';
 import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createPublicRequestGuard } from './publicRequestGuard.js';
 import { isNflSeasonCompleted } from '../src/utils/nflSeason.js';
+import { isNflGameActive } from '../src/utils/nflGameStatus.js';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 
 const ESPN_NFL_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const DEFAULT_PER_PAGE = 100;
@@ -90,15 +92,9 @@ function resolveSnapshotStore({ snapshotStore, gateway }) {
   return resolved;
 }
 
-function isLiveBdlGame(game) {
-  const state = String(game?.status_state ?? '').trim().toLowerCase();
-  const status = String(game?.status ?? '').trim().toLowerCase();
-  return state === 'in_progress'
-    || state === 'live'
-    || /\b(?:1st|2nd|3rd|4th|ot)\b/.test(status)
-    || status.includes('halftime')
-    || status.includes('delay');
-}
+// One status classifier for every surface (src/utils/nflGameStatus.js):
+// live, halftime or delayed games get the live play refresh.
+const isLiveBdlGame = isNflGameActive;
 
 // A season is over once its Super Bowl is (see isNflSeasonCompleted); with
 // every listed game final its game list can no longer change.
@@ -115,7 +111,7 @@ export function seasonCacheControl(season, { complete = true, nowMs = Date.now()
 
 function isAllFinal(games) {
   return Array.isArray(games) && games.length > 0
-    && games.every((game) => /^final/i.test(String(game?.status ?? '')));
+    && games.every((game) => isFinalGame(game));
 }
 
 function toCompatCache(result) {

@@ -11,11 +11,10 @@
 // once the archive holds the game.
 
 import process from 'node:process';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 import { fetchStatisticsScoresGameDetail, BOX_SCORE_REVALIDATE_MS } from './statisticsScoresHandlers.js';
 
 const DEFAULT_MAX_ENTRIES = 160;
-
-const isFinal = (game) => /^final/i.test(String(game?.status ?? ''));
 
 export function createFinishedGameDetailStore({
   gateway,
@@ -50,7 +49,7 @@ export function createFinishedGameDetailStore({
       if (inFlight.has(key)) return inFlight.get(key);
       const pending = fetchDetail({ gameId, phase, gateway, env, snapshotStore, archive })
         .then((detail) => {
-          if (isFinal(detail?.game) && detail.coverage?.plays) remember(key, { detail, storedAt: now() });
+          if (detail?.game && isFinalGame(detail.game) && detail.coverage?.plays) remember(key, { detail, storedAt: now() });
           return detail;
         })
         .finally(() => inFlight.delete(key));
