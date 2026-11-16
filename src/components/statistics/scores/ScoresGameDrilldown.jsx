@@ -31,6 +31,7 @@ import { fetchRoster } from '../../../utils/playerApi.js';
 import { nameKey } from '../../../utils/teamSeason/teamDashboardModel.js';
 import { buildMatchupRanks, buildPlayerSeasonCard, buildRecentForm, buildSeasonLeaders, buildSeasonStatGroups, buildSeasonStatLookup, seasonRecord } from '../../../utils/statisticsScoresSeasonContext.js';
 import { detailCoverageMessage, driveMeta, playClockLabel, playSentence, quarterLabel } from './scoresDetailFormat.js';
+import LiveGameClock from '../../shared/LiveGameClock.jsx';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -185,7 +186,11 @@ function ScoreHero({ game, detail, awayTheme, homeTheme, records = null, onOpenT
         />
         <div className="scores-detail-status">
           {detail.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
-          <strong>{detail.statusLabel}</strong>
+          <strong>
+            {detail.status === 'live'
+              ? <LiveGameClock game={game} fallbackLabel={detail.statusLabel} />
+              : detail.statusLabel}
+          </strong>
           {game.live?.downDistance && <span>{game.live.downDistance} · {game.live.fieldPosition}</span>}
           {game.live?.redZone && <b>Red Zone</b>}
         </div>

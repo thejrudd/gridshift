@@ -6,6 +6,7 @@ import { getTeamVisualTheme } from '../../../utils/teamVisualTheme';
 import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 import { formatStatisticsScoresLocalKickoff } from '../../../utils/statisticsScoresTime';
 import LatestPlayStrip from './LatestPlayStrip.jsx';
+import LiveGameClock from '../../shared/LiveGameClock.jsx';
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
@@ -80,7 +81,7 @@ function statusLabel(game) {
       : (game.statusLabel ?? 'Scheduled');
   }
   return game.status === 'live'
-    ? `● ${game.statusLabel}`
+    ? <>● <LiveGameClock game={game} /></>
     : game.statusLabel;
 }
 
@@ -203,7 +204,7 @@ export default function GameScorebug({ game, onOpen }) {
         <span className="scores-scorebug-topline">
           <span className={`scores-status is-${statusTone(game.status)}`}>
             {game.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
-            {game.status === 'live' ? `Live · ${game.statusLabel}` : statusLabel(game)}
+            {game.status === 'live' ? <>Live · <LiveGameClock game={game} /></> : statusLabel(game)}
           </span>
           {statusMeta(game) && <span>{statusMeta(game)}</span>}
         </span>
