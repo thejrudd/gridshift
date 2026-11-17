@@ -85,6 +85,11 @@ describe('Season week range from Sleeper NFL state', () => {
   });
   it('fetches nothing in preseason and everything, unfinalised, without a state', () => {
     assert.equal(resolveStatsWeekRange({ season: '2026', season_type: 'pre', week: 0 }, '2026').throughWeek, 0);
+    // Postseason: week 18 stays in its stat-correction window until the season completes.
+    const post = resolveStatsWeekRange({ season: '2026', season_type: 'post', week: 1 }, '2026');
+    assert.equal(post.throughWeek, 18);
+    const allWeeks = Object.fromEntries(Array.from({ length: 18 }, (_, i) => [i + 1, {}]));
+    assert.deepEqual(planSeasonWeekFetch(mergeFetchedWeeks(null, allWeeks, post, { now: 0 }), post, { now: 7 * 60 * 60 * 1000 }), [18]);
     assert.deepEqual(resolveStatsWeekRange(null, '2026'), { throughWeek: 18, currentWeek: null, known: false });
   });
 });

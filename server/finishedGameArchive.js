@@ -81,6 +81,17 @@ export async function readThroughFinishedArchive({
     throw error;
   }
   const endedAt = getFinishedPayloadEndedAt(fresh.payload);
+  if (endedAt == null && row) {
+    // A recheck that comes back incomplete (an empty box score, no error)
+    // never replaces finished data: keep serving the stored row, and restamp
+    // it so the next recheck waits the full interval.
+    try {
+      archive.put(key, row.payload, { gameEndedAt: row.gameEndedAt, verified: false });
+    } catch {
+      // A failed restamp only means the next request rechecks again.
+    }
+    return archivedResult(row, now);
+  }
   if (endedAt != null) {
     try {
       archive.put(key, fresh.payload, {

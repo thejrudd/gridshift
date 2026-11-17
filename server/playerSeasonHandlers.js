@@ -20,8 +20,9 @@ import { buildLeaguePools, compactWeekRows, DASHBOARD_GROUPS, selectGroupPools }
 import { buildPlayerGame, identityName, pickReferencedPeople } from '../src/utils/playerSeason/playerSeasonGames.js';
 import { positionGroup } from '../src/utils/playerMetrics.js';
 import { getTeamAbbr, normalizeName } from '../src/utils/liveScoringFeed.js';
-import { fetchStatisticsScoresGames, seasonCacheControl, BOX_SCORE_REVALIDATE_MS } from './statisticsScoresHandlers.js';
-import { createFinishedGameDetailStore } from './finishedGameDetails.js';
+import { fetchStatisticsScoresGames, seasonCacheControl } from './statisticsScoresHandlers.js';
+import { createBuiltGameCache, createFinishedGameDetailStore, isSettledFinalDetail } from './finishedGameDetails.js';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 
 const SLEEPER_STATS_BASE = 'https://api.sleeper.com/stats/nfl';
 const SLEEPER_STATE_URL = 'https://api.sleeper.app/v1/state/nfl';
@@ -33,7 +34,7 @@ const DETAIL_CONCURRENCY = 3;
 const WEEK_CONCURRENCY = 4;
 const MIN_SEASON = 2022;
 
-const isFinal = (game) => /^final/i.test(String(game?.status ?? ''));
+const isFinal = (game) => isFinalGame(game);
 
 function badRequest(message) {
   const error = new Error(message);
@@ -75,7 +76,7 @@ export function createPlayerSeasonService({
 } = {}) {
   const weekCache = new Map(); // `${season}:${week}` -> { rows, fetchedAt, final }
   const poolCache = new Map(); // season -> { key, pools }
-  const gameCache = new Map(); // `${gameId}|${team}|${name}` -> built game (finished games only)
+  const builtGames = createBuiltGameCache({ maxEntries: MAX_GAME_ENTRIES }); // finished, settled games per subject
   const inFlight = new Map();
   let nflState = null;
 
@@ -153,19 +154,7 @@ export function createPlayerSeasonService({
     return pools;
   }
 
-  // Built games expire with the archive's recheck interval so stat corrections reach the dashboards.
-  function freshGame(key) {
-    const entry = gameCache.get(key);
-    if (entry && Date.now() - entry.at < BOX_SCORE_REVALIDATE_MS) return entry.value;
-    if (entry) gameCache.delete(key);
-    return undefined;
-  }
 
-  function rememberGame(key, value) {
-    gameCache.delete(key);
-    gameCache.set(key, { value, at: Date.now() });
-    while (gameCache.size > MAX_GAME_ENTRIES) gameCache.delete(gameCache.keys().next().value);
-  }
 
   async function getPlayerSeason({ season, team, name, position, sleeperId }) {
     const requestedTeam = getTeamAbbr(team);
@@ -207,15 +196,15 @@ export function createPlayerSeasonService({
       const gameTeam = teamFor(game);
       const subject = { name, team: gameTeam, position };
       const key = `${game.id}|${gameTeam}|${normalizeName(name)}`;
-      const cachedGame = freshGame(key);
+      const cachedGame = builtGames.get(key);
       if (cachedGame !== undefined) return { result: cachedGame, settled: true };
-      return coalesce(`game:${key}`, async () => {
+      return builtGames.coalesce(key, async () => {
         const detail = await gameDetails.get({ gameId: game.id, phase: 'regular' });
         const result = buildPlayerGame(detail, subject);
-        // A game whose plays have not landed yet is not cached, so a retry can fill it in.
+        // A game whose plays or box scores have not landed yet is not cached, so a retry can fill it in.
         if (result) result.game.team = gameTeam;
-        const settled = Boolean(detail.coverage?.plays);
-        if (result && settled) rememberGame(key, result);
+        const settled = isSettledFinalDetail(detail);
+        if (result && settled) builtGames.set(key, result);
         return { result, settled };
       });
     });
@@ -248,9 +237,11 @@ export function createPlayerSeasonService({
       people: pickReferencedPeople(games, people),
       remaining: teamGames.length - finals.length,
       coverage: { plays: games.some((game) => game.plays.length > 0) },
-      // False when Sleeper's weeks failed or a finished game's plays had not
-      // landed: the payload is then only cached briefly, whatever the season.
-      complete: !weeksFailed && built.every(({ settled }) => settled),
+      // False when Sleeper's weeks failed, a finished game's plays or box
+      // scores had not landed, or there is no game list (no provider key, or
+      // the provider unreachable): the payload is then only cached briefly,
+      // whatever the season, so it fills in once the games arrive.
+      complete: !weeksFailed && teamGames.length > 0 && built.every(({ settled }) => settled),
     };
   }
 

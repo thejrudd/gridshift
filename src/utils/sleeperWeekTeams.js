@@ -63,7 +63,8 @@ function regularSeasonWeekCount(season) {
  * - a past season: every regular-season week, none current
  * - the current season in the regular season: weeks 1..state.week, with
  *   state.week current (its games may still be in progress)
- * - the current season in the postseason: every week, none current
+ * - the current season in the postseason: every week; the last one is still
+ *   inside its stat-correction window
  * - preseason, or a future season: no weeks
  * - offseason of the same season, or no usable state: every week, none final
  *   (the old behaviour: open weeks are refetched once they go stale)
@@ -80,7 +81,9 @@ export function resolveStatsWeekRange(nflState, season, { completed = false } = 
   if (seasonNumber < stateSeason) return { throughWeek: allWeeks, currentWeek: null, known: true };
   if (seasonNumber > stateSeason) return { throughWeek: 0, currentWeek: null, known: true };
   const type = String(nflState.season_type ?? '');
-  if (type === 'post') return { throughWeek: allWeeks, currentWeek: null, known: true };
+  // Postseason: the last regular week stays in its stat-correction window
+  // (as if the next week were current) until the season counts as completed.
+  if (type === 'post') return { throughWeek: allWeeks, currentWeek: allWeeks + 1, known: true };
   if (type === 'pre') return { throughWeek: 0, currentWeek: null, known: true };
   if (type !== 'regular') return { throughWeek: allWeeks, currentWeek: null, known: false };
   const week = Math.min(allWeeks, Math.max(0, Math.floor(Number(nflState.week) || 0)));
