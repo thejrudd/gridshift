@@ -87,15 +87,24 @@ export function resolveStatsWeekRange(nflState, season, { completed = false } = 
   return { throughWeek: week, currentWeek: week || null, known: true };
 }
 
+// Stat corrections can land for about a week after a slate, so the week just
+// played is rechecked on this interval until the next slate is over too.
+export const STAT_CORRECTION_RECHECK_MS = 6 * 60 * 60 * 1000;
+
 /**
  * Weeks to fetch for a season package. A week stored as final is never
- * fetched again. A non-final week (the current week, or a week stored before
- * the slate rolled past it) is refetched once it is older than `ttl`, and a
- * week stored before rollover is refetched once afterwards to become final.
+ * fetched again. The current week is refetched once it is older than `ttl`;
+ * the week just played (inside its stat-correction window) once it is older
+ * than `correctionTtl`; and a week stored before it left that window is
+ * refetched once afterwards to become final.
  * @param {object|null} cached  stored package with `weeks: { [week]: { fetchedAt, final } }`
  * @param {{ throughWeek: number, currentWeek: number|null, known?: boolean }} range
  */
-export function planSeasonWeekFetch(cached, range, { now = Date.now(), ttl = 60 * 60 * 1000 } = {}) {
+export function planSeasonWeekFetch(cached, range, {
+  now = Date.now(),
+  ttl = 60 * 60 * 1000,
+  correctionTtl = STAT_CORRECTION_RECHECK_MS,
+} = {}) {
   const meta = cached?.weeks ?? {};
   const weeks = [];
   for (let week = 1; week <= (range?.throughWeek ?? 0); week += 1) {
@@ -103,14 +112,20 @@ export function planSeasonWeekFetch(cached, range, { now = Date.now(), ttl = 60 
     if (!stored) { weeks.push(week); continue; }
     if (stored.final) continue;
     const becameFinal = isFinalWeek(week, range);
-    if (becameFinal || now - Number(stored.fetchedAt ?? 0) >= ttl) weeks.push(week);
+    const maxAge = isCorrectionWeek(week, range) ? correctionTtl : ttl;
+    if (becameFinal || now - Number(stored.fetchedAt ?? 0) >= maxAge) weeks.push(week);
   }
   return weeks;
 }
 
+// The week just played: over, but still inside its stat-correction window.
+function isCorrectionWeek(week, range) {
+  return range?.known !== false && range?.currentWeek != null && week === range.currentWeek - 1;
+}
+
 function isFinalWeek(week, range) {
   if (range?.known === false) return false;
-  return range?.currentWeek == null || week < range.currentWeek;
+  return range?.currentWeek == null || week < range.currentWeek - 1;
 }
 
 /**
