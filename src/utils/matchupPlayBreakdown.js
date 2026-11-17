@@ -21,7 +21,7 @@ function round2(value) {
 // assisted tackle the league actually pays.
 function pricedStats(event, scoringSettings) {
   const stats = { ...(event?.stats ?? {}) };
-  const tackleKey = getPricedTackleKey(event?.play, stats, scoringSettings);
+  const tackleKey = getPricedTackleKey(event?.play, stats, scoringSettings, event?.tackleShare);
   if (tackleKey) {
     stats[tackleKey] = (Number(stats[tackleKey]) || 0) + Number(stats.idp_tkl);
     delete stats.idp_tkl;

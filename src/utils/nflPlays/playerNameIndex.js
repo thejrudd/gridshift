@@ -83,7 +83,14 @@ export function buildPlayerNameIndex(entries, { normalize = normalizePlayerName 
 
     const parts = normalized.split(' ').filter(Boolean);
     if (parts.length >= 2) bareVariants.add(parts[parts.length - 1]);
-    getNameVariants(normalized).forEach((variant) => {
+    // The gamebook abbreviates a hyphenated surname to its first half
+    // ("S.Joseph" for Sebastian Joseph-Day, 2026 week 5 IND at PIT).
+    const hyphenated = /^\S+\s+([^\s-]+)-\S+$/.exec(String(entry.name ?? '').replace(/\s+(?:Jr\.?|Sr\.?|II|III|IV|V)$/i, '').trim());
+    const halfSurname = hyphenated && parts.length >= 2 ? normalize(hyphenated[1]) : '';
+    const extraVariants = halfSurname && !halfSurname.includes(' ')
+      ? [`${parts[0][0]} ${halfSurname}`, `${parts[0][0]}${halfSurname}`]
+      : [];
+    [...getNameVariants(normalized), ...extraVariants].forEach((variant) => {
       const owners = variantOwners.get(variant) ?? new Set();
       owners.add(entry.id);
       variantOwners.set(variant, owners);
@@ -108,7 +115,7 @@ export function buildPlayerNameIndex(entries, { normalize = normalizePlayerName 
  * `name` may be full ("Saquon Barkley") or abbreviated ("S.Barkley") — both
  * normalize onto indexed variants.
  */
-export function lookupPlayerByName(nameIndex, name, { team = null, normalize = normalizePlayerName } = {}) {
+export function lookupPlayerByName(nameIndex, name, { team = null, normalize = normalizePlayerName, prefer = null } = {}) {
   if (!nameIndex?.index) return null;
   const normalized = normalize(name);
   if (!normalized) return null;
@@ -117,6 +124,16 @@ export function lookupPlayerByName(nameIndex, name, { team = null, normalize = n
   const candidateKeys = parts.length >= 2
     ? [normalized, `${parts[0][0]} ${parts[parts.length - 1]}`, `${parts[0][0]}${parts[parts.length - 1]}`]
     : [normalized];
+  // The gamebook tells teammates apart with a longer prefix ("Ma.Wilson",
+  // "Jar.Jones", "Aj.Terrell"). A normalizer that deletes periods glues it to
+  // the surname ("mawilson"), so look it up by its initial as well and let the
+  // first-name check below keep only the player whose first name it starts.
+  const prefixed = /^([A-Za-z]{2,4})\.\s?([A-Z].*)$/.exec(String(name ?? '').trim());
+  if (prefixed) {
+    const surname = normalize(prefixed[2]).split(' ').filter(Boolean).at(-1);
+    const initial = prefixed[1][0].toLowerCase();
+    if (surname) [`${initial} ${surname}`, `${initial}${surname}`].forEach((key) => { if (!candidateKeys.includes(key)) candidateKeys.push(key); });
+  }
 
   // Whether the caller supplied a full first name rather than a bare initial
   // ("Javonte Williams" vs "J.Williams"), read off the raw string's own
@@ -162,6 +179,13 @@ export function lookupPlayerByName(nameIndex, name, { team = null, normalize = n
       });
     }
     if (records.length === 1) return records[0];
+    // Two teammates still share the key ("D.Williams": Dorian, a linebacker,
+    // and Daryl, a tackle). `prefer` names the one the role fits, when only
+    // one does.
+    if (records.length > 1 && prefer) {
+      const preferred = records.filter(prefer);
+      if (preferred.length === 1) return preferred[0];
+    }
     return null;
   }
   return null;

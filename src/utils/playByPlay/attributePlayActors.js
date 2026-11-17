@@ -126,13 +126,32 @@ export function getIndexedPlayerId(nameIndex, record) {
  * player there shares it. Never a cross-team fallback: with a team supplied,
  * a name that does not resolve on it stays unmatched.
  */
-export function lookupActor(nameIndex, actor, team, { normalize = normalizePlayerName, surnameFallback = false } = {}) {
+export function lookupActor(nameIndex, actor, team, { normalize = normalizePlayerName, surnameFallback = false, prefer = null } = {}) {
   const name = typeof actor === 'string' ? actor : actor?.name;
   if (!name) return null;
-  const record = lookupPlayerByName(nameIndex, name, { team: team || null, normalize });
+  const record = lookupPlayerByName(nameIndex, name, { team: team || null, normalize, prefer });
   if (record || !surnameFallback || actor?.abbreviated) return record;
   const surname = surnameOf(name);
-  return surname ? lookupPlayerByName(nameIndex, surname, { team: team || null, normalize }) : null;
+  return surname ? lookupPlayerByName(nameIndex, surname, { team: team || null, normalize, prefer }) : null;
+}
+
+const DEFENSIVE_CREDIT_ROLES = new Set([
+  PLAY_ROLES.SACKER, PLAY_ROLES.INTERCEPTER, PLAY_ROLES.FORCER, PLAY_ROLES.RECOVERER, PLAY_ROLES.TACKLER,
+  PLAY_ROLES.PASS_DEFENDER, PLAY_ROLES.QB_HITTER, PLAY_ROLES.SAFETY, PLAY_ROLES.KICK_BLOCKER,
+]);
+const DEFENSIVE_POSITIONS = new Set(['DL', 'DE', 'DT', 'LB', 'ILB', 'OLB', 'DB', 'CB', 'S', 'SS', 'FS']);
+
+/**
+ * A defensive credit on the snap's defense, away from a kick, belongs to a
+ * defender: when an abbreviated name fits two teammates and only one plays
+ * defense, it is that one (2026 weeks 6, 8–10: "D.Williams" is BUF linebacker
+ * Dorian Williams in Sleeper's lines, never tackle Daryl Williams; "D.Key" is
+ * DEN safety Devon Key, not receiver Dane Key).
+ */
+function preferDefender(play, actorRole, expectedTeam, defenseTeam, kickReturn) {
+  if (!DEFENSIVE_CREDIT_ROLES.has(actorRole) || kickReturn || !expectedTeam || expectedTeam !== defenseTeam) return null;
+  if (/kickoff|punt/.test(readPlayType(play))) return null;
+  return (record) => DEFENSIVE_POSITIONS.has(String(record?.position ?? '').toUpperCase());
 }
 
 /**
@@ -192,7 +211,8 @@ export function attributePlayActors(play, nameIndex, {
   return list.map((actor, textPos) => {
     const expectedTeam = normalizeTeam(actor.team)
       || getActorExpectedTeam(play, actor.role, { ...sides, actorName: actor.name, actorSide: actor.side ?? null });
-    const record = lookupActor(nameIndex, actor, expectedTeam, { normalize, surnameFallback });
+    const prefer = preferDefender(play, actor.role, expectedTeam, sides.defenseTeam, sides.kickReturn);
+    const record = lookupActor(nameIndex, actor, expectedTeam, { normalize, surnameFallback, prefer });
     return { actor, textPos, expectedTeam, record, playerId: getIndexedPlayerId(nameIndex, record) };
   });
 }

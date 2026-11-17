@@ -544,7 +544,8 @@ export function parseTurnoverChain(rawText) {
   const kick = new RegExp(`^\\s*(?:\\([^)]*\\)\\s*)?(?:\\d+-)?${ABBREV} (?:punts|kicks)\\b`).test(text);
   let side = kick ? 'defense' : 'offense';
   let changes = kick ? 1 : 0;
-  const baseTacklers = parseTacklers(text.slice(0, markers[0].index));
+  const baseTackleShares = parseTackleShares(text.slice(0, markers[0].index));
+  const baseTacklers = baseTackleShares.map((entry) => entry.name);
   markers.forEach((marker, index) => {
     const end = markers[index + 1]?.index ?? text.length;
     const clause = text.slice(marker.index, end);
@@ -566,6 +567,7 @@ export function parseTurnoverChain(rawText) {
         returnTo: pick.returnTo,
         returnYards: pick.returnYards,
         tacklers: parseTacklers(clause.slice(head[0].length)),
+        tackleShares: parseTackleShares(clause.slice(head[0].length)),
         tacklerSide: OTHER_SIDE[side],
         touchdown: /\bTOUCHDOWN\b/.test(clause),
       });
@@ -613,6 +615,7 @@ export function parseTurnoverChain(rawText) {
       at: groups.recoveredAt ?? groups.recoversAt ?? null,
       returnYards: returned ? Number(returned[2] ?? returned[3] ?? 0) : 0,
       tacklers: recoverer ? parseTacklers(after) : [],
+      tackleShares: recoverer ? parseTackleShares(after) : [],
       tacklerSide: OTHER_SIDE[side],
       touchdown: /\bTOUCHDOWN\b/.test(after),
     });
@@ -621,7 +624,7 @@ export function parseTurnoverChain(rawText) {
   const fumbleEvents = events.filter((event) => event.type === 'fumble');
   const corrected = forcedByNote(text);
   if (corrected && fumbleEvents.length === 1) fumbleEvents[0].forcedBy = [corrected];
-  return { events, complete, kick, changes, finalSide: side, baseTacklers };
+  return { events, complete, kick, changes, finalSide: side, baseTacklers, baseTackleShares };
 }
 
 /** A pick returned and fumbled, or a recovery fumbled again: more than one turnover. */
@@ -680,7 +683,11 @@ export function parsePassLaterals(rawText) {
   };
 }
 
-const TACKLER_PART = /^[A-Z][A-Za-z.'’-]*\.[A-Za-z.'’-]+$/;
+// One defender in a credit group: "B.Cashman", or a surname the gamebook writes
+// with a space ("K.Van Noy", "L.Van Ness"). Without the spaced form a group
+// naming one such defender failed whole and dropped every tackler in it
+// (2026 week 3, MIN at TB: Sleeper credits K.Van Noy 5 tackles, the feed 1).
+const TACKLER_PART = /^[A-Z][A-Za-z.'’-]*\.[A-Za-z.'’-]+(?: [A-Z][A-Za-z'’-]+)*$/;
 
 /**
  * Tacklers from the official description.
@@ -692,6 +699,30 @@ const TACKLER_PART = /^[A-Z][A-Za-z.'’-]*\.[A-Za-z.'’-]+$/;
  * brackets are pressure/hit credits, not tackles, and are ignored.
  */
 export function parseTacklers(rawText) {
+  return readTackleGroup(rawText).names;
+}
+
+/**
+ * Each tackler with the credit Sleeper's lines give them: a lone tackler is a
+ * solo tackle, "(A; B)" is an assisted tackle each, and "(A, B)" is a solo
+ * tackle for A with B assisting. Checked against every player whose tackle
+ * count matched in weeks 1–10 of 2026: in 160 of 162 comma pairs the first
+ * name carried the solo tackle and the second the assist, never the reverse
+ * (week 4, MIA at MIN, "(K.Van Noy, A.Van Ginkel)": Van Noy solo, Van Ginkel
+ * assisted); semicolon groups read assisted in 5,858 of 5,866.
+ */
+export function parseTackleShares(rawText) {
+  const { names, separator } = readTackleGroup(rawText);
+  return names.map((name, index) => ({ name, share: tackleShare(separator, index) }));
+}
+
+/** 'solo' or 'assisted' for the `index`th name of a group split by `separator`. */
+export function tackleShare(separator, index) {
+  if (!separator) return 'solo';
+  return separator === ',' && index === 0 ? 'solo' : 'assisted';
+}
+
+function readTackleGroup(rawText) {
   // Plays often carry trailing clauses after the action — replay reviews,
   // injury updates, the penalty summary. Their parentheticals are not tackles,
   // so cut the description at the first one before scanning backwards.
@@ -706,12 +737,15 @@ export function parseTacklers(rawText) {
     if (/FUMBLES\s*$/i.test(before)) continue;
     // "field goal is BLOCKED (G.Stewart)" names the blocker, not a tackler.
     if (/BLOCKED\s*$/i.test(before)) continue;
-    // "(A; B)" is an assisted tackle and "(A, B)" a shared one (a split
-    // sack, say). Both name two defenders.
+    // "(A; B)" is an assisted tackle and "(A, B)" a solo tackle with an
+    // assist (see parseTackleShares). Both name two defenders.
     const parts = groups[i][1].split(/[;,]/).map((part) => part.trim()).filter(Boolean);
-    if (parts.length && parts.every((part) => TACKLER_PART.test(part))) return parts;
+    if (parts.length && parts.every((part) => TACKLER_PART.test(part))) {
+      const separator = parts.length > 1 ? (groups[i][1].includes(';') ? ';' : ',') : null;
+      return { names: parts, separator };
+    }
   }
-  return [];
+  return { names: [], separator: null };
 }
 
 /**
@@ -848,13 +882,16 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
       (fumbleAt >= 0 ? parseTacklers(text.slice(0, fumbleAt)) : tacklers).forEach((name) => add(PLAY_ROLES.SACKER, name));
     }
   } else if (compound) {
-    chain.baseTacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name, { side: 'defense' }));
+    chain.baseTackleShares.forEach(({ name, share }) => add(PLAY_ROLES.TACKLER, name, { side: 'defense', share }));
   } else {
-    tacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name));
+    parseTackleShares(text).forEach(({ name, share }) => add(PLAY_ROLES.TACKLER, name, { share }));
   }
-  // Each return in a chain has its own stop, made by whichever side lost it.
+  // Each return in a chain has its own stop, made by whichever side lost it,
+  // and its own solo or assisted credit: a lone tackler of a return is solo
+  // however many defenders the snap's first stop named (week 5 of 2026,
+  // CIN at MIA: J.Chase and C.Johnson each a solo tackle in Sleeper's lines).
   if (compound) {
-    chain.events.forEach((event) => event.tacklers.forEach((name) => add(PLAY_ROLES.TACKLER, name, { side: event.tacklerSide })));
+    chain.events.forEach((event) => event.tackleShares.forEach(({ name, share }) => add(PLAY_ROLES.TACKLER, name, { side: event.tacklerSide, share })));
   }
 
   const tackledBy = /\btackled by (.+?)(?:[.,;]|$)/i.exec(text)?.[1] ?? null;
@@ -1863,8 +1900,12 @@ export function parsePlayNarrative(play) {
   // tackle comes before FUMBLES.
   const standing = authoritativeText(rawText);
   const fumbleAt = fumble ? standing.search(/\bFUMBLES\b/i) : -1;
-  // A loose snap comes first, so the play's own tackle follows it.
-  const tackleText = fumbleAt < 0 ? rawText : fumble.snap ? standing.slice(fumbleAt) : standing.slice(0, fumbleAt);
+  // A loose snap comes first, so the play's own tackle follows it. A play the
+  // replay official reversed is read from its corrected version: the
+  // overturned one's tacklers are not in Sleeper's lines (2026 week 1, MIA at
+  // LV: "(W.Gay; Z.Anderson)" ruled first, "(J.Rodriguez; C.Johnson)" after
+  // review, and only the second pair is credited).
+  const tackleText = fumbleAt < 0 ? standing : fumble.snap ? standing.slice(fumbleAt) : standing.slice(0, fumbleAt);
   const tacklerNames = kind === 'incompletion' || kind === 'sack' || kind === 'aborted-snap' || kneel ? [] : parseTacklers(tackleText);
   // Defenders the official text credits beyond the tackle: who broke up the
   // pass, forced the fumble, or hit the quarterback. Every credited player

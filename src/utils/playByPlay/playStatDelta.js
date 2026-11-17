@@ -114,7 +114,7 @@ export function estimatePlayPoints(
   // leagues pay solo and assisted tackles rather than `idp_tkl`, which would
   // price the tackle at 0 and drop the play from the feed. Price it the way the
   // league does instead: one tackler named reads as solo, several as assisted.
-  const tackleKey = getPricedTackleKey(play, delta, scoringSettings);
+  const tackleKey = getPricedTackleKey(play, delta, scoringSettings, credit?.tackleShare);
   const tacklePosition = credit?.returnTackle ? null : position;
   if (credit?.returnTackle && !tackleKey) {
     const tackle = { idp_tkl: delta.idp_tkl };
@@ -126,12 +126,16 @@ export function estimatePlayPoints(
 
 /**
  * The key a play's generic tackle is priced as, or null when the league pays
- * `idp_tkl` itself (or the play has no tackle): one defender credited with the
- * stop reads as solo, several as assisted. Shared by the estimate and by the
- * scoring-play breakdown so the two always agree.
+ * `idp_tkl` itself (or the play has no tackle). `share` is the player's own
+ * credit from the gamebook's tackle group (`parseTackleShares`: "(A, B)" is
+ * A's solo tackle and B's assist); without one, a lone defender credited with
+ * the stop reads as solo and several as assisted. Shared by the estimate and
+ * by the scoring-play breakdown so the two always agree.
  */
-export function getPricedTackleKey(play, delta, scoringSettings) {
+export function getPricedTackleKey(play, delta, scoringSettings, share = null) {
   if (!((Number(delta?.idp_tkl) || 0) > 0) || (Number(scoringSettings?.idp_tkl) || 0)) return null;
+  if (share === 'solo') return 'idp_tkl_solo';
+  if (share === 'assisted') return 'idp_tkl_ast';
   return countTacklers(play) > 1 ? 'idp_tkl_ast' : 'idp_tkl_solo';
 }
 

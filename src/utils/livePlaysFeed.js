@@ -221,6 +221,16 @@ function getFantasyRoleForActor(actorRole, playerMeta, play, actor = null) {
   // J.Chase). The parser places such actors on the offense's side.
   if (actor?.side === 'offense' && [PLAY_ROLES.TACKLER, PLAY_ROLES.FORCER, PLAY_ROLES.RECOVERER].includes(actorRole)
     && playerMeta?.team && playerMeta.team === play.offenseTeamAbbr) return 'defense';
+  // A tackler on the offense's roster away from a kick is chasing the ball
+  // back after the defense took it (`getActorExpectedTeam` only sends a
+  // tackler there for a pick or a lost fumble's return). Sleeper credits that
+  // tackle at any position: weeks 1–10 of 2026, R.Stanley (BAL at IND),
+  // A.Thomas (DAL at NYG), J.Thuney (TB at CHI), each one tackle.
+  // A kick filed under a fumble slug ("C.Waitman punts …  FUMBLES") is not
+  // read as a kick yet, so its sides can be swapped; leave those alone.
+  if (actorRole === PLAY_ROLES.TACKLER && !isSpecialTeamsPlay(play)
+    && !/\b(?:punts|kicks|field goal|extra point)\b/i.test(play?.raw?.text ?? '')
+    && playerMeta?.team && playerMeta.team === play.offenseTeamAbbr) return 'defense';
   // On a kick, coverage and return-team players at any position earn
   // special-teams credit (a running back's coverage tackle is `st_tkl_solo`).
   if (isSpecialTeamsPlay(play) && [PLAY_ROLES.TACKLER, PLAY_ROLES.FORCER, PLAY_ROLES.RECOVERER].includes(actorRole)) {
@@ -322,6 +332,16 @@ function matchNarrativeActors(play, nameIndex) {
     }
   }
 
+  // Solo or assisted, from the gamebook's tackle group (`parseTackleShares`).
+  // A narrative actor carries no share; its defensive-actor twin does.
+  const shareOf = (actor) => {
+    if (actor.role !== PLAY_ROLES.TACKLER) return null;
+    if (actor.share) return actor.share;
+    const name = normalizeStarterName(actor.name);
+    return (play?.defensiveActors ?? []).find((candidate) => (
+      candidate.role === PLAY_ROLES.TACKLER && candidate.share && normalizeStarterName(candidate.name) === name
+    ))?.share ?? null;
+  };
   attributed.forEach(({ actor, textPos, record, playerId }) => {
     if (!playerId) return;
     // Falling on your own side's fumble is no recovery in Sleeper's lines.
@@ -330,6 +350,7 @@ function matchNarrativeActors(play, nameIndex) {
     if (!role) return;
     const existing = matches.get(playerId);
     if (existing) {
+      if (role === 'defense' && !existing.tackleShare && shareOf(actor)) existing.tackleShare = shareOf(actor);
       // An earlier match may carry no defensive roles at all: the inferred
       // passer of a pick who then makes the tackle on the return.
       if (role === 'defense' && existing.attributionRoles && !existing.attributionRoles.includes(actor.role)) {
@@ -348,6 +369,7 @@ function matchNarrativeActors(play, nameIndex) {
       textPos,
       detail: actor.detail ?? null,
       attributionRoles: role === 'defense' ? [actor.role] : [],
+      ...(role === 'defense' && shareOf(actor) ? { tackleShare: shareOf(actor) } : {}),
     });
   });
 
@@ -891,9 +913,9 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
       }
       play.defenseTeamAbbr = defenseTeam;
       play.offenseTeamAbbr = offenseTeam;
-      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles, conversion, fumble, lateral, returnTackle, specialTeamsTackle }) => {
+      matchPlayToStarters(play, nameIndex).forEach(({ playerId, role, detail, attributionRoles, conversion, fumble, lateral, returnTackle, specialTeamsTackle, tackleShare }) => {
         const position = positionsById.get(playerId) ?? 'FLEX';
-        const credit = { conversion, fumble, lateral, returnTackle, specialTeamsTackle };
+        const credit = { conversion, fumble, lateral, returnTackle, specialTeamsTackle, tackleShare };
         const statDelta = buildPlayStatDelta(play, role, detail, attributionRoles, credit);
         // An offensive player can make a real tackle after an interception.
         // Price this explicit defensive action without opening IDP scoring for
@@ -931,6 +953,7 @@ export function buildPlayEvents(playsByGame, nameIndex, scoringSettings, positio
           role,
           offPositionDefense: role === 'defense' && !isDefensivePosition(position),
           returnTackle: Boolean(returnTackle),
+          tackleShare: tackleShare ?? null,
           ...classification,
           desc: `${describePlayForRole(play, role, nameIndex.meta.get(playerId)?.name)}${returnTackle ? ` ${nameIndex.meta.get(playerId)?.name} made the tackle.` : ''}`,
           pts,
@@ -1087,6 +1110,7 @@ export function groupSharedPlayEvents(events = [], sideKeyOf) {
         role: event.role,
         offPositionDefense: event.offPositionDefense,
         returnTackle: event.returnTackle,
+        tackleShare: event.tackleShare,
         desc: event.desc,
         kind: event.kind,
         mechanism: event.mechanism,
