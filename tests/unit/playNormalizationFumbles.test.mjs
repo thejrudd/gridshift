@@ -405,7 +405,11 @@ const teamDefense = (team) => ({ id: `dst-${team}`, player: { full_name: `${team
 const pick = (stats, keys) => Object.fromEntries(keys.filter((key) => stats?.[key] != null).map((key) => [key, stats[key]]));
 
 // The owner's play: a pick at midfield, returned and fumbled back to the team
-// that threw it.
+// that threw it. Confirmed against Sleeper's completed 2026 week 10 BUF@NYJ
+// lines: Igbinosun idp_int 1, idp_int_ret_yd 17, fum_lost 1; Ruckert idp_ff 1
+// and an assisted tackle; Hall an assisted tackle; Myers idp_fum_rec 1; BUF
+// DEF int 1, int_ret_yd 17; NYJ DEF fum_rec 1 (BUF lost one fumble all game)
+// and ff_misc 1 for Ruckert's force.
 const IGBINOSUN_PICK_FUMBLE = {
   id: 'nyj-int-fumble',
   type_slug: 'fumble-recovery-opponent',

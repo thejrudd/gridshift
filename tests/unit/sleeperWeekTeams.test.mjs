@@ -98,15 +98,20 @@ describe('Incremental season package', () => {
     assert.deepEqual(planSeasonWeekFetch(null, range, { now }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
-  it('keeps completed weeks and refreshes only a stale current week', () => {
+  it('keeps completed weeks, rechecks the week just played for corrections, and refreshes a stale current week', () => {
     const fetched = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [i + 1, {}]));
     const cached = mergeFetchedWeeks(null, fetched, range, { now });
-    assert.equal(cached.weeks[9].final, true);
+    assert.equal(cached.weeks[8].final, true);
+    // Week 9 was just played: inside its stat-correction window, not final yet.
+    assert.equal(cached.weeks[9].final, false);
     assert.equal(cached.weeks[10].final, false);
-    assert.deepEqual(planSeasonWeekFetch(cached, range, { now: now + 10, ttl: hour }), []);
-    assert.deepEqual(planSeasonWeekFetch(cached, range, { now: now + hour, ttl: hour }), [10]);
-    // Slate rolls over: week 10 is fetched once more to become final, week 11 is new.
-    assert.deepEqual(planSeasonWeekFetch(cached, { throughWeek: 11, currentWeek: 11, known: true }, { now: now + 10, ttl: hour }), [10, 11]);
+    const correctionTtl = 6 * hour;
+    assert.deepEqual(planSeasonWeekFetch(cached, range, { now: now + 10, ttl: hour, correctionTtl }), []);
+    assert.deepEqual(planSeasonWeekFetch(cached, range, { now: now + hour, ttl: hour, correctionTtl }), [10]);
+    assert.deepEqual(planSeasonWeekFetch(cached, range, { now: now + 6 * hour, ttl: hour, correctionTtl }), [9, 10]);
+    // Slate rolls over: week 9 leaves the window and is fetched once more to
+    // become final; week 10 is now the week just played; week 11 is new.
+    assert.deepEqual(planSeasonWeekFetch(cached, { throughWeek: 11, currentWeek: 11, known: true }, { now: now + 10, ttl: hour, correctionTtl }), [9, 11]);
   });
 
   it('replaces a refetched week for every player without touching other weeks', () => {
