@@ -57,11 +57,16 @@ scoring engine when adding or changing a stat key:
   `calcPoints()` consumes, including IDP tackles, sacks, interceptions, forced
   fumbles, recoveries, pass defenses, quarterback hits, safeties, blocked kicks,
   and defensive touchdowns where the active scoring profile supports them.
-- A tackle stays generic `idp_tkl` in the stat delta, because provider text
-  does not say solo or assisted. `estimatePlayPoints()` prices it the league's
-  way when the league does not pay `idp_tkl`: one tackler named as
-  `idp_tkl_solo`, several as `idp_tkl_ast` (each through `calcPoints()` with
-  the player's position). Without this a solo/assisted IDP league priced every
+- A tackle stays generic `idp_tkl` in the stat delta. `estimatePlayPoints()`
+  prices it the league's way when the league does not pay `idp_tkl`, through
+  `getPricedTackleKey(play, delta, settings, share)`: the player's own share
+  from the gamebook's tackle group (`parseTackleShares`: a lone tackler and the
+  first name of "(A, B)" are `idp_tkl_solo`; the second name of "(A, B)" and
+  every name of "(A; B)" are `idp_tkl_ast`), carried on the match, the credit
+  and the event as `tackleShare`. Without a share (a sack, a tackler only the
+  narrative names) one stopper reads solo and several assisted. Each goes
+  through `calcPoints()` with the player's position. The scoring-play card
+  (`matchupPlayBreakdown.js`) passes `event.tackleShare` so it agrees. Without this a solo/assisted IDP league priced every
   tackle at 0 and the play never reached the feed. The estimate is display
   only; Sleeper's line settles the exact total through reconciliation.
 - A starter explicitly named as a tackler on an interception return is matched

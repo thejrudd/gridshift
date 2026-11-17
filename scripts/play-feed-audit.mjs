@@ -17,6 +17,7 @@ import path from 'node:path';
 import { buildPlayEvents, buildStarterNameIndex } from '../src/utils/livePlaysFeed.js';
 import { getTeamAbbr } from '../src/utils/liveScoringFeed.js';
 import { canonicalTeam } from '../src/utils/nflPlays/fieldSpots.js';
+import { getPricedTackleKey } from '../src/utils/playByPlay/playStatDelta.js';
 
 const BDL_BASE = 'https://api.balldontlie.io';
 const SLEEPER_BASE = 'https://api.sleeper.app/v1';
@@ -24,14 +25,15 @@ const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const ROOT = path.resolve('tmp/play-audit');
 
 // Sleeper stat keys compared, grouped for the summary. Tackles are compared
-// as one total, since a play only knows a tackle happened.
+// as one total and as the solo/assisted split each play is priced at
+// (`getPricedTackleKey`), since a league may pay only one of the three.
 export const AUDIT_STATS = {
   passing: ['pass_att', 'pass_cmp', 'pass_yd', 'pass_td', 'pass_int', 'pass_fd', 'pass_2pt'],
   rushing: ['rush_att', 'rush_yd', 'rush_td', 'rush_fd', 'rush_2pt'],
   receiving: ['rec', 'rec_yd', 'rec_td', 'rec_fd', 'rec_2pt'],
   ballSecurity: ['fum', 'fum_lost'],
   kicking: ['fgm', 'fgmiss', 'xpm', 'xpmiss'],
-  defense: ['idp_tkl', 'idp_sack', 'idp_int', 'idp_ff', 'idp_fr', 'idp_pd', 'idp_qbhit'],
+  defense: ['idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast', 'idp_sack', 'idp_int', 'idp_ff', 'idp_fr', 'idp_pd', 'idp_qbhit'],
 };
 const ALL_STATS = Object.values(AUDIT_STATS).flat();
 // Team defense lines (Sleeper's DEF rows, keyed by team abbreviation), in
@@ -49,7 +51,7 @@ const TEAM_DEFENSE_OURS = { ff: 'def_ff' };
 // nothing" before it reaches the stat line: play points round to hundredths,
 // so counts weigh 1 and yards 0.01 (a -3 yard carry still nets 0.97).
 const AUDIT_SCORING = Object.fromEntries([
-  ...ALL_STATS, 'idp_tkl_solo', 'idp_tkl_ast',
+  ...ALL_STATS,
   ...TEAM_DEFENSE_STATS.map((key) => TEAM_DEFENSE_OURS[key] ?? key),
 ].map((key) => [key, key.endsWith('_yd') ? 0.01 : 1]));
 const TACKLE_KEYS = ['idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast'];
@@ -246,6 +248,10 @@ export function auditGame({ game, plays, players, sleeperStats, espnLines = null
   for (const event of events) {
     const line = lines.get(event.playerId) ?? { stats: {}, events: [] };
     addStats(line.stats, event.stats);
+    // The solo or assisted tackle the play is priced as in a league that pays
+    // the split (the stat delta itself keeps the generic `idp_tkl`).
+    const tackleKey = getPricedTackleKey(event.play, event.stats, {}, event.tackleShare);
+    if (tackleKey) addStats(line.stats, { [tackleKey]: Number(event.stats.idp_tkl) });
     line.events.push(event);
     lines.set(event.playerId, line);
   }
@@ -301,7 +307,10 @@ export function auditGame({ game, plays, players, sleeperStats, espnLines = null
     const ours = lines.get(playerId)?.stats ?? {};
     const espn = espnBySleeperId.get(playerId) ?? null;
     const player = players[playerId] ?? {};
+    // A line that reports only the tackle total has no split to compare.
+    const officialSplit = official.idp_tkl_solo != null || official.idp_tkl_ast != null;
     for (const key of ALL_STATS) {
+      if (!officialSplit && (key === 'idp_tkl_solo' || key === 'idp_tkl_ast')) continue;
       const oursValue = key === 'idp_tkl'
         ? Math.max(Number(ours.idp_tkl) || 0, (Number(ours.idp_tkl_solo) || 0) + (Number(ours.idp_tkl_ast) || 0))
         : Number(ours[key]) || 0;
@@ -312,7 +321,12 @@ export function auditGame({ game, plays, players, sleeperStats, espnLines = null
       checks.push({ key, match });
       if (match) continue;
       const surname = String(player.last_name ?? '').trim();
-      const credited = (lines.get(playerId)?.events ?? []).filter((event) => Number(event.stats?.[key]) || (key === 'idp_tkl' && TACKLE_KEYS.some((tackle) => Number(event.stats?.[tackle]))));
+      const pricedAs = (event) => getPricedTackleKey(event.play, event.stats, {}, event.tackleShare);
+      const credited = (lines.get(playerId)?.events ?? []).filter((event) => (
+        Number(event.stats?.[key])
+        || (key === 'idp_tkl' && TACKLE_KEYS.some((tackle) => Number(event.stats?.[tackle])))
+        || (TACKLE_KEYS.includes(key) && key !== 'idp_tkl' && pricedAs(event) === key)
+      ));
       const creditedIds = new Set((lines.get(playerId)?.events ?? []).map((event) => String(event.play?.raw?.id ?? event.sharedPlayId)));
       mismatches.push({
         gameId: String(game.id),
@@ -332,7 +346,7 @@ export function auditGame({ game, plays, players, sleeperStats, espnLines = null
           id: String(event.play?.raw?.id ?? event.sharedPlayId),
           clock: event.glance?.clock ?? null,
           type: event.play?.raw?.type_slug ?? null,
-          value: key === 'idp_tkl' ? TACKLE_KEYS.reduce((sum, tackle) => sum + (Number(event.stats?.[tackle]) || 0), 0) : Number(event.stats?.[key]),
+          value: TACKLE_KEYS.includes(key) ? TACKLE_KEYS.reduce((sum, tackle) => sum + (Number(event.stats?.[tackle]) || 0), 0) : Number(event.stats?.[key]),
           shortText: event.play?.raw?.short_text ?? null,
           text: event.play?.raw?.text ?? null,
         })),

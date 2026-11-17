@@ -413,6 +413,35 @@ two solo stops in different returns read as assisted; a summary-only pick row
 filed under `fumble-recovery-own` (week 9, LV at SF) is not flipped; Statistics
 Scores still counts an own-side recovery.
 
+## Tackles (v9.5 parser pass, weeks 1–10 of 2026)
+
+Every rule here was checked against Sleeper's final lines for completed weeks.
+
+- **Solo or assisted.** `parseTackleShares()` reads the tackle group: one name
+  is a solo tackle; "(A; B)" is an assisted tackle each (5,858 of 5,866 in
+  Sleeper's lines); "(A, B)" is A's solo tackle and B's assist (160 of 162
+  pairs, never the reverse). Each defensive actor carries `share`; chains carry
+  `baseTackleShares` and per-event `tackleShares`, so a lone tackler of a
+  return is solo however many names the first stop had.
+- **Spaced surnames.** A credit group may name "K.Van Noy" or "L.Van Ness";
+  such a group used to fail whole and drop every tackler in it.
+- **Gamebook prefixes.** "Ma.Wilson", "Jar.Jones", "Aj.Terrell" and "Dr.Jones"
+  resolve through the initial plus a first-name prefix check
+  (`lookupPlayerByName`); "S.Joseph" matches a hyphenated surname's first half.
+- **Two teammates on one key.** A defensive credit on the snap's defense, away
+  from a kick, takes the one candidate at a defensive position
+  (`attributePlayActors` → `prefer`): "D.Williams" is linebacker Dorian, not
+  tackle Daryl.
+- **Reversed plays.** The narrative reads its tacklers from the corrected
+  version (`authoritativeText`), not the overturned one.
+- **Offense tackling after a lost fumble.** A tackler on the offense's roster
+  on a non-kick snap is credited `idp_tkl` at any position (Sleeper credits
+  linemen and quarterbacks). Rows whose text is a kick are left out until kicks
+  filed under fumble slugs are read as kicks.
+- **Unchanged, by evidence.** Tackles on "No Play" rows are not credited
+  (crediting them broke 469 matching lines and fixed 11). Kick-coverage
+  tackles stay `st_tkl_solo` and out of `idp_tkl` (924 to 1).
+
 ## Game context, penalties, and the remaining shapes (v9.3.8, second pass)
 
 Over weeks 6–9 of 2026 every one of 7,939 rows now parses.
