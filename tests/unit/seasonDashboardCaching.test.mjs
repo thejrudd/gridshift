@@ -148,7 +148,7 @@ test('the finished-game detail store shares one fetch per game and keeps only se
     calls.push(gameId);
     await gate.promise;
     const final = gameId !== 2;
-    return { game: { id: gameId, status: final ? 'Final' : '2nd Quarter' }, coverage: { plays: gameId !== 3 } };
+    return { game: { id: gameId, status: final ? 'Final' : '2nd Quarter' }, coverage: { plays: gameId !== 3, playerStats: true, teamStats: true } };
   };
   const store = createFinishedGameDetailStore({ fetchDetail });
   const pending = [store.get({ gameId: 1 }), store.get({ gameId: 1 }), store.get({ gameId: 2 }), store.get({ gameId: 3 })];
@@ -230,5 +230,18 @@ test('without a provider key the player service builds from Sleeper alone', asyn
   const payload = await service.season({ season: 2024, team: 'SEA', name: 'Test Player', position: 'WR' });
   assert.deepEqual(payload.games, []);
   assert.equal(payload.remaining, 0);
-  assert.equal(payload.complete, true);
+  // No game list: cached only briefly, so it fills in once a key or the provider returns.
+  assert.equal(payload.complete, false);
+});
+
+test('a finished game counts as settled only once every offered box score has landed', async () => {
+  const { isSettledFinalDetail } = await import('../../server/finishedGameDetails.js');
+  const final = { status: 'Final', date: '2026-11-08T18:00:00Z' };
+  const full = { game: final, coverage: { plays: true, playerStats: true, teamStats: true }, capabilities: { stats: true, teamStats: true } };
+  assert.equal(isSettledFinalDetail(full), true);
+  assert.equal(isSettledFinalDetail({ ...full, coverage: { ...full.coverage, teamStats: false } }), false);
+  assert.equal(isSettledFinalDetail({ ...full, coverage: { ...full.coverage, plays: false } }), false);
+  assert.equal(isSettledFinalDetail({ ...full, game: { status: '3rd Quarter' } }), false);
+  // A plan without team stats never waits for them.
+  assert.equal(isSettledFinalDetail({ ...full, coverage: { ...full.coverage, teamStats: false }, capabilities: { stats: true, teamStats: false } }), true);
 });

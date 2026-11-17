@@ -20,8 +20,9 @@ import {
   buildTeamRanks,
   upcomingGames,
 } from '../src/utils/teamSeason/teamSeasonModel.js';
-import { fetchStatisticsScoresGames, seasonCacheControl, BOX_SCORE_REVALIDATE_MS } from './statisticsScoresHandlers.js';
-import { createFinishedGameDetailStore } from './finishedGameDetails.js';
+import { fetchStatisticsScoresGames, seasonCacheControl } from './statisticsScoresHandlers.js';
+import { createBuiltGameCache, createFinishedGameDetailStore, isSettledFinalDetail } from './finishedGameDetails.js';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 
 const MIN_SEASON = 2022;
 const DETAIL_CONCURRENCY = 3;
@@ -30,7 +31,7 @@ const TEAM_STATS_TTL_MS = 15 * 60_000;
 const DEPTH_CHART_TTL_MS = 60 * 60_000;
 const ESPN_DEPTH_CHART_URL = (team) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${team}/depthcharts`;
 
-const isFinal = (game) => /^final/i.test(String(game?.status ?? ''));
+const isFinal = (game) => isFinalGame(game);
 
 function badRequest(message) {
   const error = new Error(message);
@@ -60,30 +61,11 @@ export function createTeamSeasonService({
   // Shared with the player dashboard so each finished game is held once.
   gameDetails = createFinishedGameDetailStore({ gateway, snapshotStore, archive, env }),
 } = {}) {
-  const gameCache = new Map(); // `${gameId}|${team}` -> built game (finished games with plays only)
+  const builtGames = createBuiltGameCache({ maxEntries: MAX_GAME_ENTRIES }); // finished, settled games per subject
   const depthCache = new Map(); // ESPN team abbreviation -> { at, depthchart }
-  const inFlight = new Map();
 
-  function coalesce(key, task) {
-    if (inFlight.has(key)) return inFlight.get(key);
-    const pending = task().finally(() => inFlight.delete(key));
-    inFlight.set(key, pending);
-    return pending;
-  }
 
-  // Built games expire with the archive's recheck interval so stat corrections reach the dashboards.
-  function freshGame(key) {
-    const entry = gameCache.get(key);
-    if (entry && Date.now() - entry.at < BOX_SCORE_REVALIDATE_MS) return entry.value;
-    if (entry) gameCache.delete(key);
-    return undefined;
-  }
 
-  function remember(key, value) {
-    gameCache.delete(key);
-    gameCache.set(key, { value, at: Date.now() });
-    while (gameCache.size > MAX_GAME_ENTRIES) gameCache.delete(gameCache.keys().next().value);
-  }
 
   async function leagueTeamStats(season) {
     if (!gateway?.supports?.('teamStats')) return [];
@@ -144,14 +126,14 @@ export function createTeamSeasonService({
       const [built, teamStatRows] = await Promise.all([
         mapWithConcurrency(finals, DETAIL_CONCURRENCY, async (game) => {
           const key = `${game.id}|${team}`;
-          const cachedGame = freshGame(key);
+          const cachedGame = builtGames.get(key);
           if (cachedGame !== undefined) return { result: cachedGame, settled: true };
-          return coalesce(`game:${key}`, async () => {
+          return builtGames.coalesce(key, async () => {
             const detail = await gameDetails.get({ gameId: game.id, phase: 'regular' });
             const result = buildTeamGame(detail, team);
-            // Games whose plays have not landed are rebuilt on the next request.
-            const settled = Boolean(detail.coverage?.plays);
-            if (result && settled) remember(key, result);
+            // Games whose plays or box scores have not landed are rebuilt on the next request.
+            const settled = isSettledFinalDetail(detail);
+            if (result && settled) builtGames.set(key, result);
             return { result, settled };
           });
         }),

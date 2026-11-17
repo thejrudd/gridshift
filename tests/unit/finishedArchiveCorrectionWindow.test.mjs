@@ -62,3 +62,22 @@ test('the default window keeps the old rule: no recheck inside it', async () => 
   assert.equal(calls(), 2);
   assert.equal(archive.rows.get('k').verified, true);
 });
+
+test('a recheck that comes back incomplete keeps the archived row and waits a full interval', async () => {
+  clock.t = ENDED + HOUR;
+  const archive = memoryArchive();
+  let calls = 0;
+  const responses = [finalPayload(1), { data: null }, { data: null }];
+  const read = () => readThroughFinishedArchive({
+    archive, key: 'k', now, correctionWindowMs: 7 * 24 * HOUR, revalidateAfterMs: 6 * HOUR,
+    fetchFresh: async () => ({ payload: responses[calls++], cacheInfo: {} }),
+  });
+  await read();
+  clock.t += 7 * HOUR;
+  const served = await read();
+  assert.equal(calls, 2);
+  assert.equal(served.payload.data[0].n, 1, 'the archived box score is served, not the empty recheck');
+  clock.t += HOUR;
+  await read();
+  assert.equal(calls, 2, 'the restamped row is not rechecked again before the interval');
+});

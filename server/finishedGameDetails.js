@@ -16,6 +16,50 @@ import { fetchStatisticsScoresGameDetail, BOX_SCORE_REVALIDATE_MS } from './stat
 
 const DEFAULT_MAX_ENTRIES = 160;
 
+/**
+ * A finished game whose detail can be cached and counted as complete: final,
+ * its plays landed, and every box score the provider plan offers is present
+ * (team stats often trail the final whistle).
+ */
+export function isSettledFinalDetail(detail) {
+  if (!detail?.game || !isFinalGame(detail.game)) return false;
+  const coverage = detail.coverage ?? {};
+  const capabilities = detail.capabilities ?? {};
+  return coverage.plays === true
+    && (capabilities.stats === false || coverage.playerStats === true)
+    && (capabilities.teamStats === false || coverage.teamStats === true);
+}
+
+/**
+ * The player and team dashboards' per-subject built games: least recently used
+ * eviction, entries expire with the archive's recheck interval so stat
+ * corrections reach the dashboards, and concurrent builds of one key share a
+ * single promise.
+ */
+export function createBuiltGameCache({ maxEntries, maxAgeMs = BOX_SCORE_REVALIDATE_MS, now = () => Date.now() } = {}) {
+  const entries = new Map();
+  const inFlight = new Map();
+  return {
+    get(key) {
+      const entry = entries.get(key);
+      if (entry && now() - entry.at < maxAgeMs) return entry.value;
+      if (entry) entries.delete(key);
+      return undefined;
+    },
+    set(key, value) {
+      entries.delete(key);
+      entries.set(key, { value, at: now() });
+      while (entries.size > maxEntries) entries.delete(entries.keys().next().value);
+    },
+    coalesce(key, task) {
+      if (inFlight.has(key)) return inFlight.get(key);
+      const pending = task().finally(() => inFlight.delete(key));
+      inFlight.set(key, pending);
+      return pending;
+    },
+  };
+}
+
 export function createFinishedGameDetailStore({
   gateway,
   snapshotStore,
@@ -49,7 +93,7 @@ export function createFinishedGameDetailStore({
       if (inFlight.has(key)) return inFlight.get(key);
       const pending = fetchDetail({ gameId, phase, gateway, env, snapshotStore, archive })
         .then((detail) => {
-          if (detail?.game && isFinalGame(detail.game) && detail.coverage?.plays) remember(key, { detail, storedAt: now() });
+          if (isSettledFinalDetail(detail)) remember(key, { detail, storedAt: now() });
           return detail;
         })
         .finally(() => inFlight.delete(key));
