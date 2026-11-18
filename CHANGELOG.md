@@ -1585,9 +1585,17 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Weeks in order on desktop** - Advanced mode lists a team's weeks down the first column, then continues in the second.
 - **Rank dots on touch screens** - On a player's Statistics page, tapping a rank dot names that player and highlights the dot; tapping the same player again opens their stats page.
 
-## v9.4.4 - Mobile UI Polish
+## v9.4.4 - No-League Mode, Speed & Live Accuracy
 *2026-11-18*
 
+- **Use GridShift without a league** - With no league connected, Fantasy, League, Trade and Draft leave the sidebar and bottom bar, and a Connect League button takes their place. "Continue Without a League" on the connect page goes straight to Statistics.
+- **Sample-data tour** - The first-run tour shows Fantasy, League, Trade and Draft with sample data when no league is connected, and ends with a prompt to connect a league or keep going without one.
+- **Faster Fantasy first load** - Each week's player teams now come with Sleeper's own stats instead of one lookup per player. A cold load drops from over a thousand requests to a few dozen, a reload makes almost none, and fantasy points are calculated several times faster.
+- **Instant season stats** - Reopening a player's or team's season stats is instant, finished games are fetched once and shared across every player in them, and a server restart no longer starts from scratch.
+- **Less background work** - Live Matchups updates quickly only while a game in the matchup is live, slows down otherwise, and stops while the tab is hidden; finished schedule weeks are never downloaded again.
+- **One play-by-play engine** - Statistics Scores now reads plays with the same engine as Fantasy, so who gets credit, play order and game status agree everywhere.
+- **Play credit matches Sleeper** - Plays are credited the way Sleeper's official stats count them, checked against every game of weeks 1 to 10: interceptions returned and fumbled, plays with several fumbles, recoveries of your own team's fumble, solo and assisted tackles, QB hits, first downs, reversed plays, punts filed as fumbles, aborted snaps, blocked kicks, muffed punts, and players listed by legal name.
+- **Late stat corrections** - Fantasy and Statistics keep checking a finished week for official stat corrections for about a week before treating it as final.
 - **Schedule game sheet** - A compact score bar stays under the header once the scoreboard scrolls away, and finished games drop the repeated week and the "Now" record label.
 - **Team page header** - The header is condensed to the current-season record, division place, and point differential; the next-game banner is one tappable card, and phones get wider side margins.
 - **League Standings** - One table with a single sticky header, highlights for playoff spots and division leaders, and team names that open the roster.
