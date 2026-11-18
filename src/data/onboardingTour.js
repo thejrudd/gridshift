@@ -129,3 +129,104 @@ export const ONBOARDING_TOUR = [
     ],
   },
 ];
+
+// League-less first run: the same overview, with Fantasy, League, Trade, and
+// Draft shown on sample data (src/components/tour/TourFantasyPreview.jsx).
+// Statistics and Predict are real screens, since neither needs a league.
+const replayFeatures = ONBOARDING_TOUR[0].features.filter((feature) => (
+  feature.id === 'onboarding-guide' || feature.id === 'onboarding-replay'
+));
+
+function previewFeature(id, name, description, tab, route, step) {
+  return {
+    id,
+    name,
+    description,
+    steps: [{
+      route,
+      anchor: `[data-tour="preview-${tab}"]`,
+      anchorMobile: null,
+      placement: 'auto',
+      ...step,
+    }],
+  };
+}
+
+export const ONBOARDING_PREVIEW_TOUR = [
+  {
+    title: 'GridShift overview',
+    features: [
+      previewFeature(
+        'onboarding-preview-fantasy',
+        'Fantasy',
+        'Your connected fantasy decision workspace.',
+        'fantasy',
+        { activeTab: 'fantasy', companionView: 'rosters' },
+        {
+          title: 'Manage your fantasy teams',
+          body: 'Connect a league to review rosters, rankings, matchups, heatmaps, defenses, and scoring settings in one place. This is sample data.',
+        },
+      ),
+      previewFeature(
+        'onboarding-preview-league',
+        'League',
+        'Standings, history, and league activity.',
+        'league',
+        { activeTab: 'league', leagueView: 'standings' },
+        {
+          title: 'Follow the whole league',
+          body: 'See current standings, long-term league history, and the completed transaction feed for your league.',
+        },
+      ),
+      {
+        id: 'onboarding-preview-statistics',
+        name: 'Statistics',
+        description: 'NFL schedules, standings, teams, and players.',
+        steps: [{
+          route: { activeTab: 'statistics' },
+          anchor: '[data-tour="tab-statistics"]',
+          anchorMobile: null,
+          title: 'Explore NFL statistics',
+          body: 'Browse schedules and standings, then open team and player drilldowns for deeper season context. No league needed.',
+          placement: 'auto',
+        }],
+      },
+      previewFeature(
+        'onboarding-preview-trade',
+        'Trade',
+        'Sleeper trade building and analysis.',
+        'trade',
+        { activeTab: 'trade' },
+        {
+          title: 'Build better trades',
+          body: 'Build and analyze trades, find roster upgrades, compare values, and review your league\'s completed trades.',
+        },
+      ),
+      previewFeature(
+        'onboarding-preview-draft',
+        'Draft',
+        'Planning and results for your league draft.',
+        'draft',
+        { activeTab: 'draft' },
+        {
+          title: 'Prepare for draft day',
+          body: 'Use the War Room and your personal board before the draft, then follow upcoming picks or review completed results.',
+        },
+      ),
+      {
+        id: 'onboarding-preview-predictions',
+        name: 'Predict',
+        description: 'Build your view of the NFL season.',
+        steps: [{
+          route: { activeTab: 'predictions' },
+          anchor: '[data-tour="tab-predictions"]',
+          anchorMobile: null,
+          title: 'Predict the season',
+          body: 'Choose team records and games, then build the playoff picture created by your predictions. No league needed.',
+          placement: 'auto',
+        }],
+      },
+      ...replayFeatures,
+    ],
+  },
+];

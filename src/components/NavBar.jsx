@@ -1,5 +1,5 @@
 // Mobile + tablet top bar (hidden on lg+ via CSS — sidebar handles desktop nav)
-export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, onSearchOpen, seasonSelector = null, scrolled = false }) {
+export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, onSearchOpen, seasonSelector = null, onConnectLeague = null, scrolled = false }) {
   return (
     <header
       className={`nav-bar${scrolled ? ' scrolled' : ''}`}
@@ -73,6 +73,22 @@ export default function NavBar({ darkMode, onToggleDarkMode, onMenuOpen, onSearc
       {/* Right: league-year selector (when connected) + overflow menu */}
       <div className="flex items-center gap-1">
         {seasonSelector}
+        {onConnectLeague && (
+          <button
+            type="button"
+            onClick={onConnectLeague}
+            data-tour="connect-league"
+            aria-label="Connect league"
+            className="inline-flex h-11 shrink-0 items-center active:opacity-70"
+          >
+            <span
+              className="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold"
+              style={{ background: 'var(--color-fill)', color: 'var(--color-label)', border: '1px solid var(--color-separator)' }}
+            >
+              Connect<span className="hidden min-[480px]:inline">&nbsp;League</span>
+            </span>
+          </button>
+        )}
         <button
           onClick={onMenuOpen}
           className="nav-bar-btn"

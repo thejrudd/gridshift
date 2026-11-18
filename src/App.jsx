@@ -30,7 +30,7 @@ import useOnboardingTour from './hooks/useOnboardingTour';
 import useDraftSync from './hooks/useDraftSync.js';
 import useTradeProposals from './hooks/useTradeProposals.js';
 import useSeasonScheduleResults from './hooks/useSeasonScheduleResults.js';
-import { ONBOARDING_TOUR } from './data/onboardingTour';
+import { ONBOARDING_PREVIEW_TOUR, ONBOARDING_TOUR } from './data/onboardingTour';
 import { ONBOARDING_PHASE } from './utils/onboardingTour';
 import UpdateBanner from './components/UpdateBanner';
 import NavBar from './components/NavBar';
@@ -97,6 +97,8 @@ const WhatsNewModal = lazy(() => import('./components/WhatsNewModal'));
 const GlobalSearchPalette = lazy(() => import('./components/search/GlobalSearchPalette'));
 const OnboardingWelcomeModal = lazy(() => import('./components/OnboardingWelcomeModal'));
 const TourOverlay = lazy(() => import('./components/tour/TourOverlay'));
+const OnboardingConnectModal = lazy(() => import('./components/OnboardingConnectModal'));
+const TourFantasyPreview = lazy(() => import('./components/tour/TourFantasyPreview'));
 const PlayerBrowser = lazy(() => import('./components/PlayerBrowser'));
 const StatisticsSchedule = lazy(() => import('./components/StatisticsSchedule'));
 const StatisticsScores = lazy(() => import('./components/statistics/scores/StatisticsScores'));
@@ -135,6 +137,7 @@ const TradeShareLanding = lazy(() => import('./components/companion/TradeShareLa
 const ScoutTab = lazy(() => import('./components/scout/ScoutTab'));
 const DraftAssistant = lazy(() => import('./components/draft/DraftAssistant'));
 const DRAFT_NAV_POLL_MS = 15_000;
+const LEAGUE_DEPENDENT_TABS = ['fantasy', 'league', 'trade', 'draft'];
 const DRAFT_ACTIVITY_NOTICE_TABS = new Set(['predictions', 'statistics', 'fantasy', 'league', 'trade', 'scout']);
 const DEV_DRAFT_OVERRIDE_PARAM_KEYS = ['sleeperDraftId', 'draftId'];
 
@@ -275,16 +278,17 @@ function LeagueContextHeader({
   onSwitchLeague,
   className,
 }) {
+  const hasLeagueContext = Boolean(league);
   const years = seasonOptions?.length ? seasonOptions : [String(league?.season ?? season)];
 
   return (
     <div className={className ?? 'flex items-center gap-2 mt-3 mb-3 px-4'}>
-      <div className="flex-1 min-w-0">
+      {hasLeagueContext && <div className="flex-1 min-w-0">
         <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-label-secondary)' }}>
           {league?.name ?? 'League'}
         </span>
-      </div>
-      {years.length > 1 && (
+      </div>}
+      {hasLeagueContext && years.length > 1 && (
         <div className="flex gap-1 shrink-0">
           {years.map(s => {
             const isActive = season === s;
@@ -318,7 +322,7 @@ function LeagueContextHeader({
           color: 'var(--color-label-secondary)',
           border: '1px solid var(--color-separator)',
         }}
-        aria-label="Switch league"
+        aria-label={hasLeagueContext ? 'Switch league' : 'Connect league'}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M7 7h11l-3-3" />
@@ -326,7 +330,7 @@ function LeagueContextHeader({
           <path d="M18 7l-3 3" />
           <path d="M6 17l3-3" />
         </svg>
-        Switch
+        {hasLeagueContext ? 'Switch' : 'Connect League'}
       </button>
     </div>
   );
@@ -638,6 +642,7 @@ function AppInner() {
   } = useWhatsNew({ enabled: hasLeague });
   const {
     phase: onboardingPhase, begin: beginOnboarding, startManual: startManualOnboarding, complete: completeOnboarding,
+    finishPreview: finishPreviewOnboarding,
   } = useOnboardingTour({ isFirstRun, hasLeague });
   const whatsNewEntries = useMemo(() => whatsNewPending
     .map((entry) => ({
@@ -768,6 +773,14 @@ function AppInner() {
   const tradeShareToken = appRoute.tradeShareToken;
   const scoutView = appRoute.scoutView;
   const leagueDisabledForPlatform = false;
+  // Without a league, nav hides the league-dependent tabs, including the open one:
+  // a league tab shows only the connect page then, with no section selected.
+  // The league-less app tour shows those tabs on sample data instead.
+  const tourPreviewActive = !hasLeague && onboardingPhase === ONBOARDING_PHASE.tour;
+  const leagueDependentHiddenTabs = useMemo(
+    () => (hasLeague || tourPreviewActive ? [] : LEAGUE_DEPENDENT_TABS),
+    [hasLeague, tourPreviewActive],
+  );
   const draftView = appRoute.draftView;
   const draftSleeperDraftId = appRoute.sleeperDraftId;
   const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
@@ -1806,15 +1819,31 @@ function AppInner() {
   const handleBeginOnboarding = useCallback(() => {
     prepareOnboardingLayout();
     beginOnboarding();
-    if (!hasLeague) {
-      applyRoute({ activeTab: 'fantasy', companionView: 'rosters' });
-    }
-  }, [applyRoute, beginOnboarding, hasLeague, prepareOnboardingLayout]);
+  }, [beginOnboarding, prepareOnboardingLayout]);
 
   const handleCompleteOnboarding = useCallback(() => {
     completeOnboarding();
     restoreOnboardingLayout();
   }, [completeOnboarding, restoreOnboardingLayout]);
+
+  // The league-less tour ends back on the initial screen with the connect prompt.
+  const handleFinishPreviewTour = useCallback(() => {
+    finishPreviewOnboarding();
+    restoreOnboardingLayout();
+    applyRoute({ activeTab: 'fantasy', companionView: 'rosters' });
+  }, [applyRoute, finishPreviewOnboarding, restoreOnboardingLayout]);
+
+  const handleConnectAfterTour = useCallback(() => {
+    handleCompleteOnboarding();
+    setLeagueSwitcherOpen(true);
+  }, [handleCompleteOnboarding]);
+
+  // Leaving the connect page without a league: end any setup handoff and land
+  // on Statistics, which needs no league. Connect League stays in the header.
+  const handleContinueWithoutLeague = useCallback(() => {
+    if (onboardingPhase !== ONBOARDING_PHASE.idle) handleCompleteOnboarding();
+    applyRoute({ activeTab: 'statistics', statisticsView: 'browser' });
+  }, [applyRoute, handleCompleteOnboarding, onboardingPhase]);
 
   // season-schedule.json ships without scores; hydrate it with live ESPN results
   // so Standings, Schedule, and the Game view all read real outcomes.
@@ -2151,6 +2180,7 @@ function AppInner() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapsed}
         leagueDisabled={leagueDisabledForPlatform}
+        hiddenTabs={leagueDependentHiddenTabs}
         tradeDisabled={tradeNavDisabled}
         tradeUnreadCount={tradeProposalActions.unreadCount}
       />
@@ -2173,6 +2203,7 @@ function AppInner() {
               compact
             />
           ) : null}
+          onConnectLeague={!hasLeague && !LEAGUE_DEPENDENT_TABS.includes(activeTab) ? () => setLeagueSwitcherOpen(true) : null}
           scrolled={contentScrolled}
         />
 
@@ -2218,6 +2249,16 @@ function AppInner() {
               playoffsEnabled={predictionFlowCapabilities.regularSeasonReady}
             />
             {predictionNavigationNotice && <p className="predictions-navigation-notice" role="status" aria-live="polite">{predictionNavigationNotice}</p>}
+            {!hasLeague && (
+              <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+                <LeagueContextHeader
+                  league={null}
+                  season={season}
+                  onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                  className="flex items-center gap-2"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -2282,6 +2323,16 @@ function AppInner() {
         {activeTab === 'scout' && (
           <div className="season-subnav">
             <ScoutSubNav activeView={scoutView} onViewChange={navigateScoutView} />
+            {!hasLeague && (
+              <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+                <LeagueContextHeader
+                  league={null}
+                  season={season}
+                  onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                  className="flex items-center gap-2"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -2312,6 +2363,16 @@ function AppInner() {
               activeView={['schedule', 'scores', 'standings'].includes(statisticsView) ? statisticsView : 'stats'}
               onViewChange={navigateStatisticsSubView}
             />
+            {!hasLeague && (
+              <div className="hidden lg:flex items-center absolute bottom-0 right-8 pb-[9px]">
+                <LeagueContextHeader
+                  league={null}
+                  season={season}
+                  onSwitchLeague={() => setLeagueSwitcherOpen(true)}
+                  className="flex items-center gap-2"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -2525,21 +2586,27 @@ function AppInner() {
             </Suspense>
           )}
 
-          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && !liveSandboxRoute && (
-            <Suspense fallback={<SectionLoading label="Loading connect" />}>
-              <CompanionConnect />
+          {tourPreviewActive && LEAGUE_DEPENDENT_TABS.includes(activeTab) && (
+            <Suspense fallback={<SectionLoading label="Loading preview" />}>
+              <TourFantasyPreview tab={activeTab} />
             </Suspense>
           )}
 
-          {activeTab === 'trade' && !hasLeague && !tradeShareToken && (
+          {(activeTab === 'fantasy' || activeTab === 'league') && !hasLeague && !tourPreviewActive && !liveSandboxRoute && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
-              <CompanionConnect />
+              <CompanionConnect onContinueWithoutLeague={handleContinueWithoutLeague} />
             </Suspense>
           )}
 
-          {activeTab === 'draft' && !hasLeague && (
+          {activeTab === 'trade' && !hasLeague && !tourPreviewActive && !tradeShareToken && (
             <Suspense fallback={<SectionLoading label="Loading connect" />}>
-              <CompanionConnect />
+              <CompanionConnect onContinueWithoutLeague={handleContinueWithoutLeague} />
+            </Suspense>
+          )}
+
+          {activeTab === 'draft' && !hasLeague && !tourPreviewActive && (
+            <Suspense fallback={<SectionLoading label="Loading connect" />}>
+              <CompanionConnect onContinueWithoutLeague={handleContinueWithoutLeague} />
             </Suspense>
           )}
 
@@ -2860,6 +2927,7 @@ function AppInner() {
           onTabChange={navigateToTab}
           tradeDisabled={tradeNavDisabled}
           leagueDisabled={leagueDisabledForPlatform}
+          hiddenTabs={leagueDependentHiddenTabs}
         />
       </div>
 
@@ -2926,6 +2994,7 @@ function AppInner() {
           leagueSeasonOptions={linkedLeagueSeasonOptions}
           leagueSeasonSwitching={seasonSwitching}
           onLeagueSeasonChange={changeSeason}
+          hasLeague={hasLeague}
           onSwitchLeague={() => {
             setActionSheetOpen(false);
             setLeagueSwitcherOpen(true);
@@ -2948,11 +3017,21 @@ function AppInner() {
       {!needRefresh && onboardingPhase === ONBOARDING_PHASE.tour && (
         <Suspense fallback={null}>
           <TourOverlay
-            entries={ONBOARDING_TOUR}
+            key={hasLeague ? 'league' : 'preview'}
+            entries={hasLeague ? ONBOARDING_TOUR : ONBOARDING_PREVIEW_TOUR}
             navigate={applyRoute}
             currentRoute={appRoute}
             context={{ tourViewport: window.innerWidth < 1024 ? 'mobile' : 'desktop' }}
-            onFinish={handleCompleteOnboarding}
+            onFinish={hasLeague ? handleCompleteOnboarding : handleFinishPreviewTour}
+          />
+        </Suspense>
+      )}
+      {!needRefresh && onboardingPhase === ONBOARDING_PHASE.connect && !hasLeague && (
+        <Suspense fallback={null}>
+          <OnboardingConnectModal
+            onConnect={handleConnectAfterTour}
+            onContinue={handleContinueWithoutLeague}
+            onDismiss={handleCompleteOnboarding}
           />
         </Suspense>
       )}
@@ -3055,9 +3134,9 @@ function AppInner() {
           >
             <div className="league-switcher-modal__header">
               <div>
-                <span className="league-switcher-modal__eyebrow">Switch league</span>
-                <h2 id="league-switcher-title">Choose your league</h2>
-                <p id="league-switcher-description">Pick a league year, then choose where you want to go.</p>
+                <span className="league-switcher-modal__eyebrow">{hasLeague ? 'Switch league' : 'Connect league'}</span>
+                <h2 id="league-switcher-title">{hasLeague ? 'Choose your league' : 'Connect your league'}</h2>
+                <p id="league-switcher-description">{hasLeague ? 'Pick a league year, then choose where you want to go.' : 'Add a league to unlock rosters, trades, and draft tools.'}</p>
               </div>
               <button
                 type="button"

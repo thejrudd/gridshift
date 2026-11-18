@@ -255,3 +255,27 @@ test('chronological order is applied before the group is truncated', () => {
   assert.equal(first.record.id, all[0].record.id);
   assert.equal(first.record.meta.week, 3);
 });
+
+test('a bare "fantasy" finds the Fantasy destinations instead of matching nothing', () => {
+  const labels = flatLabels('fantasy');
+  assert.ok(labels.includes('Fantasy schedule'), 'the scope word is also a section name');
+  assert.ok(labels.includes('Matchups'), 'views that never say the word are found by their section');
+});
+
+test('"fantasy" with no league connected has no league destinations to show', async () => {
+  const { filterStaticRecordsForLeague } = await import('../../src/utils/globalSearch/buildIndex.js');
+  const noLeague = composeIndex({
+    staticRecords: filterStaticRecordsForLeague(
+      buildStaticRecords({ scheduleData: SCHEDULE_DATA, seasonSchedule: SEASON_SCHEDULE }), false,
+    ),
+    playerRecords: buildPlayerRecords(PLAYERS),
+    leagueRecords: [],
+  });
+  const labels = rankResults(noLeague, parseGlobalQuery('fantasy')).flatMap((group) => group.results.map((entry) => entry.record.label));
+  assert.equal(labels.includes('Matchups'), false);
+  assert.equal(labels.includes('Fantasy schedule'), false);
+});
+
+test('the fantasy scope still narrows a standings question', () => {
+  assert.equal(parseGlobalQuery('fantasy standings').scope, 'fantasy');
+});

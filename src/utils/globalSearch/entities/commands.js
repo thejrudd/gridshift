@@ -15,7 +15,7 @@ const COMMANDS = [
   { id: 'whatsNew', label: "What's new", aliases: ['whats new', 'release notes', 'changelog', 'updates'] },
   { id: 'guide', label: 'Open guide', aliases: ['help', 'how to', 'tutorial', 'guide'] },
   { id: 'league.switch', label: 'Switch league', aliases: ['change league', 'another league'] },
-  { id: 'league.connect', label: 'Connect a league', aliases: ['connect', 'link league', 'add league', 'sign in'] },
+  { id: 'league.connect', label: 'Connect a league', aliases: ['connect', 'fantasy', 'sleeper', 'link league', 'add league', 'sign in'] },
   { id: 'export', label: 'Export', aliases: ['share image', 'download', 'export image'] },
 ];
 

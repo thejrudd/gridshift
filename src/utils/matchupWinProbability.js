@@ -54,7 +54,7 @@ export function hasFinalMatchupGameEvidence(
   players = [],
   { scheduleWeekComplete = false, scheduleWeekFinal = false, now = Date.now() } = {},
 ) {
-  const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
+  const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty' && !player.isUnavailable);
   if (!starters.length) return false;
   // Every game of a complete schedule week is official, so no starter can
   // still be playing, even one with no schedule row of their own. Starters are
@@ -94,7 +94,7 @@ function resolveStarterState(player, now) {
 }
 
 function buildSide(players, customPoints, now, { settledConfirmed = false, officialPoints = null } = {}) {
-  const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
+  const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty' && !player.isUnavailable);
   const starterState = starters.map((player) => ({ player, ...resolveStarterState(player, now) }));
   const outlook = computeSideOutlook(starterState.map(({ player, state, fraction }) => getStarterOutlook({
     current: player.weekPts,
