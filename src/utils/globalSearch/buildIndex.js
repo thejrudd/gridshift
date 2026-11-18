@@ -10,6 +10,7 @@
 // without rebuilding the rest.
 
 import { createIndex } from './tokenIndex.js';
+import { KIND_APP_VIEW, KIND_COMMAND } from './entities/record.js';
 import { buildAppViewRecords } from './entities/appViews.js';
 import { buildCommandRecords } from './entities/commands.js';
 import { buildFantasyTeamRecords } from './entities/fantasyTeams.js';
@@ -38,6 +39,30 @@ export function buildStaticRecords({ scheduleData = {}, seasonSchedule = {} } = 
  */
 export function buildLeagueRecords(league = {}) {
   return buildFantasyTeamRecords(league);
+}
+
+// Destinations and commands that only mean something with a connected league.
+// The static artifact is built without knowing about leagues, so these are
+// filtered at runtime. Scout, Statistics, Predictions, and the theme/display
+// commands need no league and always stay.
+const LEAGUE_VIEW_SECTIONS = new Set(['Fantasy', 'League', 'Trade', 'Draft']);
+const LEAGUE_COMMAND_IDS = new Set(['league.switch']);
+// The mirror image: only useful before a league is connected.
+const NO_LEAGUE_COMMAND_IDS = new Set(['league.connect']);
+
+export function isLeagueDependentRecord(record) {
+  if (record?.kind === KIND_APP_VIEW) return LEAGUE_VIEW_SECTIONS.has(record.meta?.section);
+  if (record?.kind === KIND_COMMAND) return LEAGUE_COMMAND_IDS.has(record.command);
+  return false;
+}
+
+/**
+ * The static slice as it should be searched: league-only records dropped when no
+ * league is connected, and the connect command dropped once one is.
+ */
+export function filterStaticRecordsForLeague(records = [], hasLeague = false) {
+  if (!hasLeague) return records.filter((record) => !isLeagueDependentRecord(record));
+  return records.filter((record) => !(record.kind === KIND_COMMAND && NO_LEAGUE_COMMAND_IDS.has(record.command)));
 }
 
 /**

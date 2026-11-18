@@ -77,7 +77,7 @@ export function buildMatchupScoredSources(players, total, {
   projectedFinal = null,
   bench = [],
 } = {}) {
-  const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty');
+  const starters = (players ?? []).filter((player) => player?.id && player?.name !== 'Empty' && !player.isUnavailable);
   if (!starters.length) return null;
 
   const counts = { pre: 0, live: 0, final: 0 };

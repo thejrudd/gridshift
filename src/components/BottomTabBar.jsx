@@ -2,7 +2,7 @@ import StatusBadge from './ui/StatusBadge';
 
 const TAB_BADGE_OVERLAY = { position: 'absolute', top: '-5px', right: '-15px' };
 
-export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', leagueDisabled = false }) {
+export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', leagueDisabled = false, hiddenTabs = [] }) {
   const tabs = [
     { id: 'fantasy',     label: 'Fantasy',      renderIcon: (active) => <CompanionIcon active={active} />, dataTour: 'tab-companion' },
     { id: 'league',      label: 'League',       renderIcon: (active) => <LeagueIcon active={active} />, disabled: leagueDisabled, disabledTitle: 'League history is available for connected Sleeper leagues.' },
@@ -10,7 +10,7 @@ export default function BottomTabBar({ activeTab, onTabChange, tradeDisabled = f
     { id: 'trade',       label: 'Trade',       renderIcon: (active) => <TradeIcon active={active} />, disabled: tradeDisabled, disabledTitle: tradeDisabledTitle },
     { id: 'draft',       label: 'Draft',       renderIcon: (active) => <DraftIcon active={active} />, beta: true },
     { id: 'predictions', label: 'Predict', renderIcon: (active) => <SeasonIcon active={active} />, beta: true },
-  ];
+  ].filter((tab) => !hiddenTabs.includes(tab.id));
 
   return (
     <nav className="tab-bar" aria-label="Main navigation">

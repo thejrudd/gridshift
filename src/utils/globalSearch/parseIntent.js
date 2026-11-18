@@ -92,7 +92,11 @@ function pushUnique(list, value) {
 const SOFT_TERM_TYPES = new Set(['intent', 'superlative', 'command']);
 
 function applyTag(slots, tag, words = []) {
-  if (SOFT_TERM_TYPES.has(tag.type)) {
+  // "fantasy" scopes a standings or record question, and is also the name of a
+  // whole section. Kept as a soft term so a bare "fantasy" finds its destinations
+  // instead of being consumed by the scope and matching nothing.
+  const isFantasyScope = tag.type === 'scope' && tag.val === 'fantasy';
+  if (SOFT_TERM_TYPES.has(tag.type) || isFantasyScope) {
     for (const word of words) if (!slots.softTerms.includes(word)) slots.softTerms.push(word);
   }
   const values = Array.isArray(tag.val) ? tag.val : [tag.val];

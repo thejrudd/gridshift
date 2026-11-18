@@ -90,6 +90,23 @@ test('Matchup win probability exposes a lower-confidence fallback instead of hid
   assert.ok(result.sigma > 0);
 });
 
+test('Matchup win probability scores a roster spot with no player record as zero', () => {
+  const missing = { id: 'ghost', name: 'Player record unavailable', position: '?', weekPts: null, isUnavailable: true };
+  const base = buildMatchupWinProbability({
+    myPlayers: [player({ id: 'mine', projected: 12 })],
+    opponentPlayers: [player({ id: 'opponent', projected: 12 })],
+    now,
+  });
+  const withMissing = buildMatchupWinProbability({
+    myPlayers: [player({ id: 'mine', projected: 12 }), missing],
+    opponentPlayers: [player({ id: 'opponent', projected: 12 })],
+    now,
+  });
+  assert.equal(withMissing.expectedA, base.expectedA);
+  assert.equal(withMissing.starterCount, base.starterCount);
+  assert.equal(withMissing.unresolvedCount, 0);
+});
+
 test('Matchup win probability includes custom matchup points in the expected final', () => {
   const result = buildMatchupWinProbability({
     myPlayers: [player({ id: 'mine', projected: 10 })],

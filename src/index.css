@@ -12869,7 +12869,7 @@ button.team-dash-depth-cell:focus-visible { outline: 2px solid var(--color-accen
 
 button.team-dash-tape__col { cursor: pointer; }
 button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
-.team-dash-tape__col.is-upcoming { opacity: 0.45; }
+.team-dash-tape__col.is-upcoming { opacity: 0.6; }
 .team-dash-tape__up, .team-dash-tape__down { position: relative; width: 100%; }
 .team-dash-tape__up { border-bottom: 1px solid var(--color-label-quaternary); }
 .team-dash-tape__up i, .team-dash-tape__down i { position: absolute; left: 50%; width: 58%; max-width: 26px; transform: translateX(-50%); }
@@ -12878,10 +12878,10 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 .team-dash-tape i.is-win { background: var(--color-accent-green); }
 .team-dash-tape i.is-loss { background: var(--color-accent-red); }
 .team-dash-tape i.is-ghost { bottom: 0; height: 18px; border: 1px dashed var(--color-separator-opaque); border-bottom: 0; }
-.team-dash-tape em { position: absolute; left: 0; right: 0; font-style: normal; font-size: var(--type-micro); font-weight: 700; text-align: center; color: var(--color-label-secondary); }
-.team-dash-tape__label { display: grid; justify-items: center; gap: 2px; padding-top: 6px; }
+.team-dash-tape em { position: absolute; left: 0; right: 0; font-style: normal; font-size: var(--type-micro); font-weight: 700; text-align: center; color: var(--color-label); }
+.team-dash-tape__label { display: grid; justify-items: center; gap: 3px; padding-top: 4px; }
 .team-dash-tape__label b { font-family: var(--font-display, 'Barlow Condensed', sans-serif); font-size: var(--type-body); }
-.team-dash-tape__label small { font-size: var(--type-micro); color: var(--color-label-tertiary); white-space: nowrap; }
+.team-dash-tape__label small { font-size: var(--type-micro); color: var(--color-label-secondary); white-space: nowrap; }
 .team-dash-tape__divider { width: 1px; justify-self: center; background: var(--color-separator-opaque); }
 
 .team-dash-team { display: inline-flex; align-items: center; gap: 6px; }

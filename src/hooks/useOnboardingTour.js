@@ -30,21 +30,10 @@ export default function useOnboardingTour({ isFirstRun, hasLeague }) {
     }
   }, [initialStoredStatus, isFirstRun]);
 
-  // Selecting a league completes the setup handoff and resumes the tour.
-  useEffect(() => {
-    if (phase === ONBOARDING_PHASE.awaitingLeague && hasLeague) {
-      setPhase(ONBOARDING_PHASE.tour);
-    }
-  }, [hasLeague, phase]);
-
+  // Without a league the tour runs on sample data, so there is nothing to wait for.
   const begin = useCallback(() => {
-    if (hasLeague) {
-      setPhase(ONBOARDING_PHASE.tour);
-      return;
-    }
-    writeStoredStatus(ONBOARDING_STATUS.awaitingLeague);
-    setPhase(ONBOARDING_PHASE.awaitingLeague);
-  }, [hasLeague]);
+    setPhase(ONBOARDING_PHASE.tour);
+  }, []);
 
   const startManual = useCallback(() => {
     setPhase(hasLeague ? ONBOARDING_PHASE.tour : ONBOARDING_PHASE.welcome);
@@ -55,5 +44,11 @@ export default function useOnboardingTour({ isFirstRun, hasLeague }) {
     setPhase(ONBOARDING_PHASE.idle);
   }, []);
 
-  return { phase, begin, startManual, complete };
+  // A league-less tour ends on the connect prompt instead of the app.
+  const finishPreview = useCallback(() => {
+    writeStoredStatus(ONBOARDING_STATUS.complete);
+    setPhase(ONBOARDING_PHASE.connect);
+  }, []);
+
+  return { phase, begin, startManual, complete, finishPreview };
 }

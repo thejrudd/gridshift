@@ -30,6 +30,7 @@ export default function ActionSheet({
   leagueSeasonOptions = [],
   leagueSeasonSwitching = null,
   onLeagueSeasonChange,
+  hasLeague = false,
   onSwitchLeague,
   onDraftSync,
 }) {
@@ -72,6 +73,12 @@ export default function ActionSheet({
                 </div>;
               })}
             </div>
+          )}
+          {!hasLeague && onSwitchLeague && (
+            <>
+              <ActionRow label="Connect League" onClick={onSwitchLeague} />
+              <Divider />
+            </>
           )}
           {showLeagueControls && (
             <>

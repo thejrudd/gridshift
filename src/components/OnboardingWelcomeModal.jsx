@@ -19,8 +19,9 @@ export default function OnboardingWelcomeModal({ hasLeague, onBegin, onDismiss }
           Your football command center
         </h2>
         <p className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--color-label-secondary)' }}>
-          Connect your Sleeper league to unlock roster insights, trade tools, draft planning, and league-aware scoring.
-          Once your league finishes loading, the app tour will continue automatically.
+          {hasLeague
+            ? 'Take a quick tour of rosters, trades, drafts, statistics, and predictions.'
+            : 'Take a quick tour of rosters, trades, drafts, statistics, and predictions, shown with sample data. You can connect your league at the end.'}
         </p>
       </div>
 
@@ -37,7 +38,7 @@ export default function OnboardingWelcomeModal({ hasLeague, onBegin, onDismiss }
           className="flex-1 rounded-xl px-4 py-2.5 text-base font-semibold"
           style={{ background: 'var(--color-signature)', color: 'var(--color-signature-fg)' }}
         >
-          {hasLeague ? 'Start tour' : 'Connect league'}
+          Start tour
         </button>
       </div>
     </Modal>
