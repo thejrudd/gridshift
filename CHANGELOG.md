@@ -1583,3 +1583,4 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Records stay possible** - Standard mode will not set a record, division record, or automatic balance below the wins and losses a team already has, or above what its remaining games allow.
 - **Played games locked** - In Advanced mode, games already played are greyed out with the final score and can't be changed.
 - **Weeks in order on desktop** - Advanced mode lists a team's weeks down the first column, then continues in the second.
+- **Rank dots on touch screens** - On a player's Statistics page, tapping a rank dot names that player and highlights the dot; tapping the same player again opens their stats page.
