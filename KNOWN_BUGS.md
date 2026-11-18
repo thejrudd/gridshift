@@ -531,3 +531,18 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Fantasy Matchups could hide future or newly active matchup weeks until stale matchup data was refreshed, preventing managers from selecting and previewing the correct week. | v9.0.0 |
 | Fantasy Heatmap could drop incomplete or future weeks from its columns, changing the week axis as the season accumulated data instead of preserving the full season shape. | v9.0.0 |
 | Fantasy Matchup and Statistics Schedule week defaults could remain stale across NFL slate or season-scope changes, leaving the visible surface on the wrong week. | v9.0.0 |
+| An interception returned and then fumbled back to the passing team credited the interception to the passing team's defense and gave the intercepting player, the forcer, the recoverer and the intercepting defense nothing. | v9.4.4 |
+| Plays at midfield, written as a bare "50" in the play-by-play, were not read, so interceptions and fumbles there went uncredited. | v9.4.4 |
+| Recovering your own team's fumble credited a fumble recovery to the player and his team's defense, which Sleeper does not count. | v9.4.4 |
+| Plays with more than one fumble credited only the first fumble, and the team holding the ball afterwards could be wrong. | v9.4.4 |
+| Tackles were miscredited: comma-separated tacklers were all assists instead of one solo and one assist, two-word surnames such as Van Noy dropped the whole tackle, and reversed plays credited the overturned tacklers. | v9.4.4 |
+| QB hits were over-credited on sacks out of bounds and strip-sacks, and split sacks with a two-word surname credited neither player. | v9.4.4 |
+| First downs were credited on failed fourth downs, lost fumbles and touchdowns, and lateral first downs went to the wrong player. | v9.4.4 |
+| Punts and kickoffs the play-by-play files as fumbles were read as offensive plays, crediting defensive recoveries, tackles and fourth-down stops to the wrong team. | v9.4.4 |
+| Aborted snaps, blocked kicks and muffed punts credited carries, catches or returns to the wrong players. | v9.4.4 |
+| Name matching could give one player's stats to another, such as a running back's carries to a defensive tackle with the same surname, and missed defenders listed by legal name instead of nickname. | v9.4.4 |
+| Statistics Scores credited punt-coverage tackles to the receiving team and could match a name to a player on the other team. | v9.4.4 |
+| Plays without a timestamp sorted ahead of every other play, which could award a Matchups milestone bonus to the wrong play. | v9.4.4 |
+| A game shown as "Final/OT" was treated as still live by the Scores live refresh. | v9.4.4 |
+| Fantasy and Statistics stopped picking up official stat corrections shortly after a game finished. | v9.4.4 |
+| Fantasy's first load fired one team lookup per player, over a thousand requests at once, and repeated it every hour. | v9.4.4 |

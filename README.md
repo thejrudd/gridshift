@@ -38,8 +38,7 @@ BALLDONTLIE is optional. Core predictions and many Sleeper league tools work wit
 
 ## Roadmap
 
-- **v9.5 — Performance** — Profile Companion, Heatmap, and Draft to optimize measured bottlenecks while preserving existing data and provider contracts.
-- **After v9.5 — Opponent injuries** — In Fantasy Injuries, see who each rostered player faces this week and how the opposing unit's injuries change that matchup.
+- **Next — Opponent injuries** — In Fantasy Injuries, see who each rostered player faces this week and how the opposing unit's injuries change that matchup.
 - **v9.6 and later — Additive features** — The release order is still provisional. Planned user-facing work includes:
   - **Extra matchup against the league median** — Automatically add each team's second regular-season win, loss, or tie to weekly results, standings, and playoff seeding when Sleeper's league records show the feature is enabled.
   - **More Global Search answers** — Show the connected league's live matchup and a player's live stat line, and find Scout and draft prospects.
