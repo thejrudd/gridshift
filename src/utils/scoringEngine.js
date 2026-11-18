@@ -255,6 +255,28 @@ export function getPositionScoringSettings(scoring, position = null) {
   return { ...flat, ...overrides };
 }
 
+// Per-row scoring reads the same merged settings for every row of a position,
+// so they are built once per scoring object and position. Scoring objects are
+// never edited in place (profiles are rebuilt), so the object is a safe key.
+const POSITION_SETTINGS_CACHE = new WeakMap();
+const DEFAULT_SCORING_KEY = {};
+
+function getCachedPositionScoringSettings(scoring, position) {
+  const key = scoring && typeof scoring === 'object' ? scoring : DEFAULT_SCORING_KEY;
+  let byPosition = POSITION_SETTINGS_CACHE.get(key);
+  if (!byPosition) {
+    byPosition = new Map();
+    POSITION_SETTINGS_CACHE.set(key, byPosition);
+  }
+  const pos = normalizePosition(position);
+  let merged = byPosition.get(pos);
+  if (!merged) {
+    merged = getPositionScoringSettings(scoring, position);
+    byPosition.set(pos, merged);
+  }
+  return merged;
+}
+
 function remapLegacyEspnScoringProfile(scoring, flat) {
   const sourceMeta = scoring?.sourceMeta ?? {};
   const statIdMap = sourceMeta.statIdMap;
@@ -612,6 +634,12 @@ export const STAT_TO_SCORING_KEY = {
   yds_allow_550p: 'yds_allow_550p',
 };
 
+let statScoringEntries = null;
+function getStatScoringEntries() {
+  statScoringEntries ??= Object.entries(STAT_TO_SCORING_KEY);
+  return statScoringEntries;
+}
+
 // ── Core calculation ──────────────────────────────────────────────────────────
 
 /**
@@ -626,20 +654,21 @@ function calcPointsWithSettings(stats, settings, position = null) {
   const appliedTotal = getAppliedFantasyPoints(stats);
   if (appliedTotal != null) return ROUND_2(appliedTotal);
 
-  const positionSettings = getPositionScoringSettings(settings, position);
+  const positionSettings = getCachedPositionScoringSettings(settings, position);
   let pts = 0;
 
   let hasRawStats = false;
-  for (const [statKey, scoringKey] of Object.entries(STAT_TO_SCORING_KEY)) {
+  const hasPosition = position != null && String(position).trim() !== '';
+  // Sleeper scores IDP stats for whoever records them — a receiver's tackle
+  // after an interception earns the league's solo-tackle points (checked
+  // against Sleeper's awarded totals). ESPN profiles keep IDP scoring to
+  // defensive positions.
+  const idpEligible = !hasPosition || settings?.provider !== 'espn' || IDP_POSITIONS.has(normalizePosition(position));
+  for (const [statKey, scoringKey] of getStatScoringEntries()) {
     const statVal = stats[statKey];
-    if (statVal) hasRawStats = true;
-    const hasPosition = position != null && String(position).trim() !== '';
-    // Sleeper scores IDP stats for whoever records them — a receiver's tackle
-    // after an interception earns the league's solo-tackle points (checked
-    // against Sleeper's awarded totals). ESPN profiles keep IDP scoring to
-    // defensive positions.
-    const idpEligible = !hasPosition || settings?.provider !== 'espn' || IDP_POSITIONS.has(normalizePosition(position));
-    if (statVal && positionSettings[scoringKey] && (!IDP_SCORING_KEYS.has(scoringKey) || idpEligible)) {
+    if (!statVal) continue;
+    hasRawStats = true;
+    if (positionSettings[scoringKey] && (!IDP_SCORING_KEYS.has(scoringKey) || idpEligible)) {
       pts += statVal * positionSettings[scoringKey];
     }
   }
