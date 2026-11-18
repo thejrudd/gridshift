@@ -226,10 +226,9 @@ function getFantasyRoleForActor(actorRole, playerMeta, play, actor = null) {
   // tackler there for a pick or a lost fumble's return). Sleeper credits that
   // tackle at any position: weeks 1–10 of 2026, R.Stanley (BAL at IND),
   // A.Thomas (DAL at NYG), J.Thuney (TB at CHI), each one tackle.
-  // A kick filed under a fumble slug ("C.Waitman punts …  FUMBLES") is not
-  // read as a kick yet, so its sides can be swapped; leave those alone.
+  // A kick filed under a fumble slug is a special-teams play
+  // (`isKickFiledUnderFumble`), so its sides are no longer swapped here.
   if (actorRole === PLAY_ROLES.TACKLER && !isSpecialTeamsPlay(play)
-    && !/\b(?:punts|kicks|field goal|extra point)\b/i.test(play?.raw?.text ?? '')
     && playerMeta?.team && playerMeta.team === play.offenseTeamAbbr) return 'defense';
   // On a kick, coverage and return-team players at any position earn
   // special-teams credit (a running back's coverage tackle is `st_tkl_solo`).

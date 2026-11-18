@@ -15,7 +15,9 @@
 // See docs/Play-By-Play Normalization.md.
 
 import { parseDefensiveActors, parsePlayNarrative } from '../nflPlays/playNarrative.js';
-import { getOffenseTeam, isKickPossessionPlay, isTurnoverOnDowns } from '../nflPlays/fieldGeometry.js';
+import {
+  getOffenseTeam, isKickFiledUnderFumble, isKickPlay, isTurnoverOnDowns,
+} from '../nflPlays/fieldGeometry.js';
 
 export {
   PLAY_MATCH_STATS,
@@ -131,7 +133,8 @@ function readGeometryFields(play) {
  * players need both halves of that, not just the possession flip.
  */
 export function isKickReturnPlay(play) {
-  return isKickPossessionPlay({ typeSlug: readGeometryFields(play).typeSlug });
+  const { typeSlug, rawText } = readGeometryFields(play);
+  return isKickPlay({ typeSlug, rawText });
 }
 
 function otherTeam(team, awayTeam, homeTeam) {
@@ -318,6 +321,8 @@ export function normalizeCanonicalPlay(raw, {
   canonical.offenseTeam = offenseTeam;
   canonical.defenseTeam = defenseTeam;
   // A fourth down the offense came up short on: the defense's stop.
-  canonical.turnoverOnDowns = isTurnoverOnDowns(readGeometryFields(canonical));
+  // A punt filed under a fumble slug is a kick, never a stop on downs.
+  const geometry = readGeometryFields(canonical);
+  canonical.turnoverOnDowns = !isKickFiledUnderFumble(geometry) && isTurnoverOnDowns(geometry);
   return canonical;
 }

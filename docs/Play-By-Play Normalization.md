@@ -117,8 +117,9 @@ accepts a canonical play or any play carrying the provider row at `.raw`.
    changed hands an odd number of times. A pick returned and fumbled back to
    the passing team is two changes, so `team` is the offense. The slug names
    one turnover, often the last (`fumble-recovery-own` follows an interception
-   or a lost fumble), and is only the fallback for rows without text. A kick
-   row filed under a fumble slug keeps the slug reading.
+   or a lost fumble), and is only the fallback for rows without text. A punt
+   or kickoff filed under a fumble slug (`isKickFiledUnderFumble`, see "Kicks
+   filed under fumble slugs") is read as the kick.
 
 `normalizeTeam` lets a caller apply its own abbreviation aliasing so the
 comparison against home/away is like-for-like. Fantasy Live passes
@@ -436,11 +437,81 @@ Every rule here was checked against Sleeper's final lines for completed weeks.
   version (`authoritativeText`), not the overturned one.
 - **Offense tackling after a lost fumble.** A tackler on the offense's roster
   on a non-kick snap is credited `idp_tkl` at any position (Sleeper credits
-  linemen and quarterbacks). Rows whose text is a kick are left out until kicks
-  filed under fumble slugs are read as kicks.
+  linemen and quarterbacks). The temporary guard that skipped rows whose text
+  was a kick is gone: kicks filed under fumble slugs are now special-teams
+  plays, and removing it changed no event in weeks 1–10.
 - **Unchanged, by evidence.** Tackles on "No Play" rows are not credited
   (crediting them broke 469 matching lines and fixed 11). Kick-coverage
   tackles stay `st_tkl_solo` and out of `idp_tkl` (924 to 1).
+
+## Kicks filed under fumble slugs (v9.5 parser pass)
+
+The provider files some punts under the fumble that followed them
+(`fumble-recovery-opponent` / `fumble-recovery-own`). Read by the slug, the
+kicking team became the defense, its coverage players earned IDP tackles and
+recoveries, and its team defense `fum_rec`, `def_ff` and `def_4_and_stop`.
+
+- `fieldGeometry.isKickFiledUnderFumble(play)`: a fumble slug whose standing
+  gamebook text (`authoritativeText`, so a reversed ruling reads the corrected
+  version) opens with "X punts N yards" or "X kicks N yards from", and no "No
+  Play". A punt after a fumbled snap ("B.Mann to PHI 28 … FUMBLES … B.Mann
+  punts") does not open with the kick and keeps the slug reading.
+- `isKickPlay(play)` is `isKickPossessionPlay` or the above. It decides
+  possession (`isPossessionChangingPlay`), the turnover chain
+  (`readTurnoverChain`), `isKickReturnPlay` and `isSpecialTeamsPlay`.
+  `getOffenseTeam` and the canonical `turnoverOnDowns` skip the fourth-down
+  reading for these rows: a punt is never a stop on downs.
+- `isKickPossessionPlay` and `isTurnoverOnDowns` keep their slug readings,
+  because the game clock (`providerAnchoredGameClock`) labels from them.
+- A kick recovery earns `st_fum_rec` only when it changed hands (capital
+  `RECOVERED by`, `kickingTeamRecovered`): none of the 11 receiving-side
+  recoverers written "recovered by" in weeks 1–10 has one in Sleeper's lines.
+- A fumbling carrier with a spaced surname ("A.St. Brown") is read whole by
+  `parseFumbleCredit`, so the returner is charged `fum` (week 5, DET at ARI:
+  two fumbles in Sleeper's line, both now credited).
+
+Checked against Sleeper's lines: week 4 DEN at SF (S.Neal `st_tkl_solo`,
+`idp_ff`, `st_ff`, `st_fum_rec`; M.Mims `fum`, `fum_lost`; SF `def_st_ff`,
+`def_st_fum_rec`), week 5 DET at ARI (S.Fehoko `idp_ff`, `st_ff`; ARI
+`def_st_ff`; DET `def_pr_yd` 69), week 6 LAC at KC (T.Dye, C.Murphy; LAC
+`def_st_*`), week 9 CLE at NO (A.Huntington, D.McMillon, B.Brown; CLE
+`def_st_*`). Not yet credited: a tackle by the receiving side on the
+recovery's return (week 4: M.Mims `st_tkl_solo`, DEN `def_st_tkl_solo`; one
+row, so left unchanged), and blocked field goals (out of scope).
+
+## Quarterback hits (v9.5 parser pass, weeks 1–10 of 2026)
+
+- **Brackets.** Every "[X]" in the standing play text (completions,
+  incompletions, interceptions, touchdowns, strip-sacks) is a quarterback hit;
+  "[A; B]" and "[A, B]" are one each (`parseQuarterbackHitters`).
+- **Sacks.** A sack is the sacker's hit, except "sacked ob" (15 lines one hit
+  over in Sleeper's records, none under) and a strip-sack: there the gamebook
+  brackets the hitter after FUMBLES, and a sacker it leaves out has none (W3
+  HOU at IND, W.Anderson: three hits, not four). `isSackQuarterbackHit()` in
+  `playStatDelta.js` owns the rule.
+- **Split sacks with a spaced surname** ("sack split by I.Pace and K.Van Noy")
+  credit both sackers; the split used to drop both.
+- **Unchanged, by evidence:** a bracket on a snap Sleeper did not count (W1
+  C.Schwesinger after an illegal forward pass, W2 R.Blankenship, W3 Z.Biggers,
+  W6 J.Franklin-Myers and J.Kilgore) shows no shared shape; hits Sleeper
+  counts on a "No Play" snap or roughing foul (W3 J.Brooks, W8 K.Chaisson) are
+  penalties; "A.Phillips" for Dru Phillips (W5) needs a gamebook-initial alias;
+  hits with no mention in any row (W1 D.Jones, W3 V.Vea) are provider gaps.
+
+## Team defense lines (v9.5 parser pass, weeks 1–10 of 2026)
+
+- **Tackles for loss** are the solo stopper's: a lone tackler, A in "(A, B)",
+  or a lone sacker, read from the sack's own clause. Sleeper's team
+  `tkl_loss` is the sum of its players' (281 of 300 lines); the team now
+  counts a stop only when a player earns one. Fumbled carries and strip-sacks
+  are mixed in Sleeper's lines (some credited, some not) and are left as the
+  rule above credits them.
+- **Safeties** on a summary row are filed under the team that scored
+  (`isSafetySummaryRow`).
+- **Blocked tries** on a touchdown row name the blocker in "extra point is
+  Blocked (X)"; `parseDefensiveActors` reads it as `KICK_BLOCKER`.
+- **Unchanged, by evidence:** team `sack_yd` (see Scoring Call Sites), and the
+  rest listed in the audit report.
 
 ## Game context, penalties, and the remaining shapes (v9.3.8, second pass)
 
