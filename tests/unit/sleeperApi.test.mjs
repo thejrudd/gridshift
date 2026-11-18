@@ -188,3 +188,90 @@ test('Sleeper roster requests bypass stale caches', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('concurrent players DB loads share one download and the result is reused', async () => {
+  const { getAllPlayers, resetPlayersCacheForTests } = await import('../../src/api/sleeperApi.js');
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    await gate;
+    return { ok: true, json: async () => ({ 4984: { team: 'BUF', position: 'QB' } }) };
+  };
+  resetPlayersCacheForTests();
+  try {
+    const pending = [getAllPlayers(), getAllPlayers(), getAllPlayers()];
+    release();
+    const results = await Promise.all(pending);
+    assert.equal(calls.filter((url) => url.endsWith('/players/nfl')).length, 1);
+    assert.ok(results.every((result) => result === results[0]));
+    assert.equal(await getAllPlayers(), results[0]);
+    assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetPlayersCacheForTests();
+  }
+});
+
+test('weekly stats with teams use api.sleeper.com and carry game-time teams', async () => {
+  const { getWeeksWithTeams } = await import('../../src/api/sleeperApi.js');
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    const week = Number(String(url).match(/\/2025\/(\d+)/)[1]);
+    if (week === 3) return { ok: false, status: 500, json: async () => null };
+    return {
+      ok: true,
+      json: async () => [{ player_id: '19', team: week < 2 ? 'CLE' : 'CIN', opponent: 'PIT', player: { position: 'QB' }, stats: { pass_yd: 100 } }],
+    };
+  };
+  try {
+    const failedWeeks = [];
+    const byWeek = await getWeeksWithTeams('2025', [1, 2, 3], { failedWeeks });
+    assert.ok(calls.every((url) => url.startsWith('https://api.sleeper.com/stats/nfl/2025/') && url.includes('season_type=regular')));
+    assert.deepEqual(failedWeeks, [3]);
+    assert.deepEqual(byWeek[1]['19'], { week: 1, pass_yd: 100, team: 'CLE', opp: 'PIT', _teamSource: 'espn' });
+    assert.equal(byWeek[2]['19'].team, 'CIN');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('cachedFetch shares one in-flight request per key', async () => {
+  const store = new Map();
+  const originalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  };
+  try {
+    const { cachedFetch } = await import('../../src/utils/playerCache.js');
+    let calls = 0;
+    const fetchFn = async () => { calls += 1; await new Promise((resolve) => setTimeout(resolve, 5)); return { ok: 1 }; };
+    const results = await Promise.all([cachedFetch('k1', fetchFn, 1000), cachedFetch('k1', fetchFn, 1000)]);
+    assert.equal(calls, 1);
+    assert.deepEqual(results, [{ ok: 1 }, { ok: 1 }]);
+    // A TTL function sees the cached data.
+    assert.deepEqual(await cachedFetch('k1', fetchFn, (data) => (data.ok ? Infinity : 0)), { ok: 1 });
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.localStorage = originalStorage;
+  }
+});
+
+test('weekly stats with teams revalidate instead of reusing a browser-cached copy', async () => {
+  const { getWeeklyStatsWithTeams } = await import('../../src/api/sleeperApi.js');
+  const originalFetch = globalThis.fetch;
+  let options = null;
+  globalThis.fetch = async (_url, init) => { options = init; return { ok: true, json: async () => [] }; };
+  try {
+    await getWeeklyStatsWithTeams('2026', 10);
+    assert.equal(options.cache, 'no-cache');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

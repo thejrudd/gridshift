@@ -49,6 +49,7 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
   leagueDisabled = false,
+  hiddenTabs = [],
   tradeDisabled = false,
   tradeDisabledTitle = 'Trade is not available for the connected platform.',
   tradeUnreadCount = 0,
@@ -161,24 +162,28 @@ export default function Sidebar({
           </button>
         )}
 
-        <SidebarNavItem
-          active={activeTab === 'fantasy'}
-          onClick={() => onTabChange('fantasy')}
-          icon={<CompanionIcon />}
-          label="Fantasy"
-          dataTour="tab-companion"
-          collapsed={collapsed}
-        />
-        <SidebarNavItem
-          active={activeTab === 'league'}
-          onClick={() => onTabChange('league')}
-          icon={<LeagueIcon />}
-          label="League"
-          dataTour="tab-league"
-          disabled={leagueDisabled}
-          disabledTitle="League history is available for connected Sleeper leagues."
-          collapsed={collapsed}
-        />
+        {!hiddenTabs.includes('fantasy') && (
+          <SidebarNavItem
+            active={activeTab === 'fantasy'}
+            onClick={() => onTabChange('fantasy')}
+            icon={<CompanionIcon />}
+            label="Fantasy"
+            dataTour="tab-companion"
+            collapsed={collapsed}
+          />
+        )}
+        {!hiddenTabs.includes('league') && (
+          <SidebarNavItem
+            active={activeTab === 'league'}
+            onClick={() => onTabChange('league')}
+            icon={<LeagueIcon />}
+            label="League"
+            dataTour="tab-league"
+            disabled={leagueDisabled}
+            disabledTitle="League history is available for connected Sleeper leagues."
+            collapsed={collapsed}
+          />
+        )}
         <SidebarNavItem
           active={activeTab === 'statistics'}
           onClick={() => onTabChange('statistics')}
@@ -186,29 +191,34 @@ export default function Sidebar({
           label="Statistics"
           collapsed={collapsed}
         />
-        <SidebarNavItem
-          active={activeTab === 'trade'}
-          onClick={() => onTabChange('trade')}
-          icon={<TradeIcon />}
-          label="Trade"
-          disabled={tradeDisabled}
-          disabledTitle={tradeDisabledTitle}
-          notificationCount={tradeUnreadCount}
-          collapsed={collapsed}
-        />
-        <SidebarNavItem
-          active={activeTab === 'draft'}
-          onClick={() => onTabChange('draft')}
-          icon={<DraftIcon />}
-          label="Draft"
-          beta
-          collapsed={collapsed}
-        />
+        {!hiddenTabs.includes('trade') && (
+          <SidebarNavItem
+            active={activeTab === 'trade'}
+            onClick={() => onTabChange('trade')}
+            icon={<TradeIcon />}
+            label="Trade"
+            disabled={tradeDisabled}
+            disabledTitle={tradeDisabledTitle}
+            notificationCount={tradeUnreadCount}
+            collapsed={collapsed}
+          />
+        )}
+        {!hiddenTabs.includes('draft') && (
+          <SidebarNavItem
+            active={activeTab === 'draft'}
+            onClick={() => onTabChange('draft')}
+            icon={<DraftIcon />}
+            label="Draft"
+            beta
+            collapsed={collapsed}
+          />
+        )}
         <SidebarNavItem
           active={activeTab === 'predictions'}
           onClick={() => onTabChange('predictions')}
           icon={<SeasonIcon />}
           label="Predict"
+          dataTour="tab-predictions"
           beta
           collapsed={collapsed}
         />

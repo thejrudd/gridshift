@@ -9,6 +9,7 @@ import {
   buildStarterNameIndex,
   groupSharedPlayEvents,
 } from '../../src/utils/livePlaysFeed.js';
+import { getPricedTackleKey } from '../../src/utils/playByPlay/playStatDelta.js';
 
 // Provider rows from the 2026 season (weeks 6-9), trimmed to the fields read.
 const JAX_BAL = { id: 'jax-bal', visitor_team: { abbreviation: 'JAX' }, home_team: { abbreviation: 'BAL' } };
@@ -111,7 +112,9 @@ test('a lost fumble after a long catch credits the catch, not the recovery retur
     starter('fitzpatrick', 'Minkah Fitzpatrick', 'DB', 'NYJ'),
   ], game);
   assert.equal(statsOf(events, 'douglas').rec_yd, 39);
-  assert.equal(statsOf(events, 'douglas').rec_fd, 1);
+  // Week 6 of 2026, NYJ at NE: the catch reached the line before the fumble,
+  // but Sleeper's line counts no first down for it (Douglas rec_fd 3, not 4).
+  assert.equal(statsOf(events, 'douglas').rec_fd, undefined);
   assert.deepEqual(statsOf(events, 'fitzpatrick'), { idp_fr: 1, idp_fr_yd: 20 });
   assert.equal(events[0].play.narrative.sentence,
     'Drake Maye found DeMario Douglas for 39 yards. J.Sherwood forced a fumble, recovered by Minkah Fitzpatrick, who returned it 20 yards.');
@@ -378,4 +381,494 @@ test('a run ending in a lost fumble credits the run, not the defense\'s recovery
   const events = eventsFor([play], [starter('hampton', 'Omarion Hampton', 'RB', 'LAC')], game);
   assert.equal(statsOf(events, 'hampton').rush_yd, 2);
   assert.equal(statsOf(events, 'hampton').fum_lost, 1);
+});
+
+// ── Several turnovers on one snap ───────────────────────────────────────────
+// Expectations are Sleeper's final lines for the completed weeks named. Every
+// key weighs something, so no credit is dropped as worth nothing.
+const CHAIN_SCORING = Object.fromEntries([
+  'pass_att', 'pass_cmp', 'pass_inc', 'pass_int', 'pass_sack', 'pass_fd', 'rec', 'rec_fd', 'rush_att', 'rush_fd',
+  'fum', 'fum_lost', 'idp_tkl', 'idp_tkl_solo', 'idp_tkl_ast', 'idp_tkl_loss', 'idp_sack', 'idp_int', 'idp_ff', 'idp_fr',
+  'idp_pd', 'idp_qbhit', 'xpm', 'xpmiss', 'int', 'fum_rec', 'def_ff', 'sack', 'tkl_loss', 'def_pass_def', 'def_td',
+].map((key) => [key, 1]).concat([
+  'pass_yd', 'rec_yd', 'rush_yd', 'idp_int_ret_yd', 'idp_fr_yd', 'idp_sack_yd', 'int_ret_yd', 'fum_ret_yd', 'sack_yd',
+].map((key) => [key, 0.01])));
+
+function chainEvents(plays, starters, game) {
+  return buildPlayEvents(
+    { [game.id]: plays },
+    buildStarterNameIndex(starters),
+    CHAIN_SCORING,
+    new Map(starters.map((row) => [row.id, row.player.position])),
+    new Map([[game.id, game]]),
+  );
+}
+const teamDefense = (team) => ({ id: `dst-${team}`, player: { full_name: `${team} Defense`, position: 'DEF', team, player_id: team } });
+const pick = (stats, keys) => Object.fromEntries(keys.filter((key) => stats?.[key] != null).map((key) => [key, stats[key]]));
+
+// The owner's play: a pick at midfield, returned and fumbled back to the team
+// that threw it. Confirmed against Sleeper's completed 2026 week 10 BUF@NYJ
+// lines: Igbinosun idp_int 1, idp_int_ret_yd 17, fum_lost 1; Ruckert idp_ff 1
+// and an assisted tackle; Hall an assisted tackle; Myers idp_fum_rec 1; BUF
+// DEF int 1, int_ret_yd 17; NYJ DEF fum_rec 1 (BUF lost one fumble all game)
+// and ff_misc 1 for Ruckert's force.
+const IGBINOSUN_PICK_FUMBLE = {
+  id: 'nyj-int-fumble',
+  type_slug: 'fumble-recovery-opponent',
+  team: { abbreviation: 'NYJ' },
+  period: 2,
+  text: '(Shotgun) C.Klubnik pass deep right intended for G.Wilson INTERCEPTED by D.Igbinosun at 50. D.Igbinosun to NYJ 33 for 17 yards (J.Ruckert; B.Hall). FUMBLES (J.Ruckert), RECOVERED by NYJ-J.Myers at NYJ 23.',
+  short_text: 'Davison Igbinosun 17 Yd Interception Return Davison Igbinosun Fumble Jamien Myers 0 Yd Fumble Recovery',
+  start_possession_text: 'NYJ 27',
+  end_possession_text: 'NYJ 23',
+  stat_yardage: 17,
+};
+const NYJ_BUF = { id: 'nyj-buf', visitor_team: { abbreviation: 'BUF' }, home_team: { abbreviation: 'NYJ' } };
+const NYJ_BUF_STARTERS = [
+  starter('klubnik', 'Cade Klubnik', 'QB', 'NYJ'),
+  starter('wilson', 'Garrett Wilson', 'WR', 'NYJ'),
+  starter('ruckert', 'Jeremy Ruckert', 'TE', 'NYJ'),
+  starter('hall', 'Breece Hall', 'RB', 'NYJ'),
+  starter('myers', 'Jamien Myers', 'WR', 'NYJ'),
+  starter('igbinosun', 'Davison Igbinosun', 'CB', 'BUF'),
+  teamDefense('NYJ'),
+  teamDefense('BUF'),
+];
+
+test('a pick returned and fumbled back keeps the ball with the team that threw it', async () => {
+  const { getOffenseTeam, getPlaySegment, possessionTextToPercent } = await import('../../src/utils/nflPlays/fieldGeometry.js');
+  const canonical = normalizeCanonicalPlay(IGBINOSUN_PICK_FUMBLE, { gameId: 'nyj-buf', homeTeam: 'NYJ', awayTeam: 'BUF' });
+  // Two turnovers: possession did not change, and `team` is the offense.
+  assert.equal(canonical.offenseTeam, 'NYJ');
+  // The field graphics ask the geometry directly, from the canonical shape.
+  assert.equal(getOffenseTeam(canonical, { homeTeam: 'NYJ', awayTeam: 'BUF' }), 'NYJ');
+  // The slug alone (one opponent recovery) would have flipped it.
+  assert.equal(getOffenseTeam({ team: 'NYJ', typeSlug: 'fumble-recovery-opponent' }, { homeTeam: 'NYJ', awayTeam: 'BUF' }), 'BUF');
+  assert.equal(canonical.defenseTeam, 'BUF');
+  assert.equal(canonical.narrative.sentence,
+    "C.Klubnik's pass for G.Wilson was intercepted by Davison Igbinosun at midfield and returned 17 yards. Davison Igbinosun fumbled, forced by J.Ruckert, and Jamien Myers recovered it.");
+  assert.equal(canonical.narrative.turnover, false);
+  const segment = getPlaySegment(canonical, { homeTeam: 'NYJ', awayTeam: 'BUF' });
+  assert.equal(segment.endPct, possessionTextToPercent('NYJ 23', { homeTeam: 'NYJ' }));
+});
+
+test('a pick returned and fumbled back credits each player and both team defenses', () => {
+  const events = chainEvents([IGBINOSUN_PICK_FUMBLE], NYJ_BUF_STARTERS, NYJ_BUF);
+  const stats = (id) => statsOf(events, id);
+  assert.deepEqual(pick(stats('klubnik'), ['pass_att', 'pass_int', 'pass_cmp']), { pass_att: 1, pass_int: 1 });
+  assert.equal(stats('wilson'), undefined);
+  // The intercepter fumbled it away: charged with the fumble and its loss.
+  assert.deepEqual(stats('igbinosun'), { idp_pd: 1, idp_int: 1, idp_int_ret_yd: 17, fum: 1, fum_lost: 1 });
+  // "(J.Ruckert; B.Hall)" is a shared stop: an assist each.
+  assert.deepEqual(stats('ruckert'), { idp_tkl: 1, idp_ff: 1 });
+  assert.deepEqual(stats('hall'), { idp_tkl: 1 });
+  assert.equal(getPricedTackleKey(events.find((event) => event.playerId === 'hall').play, { idp_tkl: 1 }, { idp_tkl_ast: 1, idp_tkl_solo: 1 }), 'idp_tkl_ast');
+  // Recovering the other team's fumble.
+  assert.deepEqual(stats('myers'), { idp_fr: 1 });
+  assert.deepEqual(stats('dst-BUF'), { int: 1, int_ret_yd: 17, def_pass_def: 1 });
+  // A force by the offense after a turnover is Sleeper's `ff_misc`, which no
+  // league scores, so the passing team's defense gets the recovery alone.
+  assert.deepEqual(stats('dst-NYJ'), { fum_rec: 1 });
+});
+
+test('a compound turnover reads from the gamebook when the compact text is missing', () => {
+  const events = chainEvents([{ ...IGBINOSUN_PICK_FUMBLE, short_text: 'null' }], NYJ_BUF_STARTERS, NYJ_BUF);
+  assert.deepEqual(statsOf(events, 'igbinosun'), { idp_pd: 1, idp_int: 1, idp_int_ret_yd: 17, fum: 1, fum_lost: 1 });
+  assert.deepEqual(statsOf(events, 'dst-NYJ'), { fum_rec: 1 });
+});
+
+test('a pick fumbled and recovered by a teammate is no recovery (week 3 of 2026, LV at NO)', () => {
+  const play = {
+    id: '4018729614001',
+    type_slug: 'fumble-recovery-own',
+    team: { abbreviation: 'LV' },
+    period: 3,
+    text: '(Shotgun) T.Shough pass short left intended for B.Lance INTERCEPTED by H.Masses [M.Koonce] at NO 43. H.Masses to NO 8 for 35 yards (J.Johnson). FUMBLES (J.Johnson), touched at NO 7, recovered by LV-A.Butler at NO 4.',
+    short_text: 'Hezekiah Masses 35 Yd Interception Return Hezekiah Masses Fumble Adam Butler 0 Yd Fumble Recovery',
+    end_possession_text: 'NO 4',
+    stat_yardage: 35,
+  };
+  const game = { id: 'lv-no', visitor_team: { abbreviation: 'LV' }, home_team: { abbreviation: 'NO' } };
+  assert.equal(normalizeCanonicalPlay(play, { homeTeam: 'NO', awayTeam: 'LV' }).offenseTeam, 'NO');
+  const events = chainEvents([play], [
+    starter('shough', 'Tyler Shough', 'QB', 'NO'),
+    starter('juwan', 'Juwan Johnson', 'TE', 'NO'),
+    starter('masses', 'Hezekiah Masses', 'CB', 'LV'),
+    starter('butler', 'Adam Butler', 'DL', 'LV'),
+    starter('koonce', 'Malcolm Koonce', 'DL', 'LV'),
+    starter('jpj', 'Jackson Powers-Johnson', 'OL', 'LV'),
+    teamDefense('LV'),
+    teamDefense('NO'),
+  ], game);
+  const stats = (id) => statsOf(events, id);
+  // Sleeper: Masses fum 1, no fum_lost, idp_int 1, idp_int_ret_yd 35; Butler
+  // no recovery; Juwan Johnson idp_ff 1 and a solo tackle; LV DEF int 1 and
+  // int_ret_yd 35, no fum_rec; NO DEF only `ff_misc`.
+  assert.deepEqual(stats('masses'), { idp_pd: 1, idp_int: 1, idp_int_ret_yd: 35, fum: 1 });
+  assert.equal(stats('butler'), undefined);
+  assert.equal(stats('jpj'), undefined);
+  assert.deepEqual(stats('juwan'), { idp_tkl: 1, idp_ff: 1 });
+  assert.deepEqual(pick(stats('shough'), ['pass_att', 'pass_int']), { pass_att: 1, pass_int: 1 });
+  assert.deepEqual(stats('koonce'), { idp_qbhit: 1 });
+  assert.deepEqual(stats('dst-LV'), { int: 1, int_ret_yd: 35, def_pass_def: 1 });
+  assert.equal(stats('dst-NO'), undefined);
+});
+
+test('a sack-fumble recovered, returned and fumbled again charges both fumblers (week 3 of 2026, HOU at IND)', () => {
+  const play = {
+    id: '401872951242',
+    type_slug: 'fumble-recovery-own',
+    team: { abbreviation: 'HOU' },
+    text: 'D.Jones sacked at IND 39 for -8 yards (W.Anderson). FUMBLES (W.Anderson), touched at IND 44, RECOVERED by HST-W.Anderson at IND 42. W.Anderson to IND 40 for 2 yards (M.Alie-Cox). FUMBLES (M.Alie-Cox), recovered by HST-K.Lassiter at IND 40.',
+    short_text: 'Daniel Jones Sacked Daniel Jones Fumble Will Anderson Jr. Fumble Will Anderson Jr. 2 Yd Fumble Recovery Kamari Lassiter 0 Yd Fumble Recovery by Will A',
+    stat_yardage: 2,
+  };
+  const game = { id: 'hou-ind', visitor_team: { abbreviation: 'HOU' }, home_team: { abbreviation: 'IND' } };
+  assert.equal(normalizeCanonicalPlay(play, { homeTeam: 'IND', awayTeam: 'HOU' }).offenseTeam, 'IND');
+  const events = chainEvents([play], [
+    starter('jones', 'Daniel Jones', 'QB', 'IND'),
+    starter('aliecox', 'Mo Alie-Cox', 'TE', 'IND'),
+    starter('anderson', 'Will Anderson Jr.', 'DL', 'HOU'),
+    starter('lassiter', 'Kamari Lassiter', 'DB', 'HOU'),
+    teamDefense('HOU'),
+    teamDefense('IND'),
+  ], game);
+  const stats = (id) => statsOf(events, id);
+  assert.deepEqual(pick(stats('jones'), ['pass_sack', 'fum', 'fum_lost']), { pass_sack: 1, fum: 1, fum_lost: 1 });
+  // Sleeper: the sack, the force, the recovery and its 2 yards, and a fumble
+  // his own side recovered (no fum_lost).
+  assert.deepEqual(pick(stats('anderson'), ['idp_sack', 'idp_ff', 'idp_fr', 'idp_fr_yd', 'fum', 'fum_lost']),
+    { idp_sack: 1, idp_ff: 1, idp_fr: 1, idp_fr_yd: 2, fum: 1 });
+  assert.deepEqual(stats('aliecox'), { idp_tkl: 1, idp_ff: 1 });
+  assert.equal(stats('lassiter'), undefined);
+  assert.deepEqual(pick(stats('dst-HOU'), ['sack', 'fum_rec', 'fum_ret_yd', 'def_ff', 'int']), { sack: 1, fum_rec: 1, fum_ret_yd: 2, def_ff: 1 });
+  assert.equal(stats('dst-IND'), undefined);
+});
+
+test('a lost fumble recovered and fumbled again credits the catch from the compact text (week 5 of 2026, CIN at MIA)', () => {
+  const play = {
+    id: '4018729821612',
+    type_slug: 'fumble-recovery-own',
+    team: { abbreviation: 'MIA' },
+    text: '(Shotgun) J.Burrow pass short left to C.Brown to MIA 7 for 3 yards (C.Johnson). FUMBLES (C.Johnson), RECOVERED by MIA-C.Robinson at MIA 7. C.Robinson to MIA 18 for 11 yards (J.Chase). FUMBLES (J.Chase), recovered by MIA-J.Uche at MIA 23.',
+    short_text: 'Joe Burrow Pass Complete for 3 Yds to Chase Brown Chase Brown Fumble Chop Robinson Fumble Chop Robinson 11 Yd Fumble Recovery Josh Uche 0 Yd Fumble Re',
+    stat_yardage: 11,
+    start_distance: 10,
+    end_down: 1,
+  };
+  const game = { id: 'cin-mia', visitor_team: { abbreviation: 'CIN' }, home_team: { abbreviation: 'MIA' } };
+  const canonical = normalizeCanonicalPlay(play, { homeTeam: 'MIA', awayTeam: 'CIN' });
+  assert.equal(canonical.offenseTeam, 'CIN');
+  assert.equal(canonical.narrative.sentence,
+    'Joe Burrow found Chase Brown for 3 yards. Chase Brown fumbled, forced by C.Johnson, and Chop Robinson recovered it and returned it 11 yards. Chop Robinson fumbled, forced by J.Chase, and Josh Uche recovered it.');
+  const events = chainEvents([play], [
+    starter('burrow', 'Joe Burrow', 'QB', 'CIN'),
+    starter('brown', 'Chase Brown', 'RB', 'CIN'),
+    starter('chase', "Ja'Marr Chase", 'WR', 'CIN'),
+    starter('robinson', 'Chop Robinson', 'DL', 'MIA'),
+    starter('uche', 'Josh Uche', 'LB', 'MIA'),
+    teamDefense('MIA'),
+    teamDefense('CIN'),
+  ], game);
+  const stats = (id) => statsOf(events, id);
+  assert.deepEqual(pick(stats('brown'), ['rec', 'rec_yd', 'rec_fd', 'fum', 'fum_lost']), { rec: 1, rec_yd: 3, fum: 1, fum_lost: 1 });
+  assert.deepEqual(pick(stats('robinson'), ['idp_fr', 'idp_fr_yd', 'fum', 'fum_lost']), { idp_fr: 1, idp_fr_yd: 11, fum: 1 });
+  assert.deepEqual(stats('chase'), { idp_tkl: 1, idp_ff: 1 });
+  assert.equal(stats('uche'), undefined);
+  // C.Johnson's force was the defense's; J.Chase's, after the turnover, is
+  // CIN's `ff_misc`.
+  assert.deepEqual(pick(stats('dst-MIA'), ['fum_rec', 'fum_ret_yd', 'def_ff']), { fum_rec: 1, fum_ret_yd: 11, def_ff: 1 });
+  assert.equal(stats('dst-CIN'), undefined);
+});
+
+test('a fumble kept, then fumbled away, charges the second carrier with the loss (week 9 of 2026, WAS vs LAR)', () => {
+  const play = {
+    id: '4018730434645',
+    type_slug: 'fumble-recovery-opponent',
+    team: { abbreviation: 'LAR' },
+    text: '(Shotgun) J.Daniels pass short middle to C.Okonkwo to LA 11 for 20 yards (J.McCollough). FUMBLES (J.McCollough), recovered by WAS-R.White at LA 15. R.White to LA 17 for -2 yards (Q.Lake). FUMBLES (Q.Lake), RECOVERED by LA-B.Young at LA 21.',
+    short_text: 'Jayden Daniels Pass Complete for 16 Yds to Chig Okonkwo Rachaad White Fumble Chig Okonkwo Fumble Rachaad White -6 Yd Fumble Recovery Byron Young 0 Yd',
+    stat_yardage: 0,
+  };
+  const game = { id: 'lar-was', visitor_team: { abbreviation: 'LAR' }, home_team: { abbreviation: 'WAS' } };
+  assert.equal(normalizeCanonicalPlay(play, { homeTeam: 'WAS', awayTeam: 'LAR' }).offenseTeam, 'WAS');
+  const events = chainEvents([play], [
+    starter('okonkwo', 'Chig Okonkwo', 'TE', 'WAS'),
+    starter('white', 'Rachaad White', 'RB', 'WAS'),
+    starter('lake', 'Quentin Lake', 'DB', 'LAR'),
+    starter('mccollough', 'Jaylen McCollough', 'DB', 'LAR'),
+    starter('young', 'Byron Young', 'LB', 'LAR'),
+    teamDefense('LAR'),
+  ], game);
+  const stats = (id) => statsOf(events, id);
+  // The summary's "for 16 Yds" is the catch's official credit.
+  assert.deepEqual(pick(stats('okonkwo'), ['rec', 'rec_yd', 'fum', 'fum_lost']), { rec: 1, rec_yd: 16, fum: 1 });
+  assert.deepEqual(stats('white'), { fum: 1, fum_lost: 1 });
+  assert.deepEqual(stats('lake'), { idp_tkl: 1, idp_ff: 1 });
+  assert.deepEqual(stats('mccollough'), { idp_tkl: 1, idp_ff: 1 });
+  // The recovery that changed hands; White's own recovery advance is not his.
+  assert.deepEqual(stats('young'), { idp_fr: 1 });
+  assert.deepEqual(stats('dst-LAR'), { fum_rec: 1, def_ff: 2 });
+});
+
+test('a fumble returned for a defensive score credits the catch, not the touchdown, and the scoring side\'s try (week 5 of 2026, MIN at NO)', () => {
+  const play = {
+    id: '4018729872643',
+    type_slug: 'fumble-return-touchdown',
+    team: { abbreviation: 'NO' },
+    scoring_play: true,
+    text: '(Shotgun) K.Murray pass short left to M.Price to NO 12 for 7 yards (M.Emerson; P.Werner). FUMBLES (M.Emerson), RECOVERED by NO-J.Sanker at NO 13. J.Sanker for 87 yards, TOUCHDOWN. D.Carlson extra point is No Good, Wide Left, Center-C.Adomitis, Holder-R.Wright.',
+    short_text: 'Jonas Sanker 87 Yd Fumble Return (Daniel Carlson PAT Failed)',
+    stat_yardage: 87,
+  };
+  const game = { id: 'min-no', visitor_team: { abbreviation: 'MIN' }, home_team: { abbreviation: 'NO' } };
+  assert.equal(normalizeCanonicalPlay(play, { homeTeam: 'NO', awayTeam: 'MIN' }).offenseTeam, 'MIN');
+  const events = chainEvents([play], [
+    starter('murray', 'Kyler Murray', 'QB', 'MIN'),
+    starter('price', 'Myles Price', 'WR', 'MIN'),
+    starter('sanker', 'Jonas Sanker', 'DB', 'NO'),
+    starter('carlson', 'Daniel Carlson', 'K', 'NO'),
+    teamDefense('NO'),
+  ], game);
+  const stats = (id) => statsOf(events, id);
+  assert.equal(stats('murray').pass_td, undefined);
+  assert.equal(stats('price').rec_td, undefined);
+  assert.deepEqual(pick(stats('price'), ['rec', 'fum', 'fum_lost']), { rec: 1, fum: 1, fum_lost: 1 });
+  assert.equal(stats('sanker').idp_fr, 1);
+  assert.deepEqual(stats('carlson'), { xpmiss: 1 });
+  assert.deepEqual(pick(stats('dst-NO'), ['fum_rec', 'def_td', 'def_ff']), { fum_rec: 1, def_td: 1, def_ff: 1 });
+});
+
+test('the turnover chain counts every change of possession on the snap', async () => {
+  const { parseTurnoverChain } = await import('../../src/utils/nflPlays/playNarrative.js');
+  const chain = parseTurnoverChain(IGBINOSUN_PICK_FUMBLE.text);
+  assert.deepEqual(chain.events.map((event) => [event.type, event.changed ?? true]), [['interception', true], ['fumble', true]]);
+  assert.equal(chain.changes, 2);
+  assert.equal(chain.finalSide, 'offense');
+  // Midfield is written bare.
+  assert.equal(chain.events[0].at, '50');
+});
+
+test('a pick a flag wiped out changes nothing (week 1 of 2026, TB at CIN)', async () => {
+  const { getOffenseTeam } = await import('../../src/utils/nflPlays/fieldGeometry.js');
+  const play = normalizeCanonicalPlay({
+    id: '4018729251137',
+    type_slug: 'penalty',
+    team: { abbreviation: 'TB' },
+    text: 'B.Mayfield pass short left intended for E.Egbuka INTERCEPTED by T.Davis at CIN 16. T.Davis ran ob at CIN 20 for 4 yards (E.Egbuka).PENALTY on CIN-T.Davis, Defensive Pass Interference, 12 yards, enforced at CIN 29 - No Play.',
+  }, { homeTeam: 'CIN', awayTeam: 'TB' });
+  assert.equal(play.offenseTeam, 'TB');
+  assert.equal(getOffenseTeam(play, { homeTeam: 'CIN', awayTeam: 'TB' }), 'TB');
+});
+
+// Punts the provider filed under the fumble that followed them. Expectations
+// are Sleeper's final lines for the completed weeks named.
+const KICK_SCORING = {
+  st_tkl_solo: 1, st_ff: 1, st_fum_rec: 1, idp_ff: 1, idp_tkl: 1, idp_fr: 1, fum: 1, fum_lost: 1, pr_yd: 0.01,
+  def_st_tkl_solo: 1, def_st_ff: 1, def_st_fum_rec: 1, def_pr_yd: 0.01, fum_rec: 1, def_ff: 1, def_4_and_stop: 1,
+};
+const kickEvents = (plays, starters, game) => buildPlayEvents(
+  { [game.id]: plays }, buildStarterNameIndex(starters), KICK_SCORING,
+  new Map(starters.map((row) => [row.id, row.player.position])), new Map([[game.id, game]]),
+);
+
+test('a punt filed under a fumble slug is the kick it was (week 4 of 2026, DEN at SF)', () => {
+  // Sleeper: S.Neal st_tkl_solo 1, idp_ff 1, st_ff 1, st_fum_rec 1, no idp_tkl
+  // or idp_fum_rec; M.Mims fum 1, fum_lost 1; SF DEF def_st_ff and
+  // def_st_fum_rec from this punt, no fum_rec, ff or def_4_and_stop.
+  const punt = {
+    id: '4018729752717', type_slug: 'fumble-recovery-opponent', team: { abbreviation: 'SF' },
+    text: 'C.Waitman punts 61 yards to DEN 28, Center-J.Weeks. M.Mims to DEN 29 for 1 yard (S.Neal). FUMBLES (S.Neal), RECOVERED by SF-S.Neal at DEN 28. S.Neal to DEN 28 for no gain (M.Mims).',
+    short_text: 'Corliss Waitman 61 Yd Punt Marvin Mims Jr. Punt Return, No Gain Marvin Mims Jr. Fumble Siran Neal 0 Yd Fumble Recovery',
+    stat_yardage: 0, start_down: 4, start_distance: 7, start_yards_to_endzone: 11, end_down: 1, end_distance: 10, end_yards_to_endzone: 28,
+  };
+  const game = { id: 'den-sf', visitor_team: { abbreviation: 'DEN' }, home_team: { abbreviation: 'SF' } };
+  const play = normalizeCanonicalPlay(punt, { gameId: game.id, homeTeam: 'SF', awayTeam: 'DEN' });
+  assert.equal(play.offenseTeam, 'SF');
+  assert.equal(play.turnoverOnDowns, false);
+  const events = kickEvents([punt], [
+    starter('neal', 'Siran Neal', 'CB', 'SF'),
+    starter('mims', 'Marvin Mims Jr.', 'WR', 'DEN'),
+    teamDefense('SF'),
+  ], game);
+  assert.deepEqual(statsOf(events, 'neal'), { st_tkl_solo: 1, idp_ff: 1, st_ff: 1, st_fum_rec: 1 });
+  assert.deepEqual(pick(statsOf(events, 'mims'), ['fum', 'fum_lost']), { fum: 1, fum_lost: 1 });
+  assert.deepEqual(statsOf(events, 'dst-SF'), { def_st_tkl_solo: 1, def_st_ff: 1, def_st_fum_rec: 1 });
+});
+
+test('a punt-return fumble the returning side kept is no recovery (week 5 of 2026, DET at ARI)', () => {
+  // Sleeper: S.Fehoko idp_ff 1, st_ff 1; T.Martin nothing; C.Simon no
+  // idp_tkl; A.St. Brown fum 1 here (2 in the game), not lost; ARI DEF
+  // def_st_ff 1; DET DEF def_pr_yd includes the 31.
+  const punt = {
+    id: '4018729911380', type_slug: 'fumble-recovery-own', team: { abbreviation: 'DET' },
+    text: 'B.Gillikin punts 54 yards to DET 17, Center-C.Kreiter. A.St. Brown to DET 48 for 31 yards (S.Fehoko; C.Simon). FUMBLES (S.Fehoko), recovered by DET-T.Martin at ARZ 47.',
+    short_text: 'Blake Gillikin 54 Yd Punt Amon-Ra St. Brown 31 Yd Punt Return Amon-Ra St. Brown Fumble Tay Martin 0 Yd Fumble Recovery',
+    stat_yardage: 31, start_down: 4, start_distance: 7, start_yards_to_endzone: 29, end_down: 1, end_distance: 10, end_yards_to_endzone: 47,
+  };
+  const game = { id: 'det-ari', visitor_team: { abbreviation: 'DET' }, home_team: { abbreviation: 'ARI' } };
+  const events = kickEvents([punt], [
+    starter('fehoko', 'Simi Fehoko', 'WR', 'ARI'),
+    starter('simon', 'Cody Simon', 'LB', 'ARI'),
+    starter('stbrown', 'Amon-Ra St. Brown', 'WR', 'DET'),
+    starter('martin', 'Tay Martin', 'WR', 'DET'),
+    teamDefense('ARI'),
+    teamDefense('DET'),
+  ], game);
+  assert.deepEqual(statsOf(events, 'fehoko'), { idp_ff: 1, st_ff: 1 });
+  assert.equal(statsOf(events, 'martin'), undefined);
+  assert.equal(statsOf(events, 'simon'), undefined);
+  assert.deepEqual(statsOf(events, 'stbrown'), { pr_yd: 31, fum: 1 });
+  assert.deepEqual(statsOf(events, 'dst-ARI'), { def_st_ff: 1 });
+  assert.deepEqual(statsOf(events, 'dst-DET'), { def_pr_yd: 31 });
+});
+
+test('a reversed punt-return fumble filed under a fumble slug credits the coverage team (week 6 of 2026, LAC at KC)', () => {
+  // Sleeper: T.Dye idp_ff 1, st_ff 1, st_tkl_solo 1 (his two idp_tkl come from
+  // other snaps); C.Murphy st_fum_rec 1, no idp_fum_rec; N.Remigio fum 1,
+  // fum_lost 1; LAC DEF def_st_ff 1, def_st_fum_rec 1, no ff or fum_rec.
+  const punt = {
+    id: '4018730063033', type_slug: 'fumble-recovery-opponent', team: { abbreviation: 'LAC' },
+    text: 'J.Scott punts 35 yards to LAC 37, Center-J.Harris. N.Remigio to LAC 41 for -4 yards (T.Dye). FUMBLES (T.Dye), recovered by KC-Ca.Jones at LAC 41.PENALTY on KC-J.Briningstool, Illegal Block Above the Waist, 10 yards, enforced at LAC 37.Los Angeles Chargers challenged the loose ball recovery ruling, and the play was REVERSED.J.Scott punts 35 yards to LAC 37, Center-J.Harris. N.Remigio to LAC 41 for -4 yards (T.Dye). FUMBLES (T.Dye), RECOVERED by LAC-C.Murphy at LAC 41.Penalty on KC-J.Briningstool, Illegal Block Above the Waist, declined.',
+    short_text: 'null',
+    stat_yardage: 0, start_down: 4, start_distance: 9, start_yards_to_endzone: 98, end_down: 1, end_distance: 10, end_yards_to_endzone: 59,
+  };
+  const game = { id: 'lac-kc', visitor_team: { abbreviation: 'LAC' }, home_team: { abbreviation: 'KC' } };
+  const events = kickEvents([punt], [
+    starter('dye', 'Troy Dye', 'LB', 'LAC'),
+    starter('murphy', 'Caleb Murphy', 'DE', 'LAC'),
+    teamDefense('LAC'),
+  ], game);
+  assert.deepEqual(statsOf(events, 'dye'), { st_tkl_solo: 1, idp_ff: 1, st_ff: 1 });
+  assert.deepEqual(statsOf(events, 'murphy'), { st_fum_rec: 1 });
+  assert.deepEqual(statsOf(events, 'dst-LAC'), { def_st_tkl_solo: 1, def_st_ff: 1, def_st_fum_rec: 1 });
+});
+
+test('a punt after a fumbled snap keeps the slug reading (week 9 of 2026, NYG at PHI)', async () => {
+  const { isKickFiledUnderFumble } = await import('../../src/utils/nflPlays/fieldGeometry.js');
+  assert.equal(isKickFiledUnderFumble({
+    typeSlug: 'fumble-recovery-own',
+    rawText: 'B.Mann to PHI 28 for -14 yards. FUMBLES, and recovers at PHI 21. B.Mann punts -2 yards to PHI 40, out of bounds.',
+  }), false);
+  // A flag that wiped the punt out leaves it to the slug as well.
+  assert.equal(isKickFiledUnderFumble({
+    typeSlug: 'penalty',
+    rawText: 'M.Wishnowsky punts 38 yards to SEA 14, Center-J.Ashby, fair catch by R.Shaheed.PENALTY on SEA-C.Surratt, Roughing the Kicker, 15 yards, enforced at NE 48 - No Play.',
+  }), false);
+});
+
+// Quarterback hits, as Sleeper's lines for the completed weeks named carry them.
+test('a sack out of bounds is no quarterback hit (week 1 of 2026, NE at SEA)', () => {
+  // Sleeper: D.Thomas idp_sack 1, idp_qb_hit 1 — the hit is the bracketed
+  // incompletion, not the sack.
+  const game = { id: 'ne-sea', visitor_team: { abbreviation: 'NE' }, home_team: { abbreviation: 'SEA' } };
+  const sack = { id: '4018726563765', type_slug: 'sack', team: { abbreviation: 'NE' }, text: '(Shotgun) D.Maye sacked ob at NE 43 for -2 yards (D.Thomas).', stat_yardage: -2 };
+  const hit = { id: '4018726561585', type_slug: 'pass-incompletion', team: { abbreviation: 'NE' }, text: '(Shotgun) D.Maye pass incomplete deep right to D.Douglas [D.Thomas].' };
+  const starters = [starter('thomas', 'Drake Thomas', 'LB', 'SEA')];
+  const events = chainEvents([sack, hit], starters, game);
+  const total = (key) => events.filter((event) => event.playerId === 'thomas').reduce((sum, event) => sum + (event.stats?.[key] ?? 0), 0);
+  assert.equal(total('idp_sack'), 1);
+  assert.equal(total('idp_qbhit'), 1);
+});
+
+test('a strip-sack credits the quarterback hit to the bracketed defender only (weeks 1 and 5 of 2026)', () => {
+  // Week 1, BAL at IND — Sleeper: A.Key idp_qb_hit 1, idp_sack 0.5, idp_ff 1;
+  // L.Latu idp_sack 0.5 and no hit all game.
+  const split = {
+    id: '4018726591821', type_slug: 'sack-opp-fumble-recovery', team: { abbreviation: 'IND' },
+    text: 'L.Jackson sacked at BLT 20 for -10 yards (sack split by A.Key and L.Latu). FUMBLES (A.Key) [A.Key], RECOVERED by IND-D.Buckner at BLT 15. D.Buckner to BLT 15 for no gain (R.Stanley).',
+    stat_yardage: 0,
+  };
+  const balInd = { id: 'bal-ind', visitor_team: { abbreviation: 'BAL' }, home_team: { abbreviation: 'IND' } };
+  const splitEvents = chainEvents([split], [
+    starter('key', 'Arden Key', 'DE', 'IND'),
+    starter('latu', 'Laiatu Latu', 'DL', 'IND'),
+  ], balInd);
+  assert.deepEqual(pick(statsOf(splitEvents, 'key'), ['idp_sack', 'idp_qbhit', 'idp_ff']), { idp_sack: 0.5, idp_qbhit: 1, idp_ff: 1 });
+  assert.deepEqual(pick(statsOf(splitEvents, 'latu'), ['idp_sack', 'idp_qbhit']), { idp_sack: 0.5 });
+  // Week 5, PHI at JAX — Sleeper: J.Carter idp_sack 2, idp_ff 2, no hit.
+  const strip = {
+    id: '401872981191', type_slug: 'fumble-recovery-own', team: { abbreviation: 'JAX' },
+    text: '(Shotgun) T.Lawrence sacked at JAX 19 for -9 yards (J.Carter). FUMBLES (J.Carter), recovered by JAX-R.Hainsey at JAX 13.',
+    stat_yardage: -9,
+  };
+  const phiJax = { id: 'phi-jax', visitor_team: { abbreviation: 'PHI' }, home_team: { abbreviation: 'JAX' } };
+  const stripEvents = chainEvents([strip], [starter('carter', 'Jalen Carter', 'DL', 'PHI')], phiJax);
+  assert.deepEqual(pick(statsOf(stripEvents, 'carter'), ['idp_sack', 'idp_qbhit', 'idp_ff']), { idp_sack: 1, idp_ff: 1 });
+});
+
+test('a split sack with a spaced surname credits both sackers (week 3 of 2026, MIN at TB)', () => {
+  // Sleeper: K.Van Noy idp_sack 1.5 (this half and a solo sack), idp_qb_hit 2;
+  // I.Pace idp_sack 0.5.
+  const play = {
+    id: '4018729592976', type_slug: 'sack', team: { abbreviation: 'TB' },
+    text: ' (Shotgun) B.Mayfield sacked at TB 29 for -6 yards (sack split by I.Pace and K.Van Noy).', stat_yardage: -6,
+  };
+  const game = { id: 'min-tb', visitor_team: { abbreviation: 'MIN' }, home_team: { abbreviation: 'TB' } };
+  const events = chainEvents([play], [
+    starter('pace', 'Ivan Pace Jr.', 'LB', 'MIN'),
+    starter('vannoy', 'Kyle Van Noy', 'LB', 'MIN'),
+  ], game);
+  assert.deepEqual(pick(statsOf(events, 'pace'), ['idp_sack', 'idp_qbhit']), { idp_sack: 0.5, idp_qbhit: 1 });
+  assert.deepEqual(pick(statsOf(events, 'vannoy'), ['idp_sack', 'idp_qbhit']), { idp_sack: 0.5, idp_qbhit: 1 });
+});
+
+// Team defense lines, as Sleeper's for the completed weeks named carry them.
+test('a stop for loss is the solo tackler\'s and counts once for the team; a shared one counts none (week 1 of 2026)', () => {
+  // Sleeper's team tkl_loss is the sum of its players' idp_tkl_loss (281 of
+  // 300 team lines in weeks 1–10). NYJ at TEN: A.Hooker idp_tkl_loss 1 from
+  // "(A.Hooker, A.Hill)". GB at MIN: "(A; B)" is no one's tackle for loss.
+  const solo = { id: '4018729243300', type_slug: 'rush', team: { abbreviation: 'NYJ' }, text: 'B.Allen right guard to TEN 47 for -1 yards (A.Hooker, A.Hill).', short_text: 'Braelon Allen Rush, Loss of 1 Yd', stat_yardage: -1 };
+  const nyjTen = { id: 'nyj-ten', visitor_team: { abbreviation: 'NYJ' }, home_team: { abbreviation: 'TEN' } };
+  const soloEvents = chainEvents([solo], [starter('hooker', 'Amani Hooker', 'DB', 'TEN'), starter('hill', 'Amani Hill', 'DB', 'TEN'), teamDefense('TEN')], nyjTen);
+  assert.equal(statsOf(soloEvents, 'hooker')?.idp_tkl_loss, 1);
+  assert.equal(statsOf(soloEvents, 'hill')?.idp_tkl_loss, undefined);
+  assert.equal(statsOf(soloEvents, 'dst-TEN')?.tkl_loss, 1);
+  const shared = { id: '4018729272767', type_slug: 'rush', team: { abbreviation: 'GB' }, text: 'M.Lloyd left tackle to MIN 8 for -1 yards (T.Ingram-Dawkins; L.Rodriguez).', short_text: 'MarShawn Lloyd Rush, Loss of 1 Yd', stat_yardage: -1 };
+  const gbMin = { id: 'gb-min', visitor_team: { abbreviation: 'GB' }, home_team: { abbreviation: 'MIN' } };
+  const sharedEvents = chainEvents([shared], [starter('itd', 'Tyrion Ingram-Dawkins', 'DE', 'MIN'), teamDefense('MIN')], gbMin);
+  assert.equal(statsOf(sharedEvents, 'itd')?.idp_tkl_loss, undefined);
+  assert.equal(statsOf(sharedEvents, 'dst-MIN')?.tkl_loss, undefined);
+});
+
+test('a strip-sack is a tackle for loss from the sack clause, not the provider yardage (week 1 of 2026, TB at CIN)', () => {
+  // Sleeper: B.Mafe idp_tkl_loss 1; the row's stat_yardage is 0.
+  const play = {
+    id: '4018729253399', type_slug: 'sack-opp-fumble-recovery', team: { abbreviation: 'CIN' },
+    text: '(Shotgun) B.Mayfield sacked at TB 39 for -7 yards (B.Mafe). FUMBLES (B.Mafe) [B.Mafe], touched at TB 43, RECOVERED by CIN-T.Slaton at TB 44.',
+    short_text: 'Baker Mayfield Sacked Baker Mayfield Fumble T.J. Slaton Jr. 0 Yd Fumble Recovery', stat_yardage: 0,
+  };
+  const game = { id: 'tb-cin', visitor_team: { abbreviation: 'TB' }, home_team: { abbreviation: 'CIN' } };
+  const events = chainEvents([play], [starter('mafe', 'Boye Mafe', 'DE', 'CIN'), teamDefense('CIN')], game);
+  assert.equal(statsOf(events, 'mafe')?.idp_tkl_loss, 1);
+  assert.equal(statsOf(events, 'dst-CIN')?.tkl_loss, 1);
+});
+
+test('a safety summary row credits the team that scored it (weeks 2 and 8 of 2026)', () => {
+  // Sleeper: LV safe 1 (LV at LAC), CIN safe 1 (TEN at CIN); the row's team.
+  const scoring = { safe: 2 };
+  const run = (row, game, teams) => buildPlayEvents(
+    { [game.id]: [row] }, buildStarterNameIndex(teams.map(teamDefense)), scoring,
+    new Map(teams.map((team) => [`dst-${team}`, 'DEF'])), new Map([[game.id, game]]),
+  );
+  const lv = run({ id: '4018729414219', type_slug: 'pass-incompletion', team: { abbreviation: 'LV' }, scoring_play: true, text: 'Team Safety', short_text: 'Team Safety' },
+    { id: 'lv-lac', visitor_team: { abbreviation: 'LV' }, home_team: { abbreviation: 'LAC' } }, ['LV', 'LAC']);
+  assert.deepEqual(lv.map((event) => [event.playerId, event.stats?.safe]), [['dst-LV', 1]]);
+  const cin = run({ id: '4018730313455', type_slug: 'safety', team: { abbreviation: 'CIN' }, scoring_play: true, text: 'Demetrius Knight Jr. Safety', short_text: 'Demetrius Knight Jr. Safety' },
+    { id: 'ten-cin', visitor_team: { abbreviation: 'TEN' }, home_team: { abbreviation: 'CIN' } }, ['TEN', 'CIN']);
+  assert.deepEqual(cin.map((event) => [event.playerId, event.stats?.safe]), [['dst-CIN', 1]]);
+});
+
+test('a blocked extra point is the defense\'s blocked kick (week 1 of 2026, WAS at PHI)', () => {
+  // Sleeper: J.Carter idp_blk_kick 1; PHI DEF blk_kick 1.
+  const play = {
+    id: '4018729291861', type_slug: 'rushing-touchdown', team: { abbreviation: 'WSH' }, scoring_play: true,
+    text: 'J.Croskey-Merritt left guard for 1 yard, TOUCHDOWN. D.Stevens extra point is Blocked (J.Carter), Center-T.Ott, Holder-T.Way.',
+  };
+  const game = { id: 'was-phi', visitor_team: { abbreviation: 'WSH' }, home_team: { abbreviation: 'PHI' } };
+  const starters = [starter('carter', 'Jalen Carter', 'DL', 'PHI'), teamDefense('PHI')];
+  const events = buildPlayEvents({ [game.id]: [play] }, buildStarterNameIndex(starters), { idp_blk_kick: 1, blk_kick: 1 },
+    new Map(starters.map((row) => [row.id, row.player.position])), new Map([[game.id, game]]));
+  assert.deepEqual(statsOf(events, 'carter'), { idp_blk_kick: 1 });
+  assert.deepEqual(statsOf(events, 'dst-PHI'), { blk_kick: 1 });
 });

@@ -84,6 +84,8 @@ import { buildSlateAxis } from '../utils/matchupSlateAxis.js';
 import { resolveFantasyLiveAvailability, getLiveConfigurationMessage } from '../utils/fantasyLiveAvailability.js';
 import { LIVE_SANDBOX_ENABLED, subscribeToRewind, useLiveSandbox } from '../dev/liveSandbox';
 import { traceLiveMilestone, traceLiveWork } from '../utils/liveLoadTrace.js';
+import { getMatchupLiveCadence, isDeepEqual } from '../utils/liveRefreshCadence.js';
+import { createVisiblePoller, isPageActive } from '../utils/visiblePolling.js';
 
 const LIVE_REFRESH_MS = 5000;
 const FREE_TIER_REFRESH_MS = 60000;
@@ -417,6 +419,8 @@ export default function useMatchupLiveFeed({
   const liveSnapshotInFlightContextsRef = useRef(new Map());
   const playFetchInFlightContextsRef = useRef(new Set());
   const playsRetryTimerRef = useRef(null);
+  // Removes the listeners of a play retry waiting for the tab to return.
+  const playsRetryWaitRef = useRef(null);
   // Play request contexts whose feed has been complete at least once.
   const feedShownContextsRef = useRef(new Set());
   const playRequestContextRef = useRef(null);
@@ -611,11 +615,28 @@ export default function useMatchupLiveFeed({
     );
     if (!quiet) setLoadingLive(true);
     setLiveError('');
+    // Sleeper's players_points is what the reconciler confirms plays against,
+    // so it is refreshed on the same tick as BDL. It does not depend on the
+    // BDL answers, so it runs alongside them and is applied after them, as
+    // before (only when games and stats succeeded). Games then stats stay in
+    // series: the stats request needs the relevant game ids.
+    const refreshMatchups = sandboxReplay
+      ? () => loadMatchups(selectedLeagueId, week)
+      : !sandboxActive
+        ? () => getLiveMatchups(selectedLeagueId, week)
+        : null;
+    const matchupsRequest = refreshMatchups
+      ? Promise.resolve().then(refreshMatchups).catch(() => null)
+      : Promise.resolve(null);
     try {
       const gamesPayload = await liveSource.getLiveGames({ season, week });
       if (!isCurrentRequest()) return;
       const games = Array.isArray(gamesPayload?.data) ? gamesPayload.data : [];
-      setLiveGamesState({ key: requestFeedKey, games });
+      // Unchanged payloads keep their identity, so a quiet tick does not
+      // rebuild the axis, play events or anything else keyed on them.
+      setLiveGamesState((prev) => (
+        prev.key === requestFeedKey && isDeepEqual(prev.games, games) ? prev : { key: requestFeedKey, games }
+      ));
       if (!quiet) traceLiveMilestone('games loaded', { detail: `${games.length} games` });
       setGamesLoadedContext(requestContext);
 
@@ -624,26 +645,21 @@ export default function useMatchupLiveFeed({
         const statsPayload = await liveSource.getLivePlayerStatsForGames(gameIds);
         if (!isCurrentRequest()) return;
         const groupedStats = statsPayload?.games && typeof statsPayload.games === 'object' ? statsPayload.games : {};
-        setStatsByGame(Object.fromEntries(gameIds.map((gameId) => [String(gameId), groupedStats[String(gameId)] ?? []])));
+        const nextStats = Object.fromEntries(gameIds.map((gameId) => [String(gameId), groupedStats[String(gameId)] ?? []]));
+        setStatsByGame((prev) => (isDeepEqual(prev, nextStats) ? prev : nextStats));
         if (!quiet) traceLiveMilestone('player stats loaded', { detail: `${gameIds.length} games` });
       } else {
-        setStatsByGame({});
+        setStatsByGame((prev) => (Object.keys(prev).length ? {} : prev));
       }
-      // Sleeper's players_points is what the reconciler confirms plays
-      // against, so it is refreshed on the same tick as BDL.
-      const refreshMatchups = sandboxReplay
-        ? () => loadMatchups(selectedLeagueId, week)
-        : !sandboxActive
-          ? () => getLiveMatchups(selectedLeagueId, week)
-          : null;
-      if (refreshMatchups) {
-        try {
-          const freshMatchups = await refreshMatchups();
-          if (isCurrentRequest() && Array.isArray(freshMatchups)) setMatchupsState({ key: requestWeekKey, rows: freshMatchups });
-        } catch {
-          // Keep the last good Sleeper matchup payload.
-        }
+      // Keep the last good Sleeper matchup payload when this one failed.
+      const freshMatchups = await matchupsRequest;
+      if (isCurrentRequest() && Array.isArray(freshMatchups)) {
+        setMatchupsState((prev) => (
+          prev.key === requestWeekKey && isDeepEqual(prev.rows, freshMatchups) ? prev : { key: requestWeekKey, rows: freshMatchups }
+        ));
       }
+      // Bumped on every successful tick, changed or not: it drives the play
+      // refresh, the reconciler's clock and the win-chance history.
       if (isCurrentRequest()) setLastUpdatedAt(new Date());
     } catch (error) {
       if (isCurrentRequest()) setLiveError(error?.message ?? 'Could not load live scoring data.');
@@ -666,10 +682,42 @@ export default function useMatchupLiveFeed({
     };
   }, [fetchLiveSnapshot, liveSnapshotRefreshVersion]);
 
+  // Live refresh cadence: the tier's fast cadence only while a matchup game is
+  // live or near kickoff (and until this context's games first arrive, or
+  // after a failed snapshot); a slow keep-alive otherwise; nothing while the
+  // tab is hidden or offline, with one refresh on return (visiblePolling.js).
+  const liveCadenceInputs = {
+    games: liveGames,
+    teams: matchupTeams,
+    fastMs: getLiveRefreshMs(liveStatus),
+    loaded: gamesLoadedContext === liveSnapshotContextKey,
+    errored: Boolean(liveError),
+    always: sandboxActive,
+  };
+  const liveCadenceRef = useRef(liveCadenceInputs);
+  const livePollerRef = useRef(null);
+  const liveCadence = getMatchupLiveCadence(liveCadenceInputs);
+  const liveCadenceDelayMs = liveCadence.delayMs;
+  const liveCadenceMode = liveCadence.mode;
+  useEffect(() => {
+    liveCadenceRef.current = liveCadenceInputs;
+  });
+  useEffect(() => {
+    livePollerRef.current?.reschedule();
+  }, [liveCadenceDelayMs, liveCadenceMode]);
+
   useEffect(() => {
     if (!liveStatus?.session?.enabled || !week || historical) return undefined;
-    const interval = window.setInterval(() => { void fetchLiveSnapshot({ quiet: true }); }, getLiveRefreshMs(liveStatus));
-    return () => window.clearInterval(interval);
+    const poller = createVisiblePoller({
+      run: () => fetchLiveSnapshot({ quiet: true }),
+      getDelay: () => getMatchupLiveCadence({ ...liveCadenceRef.current, now: Date.now() }).delayMs,
+    });
+    livePollerRef.current = poller;
+    poller.start();
+    return () => {
+      poller.stop();
+      if (livePollerRef.current === poller) livePollerRef.current = null;
+    };
   }, [fetchLiveSnapshot, historical, liveStatus, week]);
 
   const matchupLiveGameCount = useMemo(() => (
@@ -695,10 +743,12 @@ export default function useMatchupLiveFeed({
       .catch(() => {});
     void load();
     if (!matchupLiveGameCount || sandboxReplay) return () => { cancelled = true; };
-    const interval = window.setInterval(() => { void load(); }, SLEEPER_STATS_REFRESH_MS);
+    // Paused while the tab is hidden or offline; one refresh on return.
+    const poller = createVisiblePoller({ run: load, getDelay: () => SLEEPER_STATS_REFRESH_MS });
+    poller.start();
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      poller.stop();
     };
   }, [loadWeeklyStats, matchupLiveGameCount, refreshLiveWeeklyStats, sandboxActive, sandboxReplay, season, selectedLeagueId, week, weekKey, liveSnapshotRefreshVersion]);
 
@@ -1248,15 +1298,43 @@ export default function useMatchupLiveFeed({
       // A finished week never polls, so without this a request that failed
       // (a busy provider, a dropped connection) left the chart flat and the
       // plays list empty until the page was reloaded.
-      if (failed && historical && playRequestContextRef.current === requestContext) {
+      // The same applies to the current week while no matchup game is live:
+      // its refresh is then minutes apart. A retry due while the tab is hidden
+      // or offline waits for the page to come back, then runs once.
+      const tickMs = getMatchupLiveCadence({ ...liveCadenceRef.current, now: Date.now() }).delayMs;
+      const slowTick = historical || tickMs == null || tickMs > PLAYS_REFRESH_MIN_MS;
+      if (failed && slowTick && playRequestContextRef.current === requestContext) {
         window.clearTimeout(playsRetryTimerRef.current);
-        playsRetryTimerRef.current = window.setTimeout(() => setPlaysRetryVersion((version) => version + 1), PLAYS_RETRY_MS);
+        playsRetryWaitRef.current?.();
+        const retry = () => setPlaysRetryVersion((version) => version + 1);
+        playsRetryTimerRef.current = window.setTimeout(() => {
+          if (isPageActive()) {
+            retry();
+            return;
+          }
+          const onReturn = () => {
+            if (!isPageActive()) return;
+            stopWaiting();
+            retry();
+          };
+          const stopWaiting = () => {
+            document.removeEventListener('visibilitychange', onReturn);
+            window.removeEventListener('online', onReturn);
+            if (playsRetryWaitRef.current === stopWaiting) playsRetryWaitRef.current = null;
+          };
+          document.addEventListener('visibilitychange', onReturn);
+          window.addEventListener('online', onReturn);
+          playsRetryWaitRef.current = stopWaiting;
+        }, PLAYS_RETRY_MS);
       }
     })();
     return undefined;
   }, [currentMatchup, demoFeedEnabled, feedKey, historical, lastUpdatedAt, liveGames, liveSource, liveStatus, matchupTeams, playRequestContextKey, playsRetryVersion, sandbox, sideSummaries, storeGamePlays]);
 
-  useEffect(() => () => window.clearTimeout(playsRetryTimerRef.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(playsRetryTimerRef.current);
+    playsRetryWaitRef.current?.();
+  }, []);
 
   const gamesById = useMemo(() => {
     const map = new Map();
@@ -1382,7 +1460,10 @@ export default function useMatchupLiveFeed({
     }));
     reconciliationRef.current = next;
     setReconciliation(next);
-  }, [activeScoringSettings, currentMatchup, currentStarterPointsById, finalGameIds, playEvents, positionsById, reconcilerEnabled, sandbox, sandboxReplay, settledStarterIds, starterSleeperStats, sleeperStatsFetchedAt]);
+    // lastUpdatedAt: unchanged Sleeper rows now keep their identity, so the
+    // tick itself re-runs this step, keeping its time rules (stat-line
+    // freshness, pending expiry) on the same clock as before.
+  }, [activeScoringSettings, currentMatchup, currentStarterPointsById, finalGameIds, lastUpdatedAt, playEvents, positionsById, reconcilerEnabled, sandbox, sandboxReplay, settledStarterIds, starterSleeperStats, sleeperStatsFetchedAt]);
 
   // One stream for the feed, the chart and the hover cards, each event placed
   // on the kickoff-window axis as `progress`; `gameProgress` stays per game.

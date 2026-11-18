@@ -64,6 +64,9 @@ export function buildAppViewRecords() {
     sublabel: view.section,
     tokens: [
       ...nameTokens(view.label),
+      // The section's own name lists its views: "fantasy" finds Rosters and
+      // Matchups, which never say the word themselves.
+      ...nameTokens(view.section),
       ...view.aliases.flatMap((alias) => nameTokens(alias)),
     ],
     route: view.route,

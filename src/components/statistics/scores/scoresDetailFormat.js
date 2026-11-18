@@ -1,4 +1,4 @@
-import { parsePlayNarrative } from '../../../utils/nflPlays/playNarrative.js';
+import { readPlayNarrative } from '../../../utils/playByPlay/normalizePlay.js';
 
 // Plain formatting shared by the Scores drilldown sections.
 
@@ -42,7 +42,7 @@ export function playClockLabel(play) {
 }
 
 export function playSentence(play) {
-  const narrative = parsePlayNarrative(play);
+  const narrative = readPlayNarrative(play);
   return narrative.confident && narrative.sentence ? narrative.sentence : play?.description ?? '';
 }
 
@@ -66,7 +66,7 @@ const downLabel = (play) => {
 
 /** The few words beside a drive lane: down and distance, then who did what. */
 export function drivePlayNote(play) {
-  const narrative = parsePlayNarrative(play);
+  const narrative = readPlayNarrative(play);
   const role = (name) => surname(narrative.actors?.find((actor) => actor.role === name)?.name);
   const slug = String(play?.typeSlug ?? '').toLowerCase();
   const kind = narrative.playKind;

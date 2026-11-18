@@ -10,6 +10,7 @@ export const ONBOARDING_PHASE = {
   welcome: 'welcome',
   awaitingLeague: 'awaiting-league',
   tour: 'tour',
+  connect: 'connect',
 };
 
 export function normalizeOnboardingStatus(value) {

@@ -10,7 +10,9 @@
 //     probability, and every play he was credited on, attributed through the
 //     Fantasy Live play path. Built from Statistics Scores game details, so it
 //     shares the BALLDONTLIE gateway, its rate limits, and its play snapshots.
-//     A finished game's result is cached and never rebuilt.
+//     A finished game's detail is held once per game (finishedGameDetails.js,
+//     shared with the team dashboard and backed by the finished-games archive)
+//     and each player's result from it is cached and never rebuilt.
 
 import express from 'express';
 import process from 'node:process';
@@ -18,10 +20,9 @@ import { buildLeaguePools, compactWeekRows, DASHBOARD_GROUPS, selectGroupPools }
 import { buildPlayerGame, identityName, pickReferencedPeople } from '../src/utils/playerSeason/playerSeasonGames.js';
 import { positionGroup } from '../src/utils/playerMetrics.js';
 import { getTeamAbbr, normalizeName } from '../src/utils/liveScoringFeed.js';
-import {
-  fetchStatisticsScoresGameDetail,
-  fetchStatisticsScoresGames,
-} from './statisticsScoresHandlers.js';
+import { fetchStatisticsScoresGames, seasonCacheControl } from './statisticsScoresHandlers.js';
+import { createBuiltGameCache, createFinishedGameDetailStore, isSettledFinalDetail } from './finishedGameDetails.js';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 
 const SLEEPER_STATS_BASE = 'https://api.sleeper.com/stats/nfl';
 const SLEEPER_STATE_URL = 'https://api.sleeper.app/v1/state/nfl';
@@ -33,7 +34,7 @@ const DETAIL_CONCURRENCY = 3;
 const WEEK_CONCURRENCY = 4;
 const MIN_SEASON = 2022;
 
-const isFinal = (game) => /^final/i.test(String(game?.status ?? ''));
+const isFinal = (game) => isFinalGame(game);
 
 function badRequest(message) {
   const error = new Error(message);
@@ -67,12 +68,15 @@ export function createPlayerSeasonService({
   fetchImpl = globalThis.fetch,
   gateway,
   snapshotStore,
+  archive = null,
   env = process.env,
   now = () => Date.now(),
+  // Shared with the team dashboard so each finished game is held once.
+  gameDetails = createFinishedGameDetailStore({ gateway, snapshotStore, archive, env }),
 } = {}) {
   const weekCache = new Map(); // `${season}:${week}` -> { rows, fetchedAt, final }
   const poolCache = new Map(); // season -> { key, pools }
-  const gameCache = new Map(); // `${gameId}|${team}|${name}` -> built game (finished games only)
+  const builtGames = createBuiltGameCache({ maxEntries: MAX_GAME_ENTRIES }); // finished, settled games per subject
   const inFlight = new Map();
   let nflState = null;
 
@@ -150,16 +154,18 @@ export function createPlayerSeasonService({
     return pools;
   }
 
-  function rememberGame(key, value) {
-    gameCache.set(key, value);
-    while (gameCache.size > MAX_GAME_ENTRIES) gameCache.delete(gameCache.keys().next().value);
-  }
+
 
   async function getPlayerSeason({ season, team, name, position, sleeperId }) {
     const requestedTeam = getTeamAbbr(team);
     // Sleeper's weekly rows say which team he played for each week, which covers
-    // past seasons on another team and mid-season trades.
-    const weeks = await getSeasonWeeks(season).catch(() => []);
+    // past seasons on another team and mid-season trades. The season's game
+    // list does not depend on them, so both are fetched at once.
+    let weeksFailed = false;
+    const [weeks, gamesPayload] = await Promise.all([
+      getSeasonWeeks(season).catch(() => { weeksFailed = true; return []; }),
+      fetchStatisticsScoresGames({ season, phase: 'regular', gateway, env }),
+    ]);
     // Without a Sleeper ID from the browser, find him by name on the requested
     // team, then by name in the same position group.
     let resolvedSleeperId = sleeperId;
@@ -177,7 +183,6 @@ export function createPlayerSeasonService({
     const seasonTeams = new Set(teamByWeek.size ? teamByWeek.values() : [requestedTeam]);
     const teamFor = (game) => teamByWeek.get(Number(game.week)) ?? (teamByWeek.size ? null : requestedTeam);
 
-    const gamesPayload = await fetchStatisticsScoresGames({ season, phase: 'regular', gateway, env });
     const teamGames = (gamesPayload.games ?? [])
       .filter((game) => {
         const sides = [game.home_team?.abbreviation, game.visitor_team?.abbreviation].map(getTeamAbbr);
@@ -191,18 +196,20 @@ export function createPlayerSeasonService({
       const gameTeam = teamFor(game);
       const subject = { name, team: gameTeam, position };
       const key = `${game.id}|${gameTeam}|${normalizeName(name)}`;
-      if (gameCache.has(key)) return gameCache.get(key);
-      return coalesce(`game:${key}`, async () => {
-        const detail = await fetchStatisticsScoresGameDetail({ gameId: game.id, phase: 'regular', gateway, env, snapshotStore });
+      const cachedGame = builtGames.get(key);
+      if (cachedGame !== undefined) return { result: cachedGame, settled: true };
+      return builtGames.coalesce(key, async () => {
+        const detail = await gameDetails.get({ gameId: game.id, phase: 'regular' });
         const result = buildPlayerGame(detail, subject);
-        // A game whose plays have not landed yet is not cached, so a retry can fill it in.
+        // A game whose plays or box scores have not landed yet is not cached, so a retry can fill it in.
         if (result) result.game.team = gameTeam;
-        if (result && detail.coverage?.plays) rememberGame(key, result);
-        return result;
+        const settled = isSettledFinalDetail(detail);
+        if (result && settled) builtGames.set(key, result);
+        return { result, settled };
       });
     });
 
-    const results = built.filter(Boolean);
+    const results = built.map(({ result }) => result).filter(Boolean);
     const people = Object.assign({}, ...results.map((result) => result.people));
     const games = results.map((result) => result.game);
     const subjectRow = results.find((result) => result.subjectId != null);
@@ -230,6 +237,11 @@ export function createPlayerSeasonService({
       people: pickReferencedPeople(games, people),
       remaining: teamGames.length - finals.length,
       coverage: { plays: games.some((game) => game.plays.length > 0) },
+      // False when Sleeper's weeks failed, a finished game's plays or box
+      // scores had not landed, or there is no game list (no provider key, or
+      // the provider unreachable): the payload is then only cached briefly,
+      // whatever the season, so it fills in once the games arrive.
+      complete: !weeksFailed && teamGames.length > 0 && built.every(({ settled }) => settled),
     };
   }
 
@@ -257,11 +269,12 @@ export function createPlayerSeasonService({
 
 export function createPlayerSeasonRouter(options = {}) {
   const router = express.Router();
+  const now = options.now ?? (() => Date.now());
   const service = options.service ?? createPlayerSeasonService(options);
   const send = (handler) => async (req, res) => {
     try {
       const payload = await handler(req.query);
-      res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
+      res.set('Cache-Control', seasonCacheControl(payload.season, { complete: payload.complete !== false, nowMs: now() })).json({ ok: true, ...payload });
     } catch (error) {
       const status = error.statusCode ?? 500;
       res.status(status).set('Cache-Control', 'no-store').json({

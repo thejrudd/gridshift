@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../../Modal';
 import useMediaQuery from '../../../hooks/useMediaQuery.js';
 import { useTheme } from '../../../context/ThemeContext';
@@ -774,6 +774,21 @@ export default function NflMatchupModal({
     `${season}:${week}:${left}:${right}:${getEventId(game) ?? ''}`,
   );
 
+  // Once the full scoreboard scrolls out of the sheet, a compact score bar
+  // takes its place under the fixed header.
+  const titleRef = useRef(null);
+  const [titleHidden, setTitleHidden] = useState(false);
+  useEffect(() => {
+    const node = titleRef.current;
+    if (!revealed || !node || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => setTitleHidden(!entry.isIntersecting),
+      { root: node.parentElement, threshold: 0, rootMargin: '-40px 0px 0px 0px' },
+    );
+    observer.observe(node);
+    return () => { observer.disconnect(); setTitleHidden(false); };
+  }, [revealed]);
+
   const recordBefore = useMemo(() => ({
     [left]: buildTeamSeasonSummary(schedule, left, { beforeWeek: week, throughWeek: phase === 'pre' ? statsThroughWeek : week - 1 }),
     [right]: buildTeamSeasonSummary(schedule, right, { beforeWeek: week, throughWeek: phase === 'pre' ? statsThroughWeek : week - 1 }),
@@ -822,7 +837,7 @@ export default function NflMatchupModal({
       : `${weekLabel} preview`;
   const headerLine = phase === 'pre'
     ? [formatKickoff(game?.kickoff), network, venue].filter(Boolean).join(' · ')
-    : [weekLabel, network, venue].filter(Boolean).join(' · ');
+    : [network, venue].filter(Boolean).join(' · ');
   const axisLabel = phase === 'final'
     ? 'Final'
     : phase === 'live'
@@ -845,7 +860,7 @@ export default function NflMatchupModal({
     const line = phase === 'pre'
       ? `PF ${record.pointsFor} · PA ${record.pointsAgainst} · Diff ${formatSigned(record.pointsFor - record.pointsAgainst)}`
       : phase === 'final'
-        ? `Now ${formatRecord(record)}${result ? ` · ${result}` : ''}`
+        ? `${result ? `${result} · ` : ''}${formatRecord(record)} after week ${week}`
         : `Season ${formatRecord(record)}`;
     return (
       <div
@@ -882,6 +897,16 @@ export default function NflMatchupModal({
       </div>
     );
   };
+
+  const miniSide = (key) => (
+    <span className="nfl-matchup-mini__side">
+      <img src={teamLogoUrl(key)} alt="" loading="lazy" decoding="async" />
+      <b>{key}</b>
+      <strong className="tabular-nums">
+        {phase !== 'pre' && scoreFor(key) != null ? scoreFor(key) : formatRecord(recordBefore[key])}
+      </strong>
+    </span>
+  );
 
   let revealIndex = 0;
   const reveal = () => ({ '--matchup-preview-index': revealIndex++ });
@@ -922,6 +947,15 @@ export default function NflMatchupModal({
         <span className="matchup-preview__when">{headerLine}</span>
         <button type="button" className="matchup-preview__close" onClick={onClose} aria-label="Close matchup">×</button>
       </header>
+      {revealed && titleHidden && (
+        <div className="nfl-matchup-mini" aria-hidden="true">
+          {miniSide(left)}
+          <span className="nfl-matchup-mini__axis">
+            {phase === 'live' ? [axisLabel, live?.status?.clock].filter(Boolean).join(' ') : axisLabel}
+          </span>
+          {miniSide(right)}
+        </div>
+      )}
 
       {!revealed ? (
         <div className="matchup-preview__body" role="status" aria-busy="true" aria-label="Loading matchup">
@@ -929,7 +963,7 @@ export default function NflMatchupModal({
         </div>
       ) : (
         <div className="matchup-preview__body gridshift-reveal">
-          <div className="matchup-preview__title companion-matchup-masthead__score-grid">
+          <div ref={titleRef} className="matchup-preview__title companion-matchup-masthead__score-grid">
             {renderSide(left, leftTeam, leftColors, 'start')}
             <div className="matchup-preview__axis companion-matchup-masthead__axis">
               <span className="companion-matchup-masthead__axis-label">{axisLabel}</span>

@@ -1114,12 +1114,21 @@ const normalizeEspnAbbr = a => ESPN_ABBR_TO_SLEEPER[a?.toUpperCase()] ?? a?.toUp
  *
  * Cache strategy: past seasons are permanent; the current/future season uses
  * the normal one-hour stats TTL so scheduled rows can later acquire official
- * completion and score metadata. The v7 key drops stale v6 current-season
- * rows that were stored indefinitely before this distinction existed.
+ * completion and score metadata. A current-season week whose games are all
+ * final keeps its row permanently, so a warm load refetches only the weeks
+ * still to be played. The v7 key drops stale v6 current-season rows that were
+ * stored indefinitely before this distinction existed.
  */
+export function isFinalScheduleWeek(weekMap) {
+  const games = Object.values(weekMap ?? {});
+  return games.length > 0 && games.every((game) => game?.completed === true);
+}
+
 async function fetchWeekSchedule(season, week) {
   const url = `${ESPN_BASE}/scoreboard?seasontype=2&week=${week}&dates=${season}`;
-  const ttl = Number(season) < CURRENT_SEASON ? TTL.historical : TTL.stats;
+  const ttl = Number(season) < CURRENT_SEASON
+    ? TTL.historical
+    : (data) => (isFinalScheduleWeek(data) ? TTL.historical : TTL.stats);
   return cachedFetch(
     `sched_v8_${season}_${week}`,
     async () => {
@@ -1199,67 +1208,6 @@ async function fetchWeekSchedule(season, week) {
     // Empty future weeks are never cached, so their schedule can appear later.
     (data) => data != null && Object.keys(data).length > 0,
   );
-}
-
-/**
- * Fetch the ESPN eventlog for a player and return a map of ESPN event IDs to
- * ESPN competitor IDs extracted from the statistics $ref URL of each game entry.
- *
- * The competitor ID embedded in the stats $ref URL is set at game time and never
- * updated when a player is traded — it always reflects the team they actually
- * played for in that specific game.
- *
- * Returns { [espnEventId]: espnCompetitorId } or null on failure.
- * Cached permanently for past seasons; 1-hour TTL for the current season.
- */
-export async function fetchPlayerGameTeamMap(espnPlayerId, season) {
-  const isHistorical = parseInt(season) < CURRENT_SEASON;
-  const ttl = isHistorical ? TTL.historical : 60 * 60 * 1000;
-  return cachedFetch(`nfl_gt_v2_${espnPlayerId}_${season}`, async () => {
-    const res = await fetch(
-      `${ESPN_CORE}/seasons/${season}/athletes/${espnPlayerId}/eventlog?lang=en&region=us`
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const rawItems = data.events?.items ?? [];
-    const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
-
-    // Pass 1: extract eventId + competitorId from statistics.$ref where available.
-    // Stats $ref format: .../events/{eventId}/competitors/{competitorId}/roster/...
-    const map = {};
-    const eventsWithoutComp = [];
-    for (const item of items) {
-      const statsRef = item.statistics?.$ref ?? '';
-      const eventRef = item.event?.$ref ?? '';
-      const eventId = statsRef.match(/events\/(\d+)/)?.[1]
-        ?? eventRef.match(/events\/(\d+)/)?.[1];
-      const competitorId = statsRef.match(/competitors\/(\d+)/)?.[1];
-      if (!eventId) continue;
-      if (competitorId) {
-        map[eventId] = competitorId;
-      } else {
-        eventsWithoutComp.push(eventId);
-      }
-    }
-
-    // Pass 2: for eventlog entries that had an event ID but no competitor ID
-    // (common for defensive players whose statistics.$ref is absent), fall back
-    // to the most common competitor ID from entries that DID resolve.
-    // This is safe because mid-season team changes are rare; the competitor ID
-    // represents the team the player was on for most/all of the season.
-    if (eventsWithoutComp.length > 0 && Object.keys(map).length > 0) {
-      const compCounts = {};
-      for (const compId of Object.values(map)) {
-        compCounts[compId] = (compCounts[compId] ?? 0) + 1;
-      }
-      const fallbackComp = Object.entries(compCounts).sort((a, b) => b[1] - a[1])[0][0];
-      for (const eventId of eventsWithoutComp) {
-        map[eventId] = fallbackComp;
-      }
-    }
-
-    return Object.keys(map).length > 0 ? map : null;
-  }, ttl, (d) => d != null);
 }
 
 /**

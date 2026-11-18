@@ -12,6 +12,7 @@ import { createLiveGameSnapshotStore } from './liveGameSnapshots.js';
 import { createLivePlaysArchive, getLivePlaysArchiveConfig } from './livePlaysArchive.js';
 import { createLiveRouter, getLiveConfigStatus } from './liveHandlers.js';
 import { createStatisticsScoresRouter } from './statisticsScoresHandlers.js';
+import { createFinishedGameDetailStore } from './finishedGameDetails.js';
 import { createPlayerSeasonRouter } from './playerSeasonHandlers.js';
 import { createTeamSeasonRouter } from './teamSeasonHandlers.js';
 import { createNflTeamStatsRouter } from './nflTeamStatsHandlers.js';
@@ -84,14 +85,27 @@ app.use('/api/statistics/scores/team-stats', createNflTeamStatsRouter());
 app.use('/api/statistics/scores', createStatisticsScoresRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
+  // Escrows finished games' detail (game, player stats, team stats).
+  archive: livePlaysArchive,
 }));
+// One copy of each finished game's detail, shared by the player and team
+// season dashboards and read through the same archive.
+const finishedGameDetails = createFinishedGameDetailStore({
+  gateway: balldontlieGateway,
+  snapshotStore: liveGameSnapshotStore,
+  archive: livePlaysArchive,
+});
 app.use('/api/statistics/players', createPlayerSeasonRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
+  archive: livePlaysArchive,
+  gameDetails: finishedGameDetails,
 }));
 app.use('/api/statistics/teams', createTeamSeasonRouter({
   gateway: balldontlieGateway,
   snapshotStore: liveGameSnapshotStore,
+  archive: livePlaysArchive,
+  gameDetails: finishedGameDetails,
 }));
 app.use('/api/fantasy', createFantasyAdpRouter({ gateway: balldontlieGateway }));
 app.use('/api/fantasy', createFantasyProjectionsRouter({ gateway: balldontlieGateway }));

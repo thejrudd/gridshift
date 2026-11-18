@@ -630,7 +630,7 @@ export default function CompanionScoring() {
           <p>{scoringProfile.summary}</p>
           <div className="companion-scoring-profile-facts" aria-label="Scoring profile facts">
             {scoringProfile.facts.map((fact) => <span key={fact}>{fact}</span>)}
-            <span>{scoringProfile.activeBonusCount} bonus categor{scoringProfile.activeBonusCount === 1 ? 'y' : 'ies'} active</span>
+            <span>{scoringProfile.activeBonusCount} bonus{scoringProfile.activeBonusCount === 1 ? '' : 'es'}</span>
           </div>
         </header>
 
@@ -641,7 +641,6 @@ export default function CompanionScoring() {
                 <span>01</span>
                 <h2 id="scoring-core-title">Core scoring</h2>
               </div>
-              <p>The values that shape every weekly total.</p>
             </div>
             <dl className="companion-scoring-core-grid">
               {scoringProfile.coreRules.map((rule) => (
@@ -660,7 +659,6 @@ export default function CompanionScoring() {
                 <span>02</span>
                 <h2 id="scoring-units-title">Scoring units</h2>
               </div>
-              <p>How each part of the lineup earns points.</p>
             </div>
             <div className="companion-scoring-unit-ledger">
               {scoringProfile.units.map((unit) => (

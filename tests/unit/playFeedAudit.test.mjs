@@ -47,3 +47,30 @@ test('ESPN box score columns map to Sleeper stat keys', () => {
   assert.equal(lines.get('3').fgmiss, 1);
   assert.equal(lines.get('3').xpm, 1);
 });
+
+test('team defense lines are compared in Sleeper\'s keys', () => {
+  // CIN's sack-fumble: CIN DEF gets the sack, the force (Sleeper `ff`) and
+  // the recovery; ATL's line is only what the official record says.
+  const sackFumble = {
+    id: 'strip', period: 3, clock_display: '4:00', type_slug: 'sack-opp-fumble-recovery', team: { abbreviation: 'CIN' },
+    short_text: 'Michael Penix Jr. Sacked by Dee Turner For 7 Yd Loss',
+    text: '(Shotgun) M.Penix sacked at ATL 30 for -7 yards (D.Turner). FUMBLES (D.Turner), RECOVERED by CIN-D.Turner at ATL 31.',
+    stat_yardage: -7, start_down: 2, start_distance: 8, end_down: 1,
+  };
+  const teamPlayers = {
+    ...players,
+    CIN: { full_name: 'Cincinnati Defense', position: 'DEF', team: 'CIN', player_id: 'CIN' },
+    ATL: { full_name: 'Atlanta Defense', position: 'DEF', team: 'ATL', player_id: 'ATL' },
+  };
+  const exact = auditGame({ game, plays: [sackFumble], players: teamPlayers, sleeperStats: { CIN: { sack: 1, sack_yd: 7, ff: 1, fum_rec: 1, tkl_loss: 1 }, ATL: {} } });
+  assert.equal(exact.teamMismatches.length, 0);
+  assert.deepEqual(exact.teamChecks.map((check) => check.key).sort(), ['ff', 'fum_rec', 'sack', 'sack_yd', 'tkl_loss']);
+
+  const off = auditGame({ game, plays: [sackFumble], players: teamPlayers, sleeperStats: { CIN: { sack: 1, sack_yd: 7, ff: 0, fum_rec: 1, tkl_loss: 1 }, ATL: { int: 1 } } });
+  assert.deepEqual(off.teamMismatches.map((row) => [row.team, row.stat, row.gridshift, row.official]).sort(), [
+    ['ATL', 'int', 0, 1],
+    ['CIN', 'ff', 1, 0],
+  ]);
+  // Team lines never mix into the player comparison.
+  assert.equal(off.mismatches.some((row) => row.playerId === 'CIN' || row.playerId === 'ATL'), false);
+});

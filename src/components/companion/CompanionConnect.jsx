@@ -28,7 +28,7 @@ function SleeperAccountAvatar({ user }) {
   );
 }
 
-export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null }) {
+export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSelected = null, onContinueWithoutLeague = null }) {
   const {
     connect,
     selectLeague,
@@ -85,6 +85,7 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
           <button type="submit" disabled={connectLoading || !username.trim()} className="w-full rounded-xl py-3 text-sm font-semibold transition-opacity active:opacity-70 disabled:opacity-40" style={{ background: 'var(--color-accent)', color: '#fff' }}>
             {connectLoading ? 'Looking Up Leagues...' : 'Find My Leagues'}
           </button>
+          <ContinueWithoutLeague onClick={onContinueWithoutLeague} />
         </form>
       </div>
     );
@@ -113,6 +114,7 @@ export default function CompanionConnect({ forceLeaguePicker = false, onLeagueSe
           connectError={connectError}
           onSelectLeague={handleSelectLeague}
         />
+        {!forceLeaguePicker && <div className="mt-3 flex"><ContinueWithoutLeague onClick={onContinueWithoutLeague} /></div>}
       </div>
     );
   }
@@ -244,6 +246,20 @@ function LeagueList({ leagues, selectedLeagueId, season, availableSeasons, chang
     })}</div>
     </section>
   </div>;
+}
+
+function ContinueWithoutLeague({ onClick }) {
+  if (!onClick) return null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl py-3 text-sm font-semibold transition-opacity active:opacity-70"
+      style={{ background: 'transparent', color: 'var(--color-label-secondary)', border: '1px solid var(--color-separator)' }}
+    >
+      Continue Without a League
+    </button>
+  );
 }
 
 function ConnectError({ error }) { return error ? <p className="text-center text-xs" style={{ color: 'var(--color-accent-red)' }}>{error}</p> : null; }

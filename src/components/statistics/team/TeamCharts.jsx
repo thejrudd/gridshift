@@ -53,8 +53,10 @@ export function ResultsTape({ games, schedule, teamName, darkMode, onOpenGame })
   const maxLoss = Math.max(...games.map((game) => game.pa - game.pf), 1);
   const up = 150;
   const down = Math.max(26, Math.round((up * Math.max(maxLoss, 8)) / maxWin));
+  // Margin labels sit just past each bar's tip, so the tracks reserve room for them; otherwise the tallest bar's label is clipped.
+  const labelRoom = 22;
   return (
-    <div className="team-dash-tape" style={{ '--tape-up': `${up}px`, '--tape-down': `${down}px` }}>
+    <div className="team-dash-tape" style={{ '--tape-up': `${up + labelRoom}px`, '--tape-down': `${down + labelRoom}px` }}>
       <div className="team-dash-tape__grid" style={{ '--tape-played': games.length, '--tape-left': schedule.length }}>
         {games.map((game) => {
           const margin = game.pf - game.pa;
@@ -76,7 +78,7 @@ export function ResultsTape({ games, schedule, teamName, darkMode, onOpenGame })
                 {margin < 0 && <><i className="is-loss" style={{ height }} /><em style={{ top: height + 3 }}>−{-margin}</em></>}
               </span>
               <span className="team-dash-tape__label">
-                <TeamMark abbr={game.opp} darkMode={darkMode} size={18} />
+                <TeamMark abbr={game.opp} darkMode={darkMode} size={28} />
                 <b>{game.opp}</b>
                 <small>W{game.week}</small>
                 <small>{game.home ? 'home' : 'away'}</small>
@@ -95,7 +97,7 @@ export function ResultsTape({ games, schedule, teamName, darkMode, onOpenGame })
             <span className="team-dash-tape__up"><i className="is-ghost" /></span>
             <span className="team-dash-tape__down" />
             <span className="team-dash-tape__label">
-              <TeamMark abbr={game.opp} darkMode={darkMode} size={18} />
+              <TeamMark abbr={game.opp} darkMode={darkMode} size={28} />
               <b>{game.opp}</b>
               <small>W{game.week}</small>
               <small>{game.home ? 'home' : 'away'}</small>

@@ -51,21 +51,25 @@ Rule: browser zoom stays native — never app-level DPI detection or whole-page 
 - Owns a coalesced live current-week player-stat refresh for the selected fantasy provider. Heatmap and Fantasy Live trigger it when their existing live-game checks are active; the resulting weekly rows update the shared stats map used across fantasy surfaces.
 - Live state wins for the active Sleeper season; historical seasons, ESPN, and a missing/unusable live snapshot fall back to the selected league snapshot. `last_scored_leg` remains a completed-data boundary, not the app-wide current-week source.
 - Re-derives scoring settings from the selected league on startup, so newly supported scoring fields are picked up without re-selecting the league.
-- Performs Sleeper player/team/opponent enrichment for weekly stat rows via the three-pass algorithm below.
+- Loads Sleeper weekly stats with each player's game-time team and opponent, as described below.
 
-#### Stats Enhancement — Three-Pass Algorithm
+#### Weekly Stats and Game-Time Teams
 
-**Root problem:** Sleeper's bulk stats endpoint has no team or opponent metadata. `player.team` (current roster) is wrong for any traded or signed player mid-season.
+**Root problem:** `player.team` (the current roster) is wrong for any player traded or signed mid-season, and the `api.sleeper.app/v1` bulk weekly endpoint has no team or opponent.
 
-**Solution:** After bulk weekly stats, the players DB, and scheduleMap are all loaded, each player's weekly stat entries are enriched with confirmed game-time team and opponent:
+**Source:** the season package is built from `api.sleeper.com/stats/nfl/{season}/{week}?season_type=regular` (`getWeeksWithTeams` in `src/api/sleeperApi.js`). It returns the same players and stat values as the v1 endpoint, and every row also carries the team the player played for that week and his opponent. Byes have no row. `src/utils/sleeperWeekTeams.js` turns each row into `{ week, ...stats, team, opp, _teamSource: 'espn' }` for offensive (QB, RB, WR, TE, K) and IDP positions. Team defense, punter, lineman and `TEAM_` rows keep their bare stat line. The `'espn'` value is a legacy name that heatmap, defense rankings and the projection engine read as "confirmed game-time team". No ESPN request is made for it.
 
-| Pass | Source | Method |
-|---|---|---|
-| 1 | ESPN eventlog | Players with a valid `espn_id` in Sleeper's DB |
-| 2 | ESPN roster name-match | Players with `espn_id: null` — matched by name, then same eventlog pipeline |
-| 3 | Schedule verification | Remaining unresolved players — `player.team` confirmed against `scheduleMap` for that week |
+**Fallbacks (network-free):**
+- Players with no game-time row at all are attributed from `player.team` and `scheduleMap` with `_teamSource: 'schedule'` (`fillScheduleWeekTeams`). In practice these are rows the live v1 feed adds for a player who had no earlier row.
+- Unmarked rows fall back to `player.team` in their readers.
+- Players Sleeper lists without an `espn_id` get one from a name match on their team's ESPN roster (`espnIdOverrides`, used for headshots, search and drill-ins). This runs once per season, at idle, four rosters at a time.
 
-Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entries `_teamSource = 'schedule'`. Unmarked entries fall back to `player.team`. Covers all offensive (QB, RB, WR, TE, K) and IDP (DL, LB, DB, etc.) positions.
+**Package and caching:**
+- `/state/nfl` decides which weeks exist (`resolveStatsWeekRange`): through the current week in season, every week for past seasons.
+- The IndexedDB package (`statsCache.js`, schema v2) stores per-week `{ fetchedAt, final }`. The current week is refetched once it is an hour old. The week just played stays inside a one-week stat-correction window and is rechecked every 6 hours until the next slate is over too; it is then fetched once more, marked final, and never fetched again.
+- In-flight refreshes per season are shared between `loadSeasonStats` and `loadStatsForSeason`.
+- `statsBySeason` keeps at most three seasons, evicting the least recently stored; the selected season is always kept.
+- The ~5MB players DB (`getAllPlayers`) is shared across concurrent callers, persisted in IndexedDB for a day, and served stale-while-revalidate. A background refresh applies on the next load.
 
 ## Folder Map
 
@@ -99,7 +103,8 @@ Entries resolved via Pass 1 or 2 are marked `_teamSource = 'espn'`; Pass 3 entri
 | `liveScoringFeed.js`, `livePlaysFeed.js`, `liveWinProbability.js`, `livePace.js`, `fantasyTeamIdentity.js` | The live-scoring split. Per-module ownership and the projection/probability rules: [[Fantasy Live]] |
 | `globalSearch/` | Global search — query vocabulary and parsing, typo correction, inverted indexes, ranking, IndexedDB record cache, route resolution, inline answers. Rules and measurements: [[Global Search]] |
 | `nflPlays/` | Shared play-by-play parsing layer — see below |
-| `playByPlay/` | Canonical BALLDONTLIE play normalization and per-play stat attribution shared by Statistics Scores and Fantasy Live: [[Play-By-Play Normalization]] |
+| `playByPlay/` | Canonical BALLDONTLIE play normalization, actor → roster attribution, chronological order, game-clock maths, and per-play stat attribution shared by Statistics Scores and Fantasy Live: [[Play-By-Play Normalization]] |
+| `nflGameStatus.js` | The one game lifecycle classifier (scheduled, live, halftime, delayed, postponed, final) behind `liveScoringFeed.isLiveGame` / `isFinalGame` and the Scores scorecard status: [[Play-By-Play Normalization]] |
 
 ### Shared NFL Play Layer (`src/utils/nflPlays/` + `src/components/nflPlays/`)
 
@@ -109,7 +114,7 @@ Rules:
 
 - The field visuals (`fieldPrimitives.jsx`, `PlayTrajectoryStrip.jsx`, `DriveField.jsx`, `DrivePlayback.jsx`) share one 120-yard canvas through `fieldX`, and all kick geometry goes through `getKickGeometry`. A new field visual must reuse both rather than derive its own coordinates.
 - `playBeats.js` is the time layer over that geometry: one play as the ball's position over time plus the beats that fire as it travels, composing `getPlayTrajectory()` and `parsePlayNarrative()` without duplicating either. `DrivePlayback.jsx` is its only consumer and draws nothing the other field visuals don't already define.
-- Both surfaces consume this layer. `src/utils/playByPlay/` sits on top of it and owns the canonical provider-row shape, the shared offense/defense rule, and per-play stat attribution; `livePlaysFeed.js` and `balldontlieNflScoreboard.js` are thin adapters over it: [[Play-By-Play Normalization]]. New play-parsing work belongs in one of these two layers, never under a feature folder.
+- Both surfaces consume this layer. `src/utils/playByPlay/` sits on top of it and owns the canonical provider-row shape, the shared offense/defense rule, actor → roster matching, play order, clock maths, and per-play stat attribution; `livePlaysFeed.js` and `balldontlieNflScoreboard.js` are thin adapters over it: [[Play-By-Play Normalization]]. New play-parsing work belongs in one of these two layers, never under a feature folder.
 - `src/components/shared/PlayerAvatar.jsx` owns the headshot fallback chain shared by Statistics and fantasy surfaces.
 
 ## Client/Server Boundary
@@ -118,7 +123,7 @@ Rules:
 
 | File | Owns |
 | --- | --- |
-| `sleeperApi.js` | Calls Sleeper directly from the browser |
+| `sleeperApi.js` | Calls Sleeper directly from the browser; weekly stats with game-time teams, players DB with in-flight sharing and an IndexedDB copy |
 | `liveApi.js`, `statisticsScoresApi.js`, `fantasyProjectionsApi.js` | Call the GridShift sidecar; they **never** send a BALLDONTLIE credential from the browser |
 
 ### `server` (sidecar)
@@ -133,7 +138,8 @@ Deep doc: [[Live Data Server Architecture]].
 | `liveGameSnapshots.js` | Canonical per-game play snapshot and newest-play selection shared by Statistics scorecards, Statistics drilldowns, and Fantasy Live |
 | `publicRequestGuard.js` | Bounded downstream request/concurrency protection for the public near-live Scores route — separate from provider quota accounting |
 | `liveHandlers.js` | Fantasy Live session/league boundary; routes all provider work through the shared gateway |
-| `statisticsScoresHandlers.js` | Public Statistics Scores provider boundary, narrow selected-week live route, detail composition, ESPN fallback; projects canonical play snapshots rather than creating a Scores-only play source |
+| `statisticsScoresHandlers.js` | Public Statistics Scores provider boundary, narrow selected-week live route, detail composition (finished games' box scores read through the finished-games archive), ESPN fallback; projects canonical play snapshots rather than creating a Scores-only play source |
+| `finishedGameDetails.js` | One bounded in-memory copy of each finished game's Scores detail, shared by the Statistics player and team season routes |
 | `tradeProposalHandlers.js` | Participant-token sessions, exact Sleeper league/roster/asset validation, proposal revisions, inbox actions, expiring share capabilities, and cautious Sleeper reconciliation |
 | `tradeProposalStore.js` | Separate SQLite/WAL proposal database. Stores immutable revision payloads and event state; expired payloads are removed while a bounded tombstone remains for the retention window |
 | `tradeProposalCrypto.js`, `tradeProposalConfig.js` | HMAC token hashing, opaque proposal/session capabilities, bounded expiry/retention settings, and production secret/data-directory configuration |
