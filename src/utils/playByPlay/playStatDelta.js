@@ -13,7 +13,7 @@
 import { calcPoints } from '../scoringEngine.js';
 import { PLAY_ROLES, authoritativeText, parseTurnoverChain } from '../nflPlays/playNarrative.js';
 import {
-  isKickFiledUnderFumble, isKickPlay, isKickPossessionPlay, kickingTeamRecovered,
+  isInterceptionSummaryRow, isKickFiledUnderFumble, isKickPlay, isKickPossessionPlay, kickingTeamRecovered,
 } from '../nflPlays/fieldGeometry.js';
 
 // A kickoff or punt: its defensive credits are special-teams stats in Sleeper's
@@ -28,6 +28,20 @@ export function isSpecialTeamsPlay(play) {
 
 function playText(play) {
   return play?.raw?.text ?? play?.rawText ?? play?.description ?? '';
+}
+
+// A flag wiped the snap out ("… - No Play"). Only the standing version of a
+// reversed play counts: a replay that overturns the ruling can restore a play
+// first written as "No Play" (W3 LAC at BUF: J.Allen's 8-yard run and
+// A.Mesidor's tackle; W4 PIT at CLE: R.Spears-Jennings' interception and
+// J.Sawyer's tip and hit, all in Sleeper's lines).
+function isWipedOut(play) {
+  if (play?.narrative?.negated === true) return true;
+  return /\bno play\b|wiped out by/i.test([
+    authoritativeText(play?.description ?? ''),
+    play?.raw?.short_text,
+    authoritativeText(play?.raw?.text ?? ''),
+  ].filter(Boolean).join(' '));
 }
 
 /**
@@ -75,30 +89,34 @@ export function isFirstDownPlay(play) {
   const incomplete = play?.narrative?.playKind === 'incompletion'
     || String(play?.type ?? '').toLowerCase().includes('incompletion')
     || /\bincomplete\b/i.test(description);
-  const negated = play?.narrative?.negated === true
-    || /\bno play\b|wiped out by/i.test([
-      description,
-      raw.short_text,
-      raw.text,
-    ].filter(Boolean).join(' '));
+  const negated = isWipedOut(play);
   if (incomplete || negated || /\bintercept/i.test(String(play?.type ?? '')) || /\bsack\b/i.test(description)) {
     return false;
   }
   // With a flag on the play the new set of downs may be the penalty's (an
   // automatic first down), not the player's. They earned it only if their own
-  // credited yards reached the line to gain.
-  const penalty = play?.narrative?.penalty;
+  // credited yards reached the line to gain (below).
   const credited = firstFinite(play?.narrative?.creditedYards);
   const distance = firstFinite(raw.start_distance, raw.startDistance);
-  // After a fumble the other side recovered, the new first down is theirs.
-  // The ball carrier earned one only if their own gain reached the line.
-  if ((/fumble/.test(String(play?.type ?? '').toLowerCase()) && /opp/.test(String(play?.type ?? '').toLowerCase()))
-    || play?.narrative?.turnover) {
-    return play?.narrative?.creditedYards != null && distance != null && credited >= distance;
-  }
-  if (penalty && !penalty.declined && credited != null && distance != null) {
-    return endDown === 1 && credited >= distance;
-  }
+  // After a fumble the other side kept, Sleeper credits no first down, even
+  // when the gain reached the line first (weeks 1–10 of 2026: T.Higbee,
+  // J.Taylor, D.Kincaid, C.Okonkwo and every other such catch or run).
+  const typeText = String(play?.type ?? '').toLowerCase();
+  if ((/fumble/.test(typeText) && /opp/.test(typeText)) || play?.narrative?.turnover) return false;
+  // The new set of downs is the player's only when their own gain reached the
+  // line. A fourth down stopped short ends "1st and 10" for the other side
+  // (weeks 1–10 of 2026: every failed fourth-down run and catch), and a flag
+  // can hand the offense an automatic first down the player did not earn.
+  // A catch followed by laterals, or a fumble the offense fell on itself, is
+  // measured over the whole snap (the provider's net), as Sleeper does: W4 DAL
+  // at HOU D.Schultz 2 yards + D.Montgomery 19 on 3rd and 14, W10 NE at DET
+  // R.Gilliam 6 yards and A.Brown's recovery on 1st and 10, W2 MIN at CHI
+  // C.Williams' aborted snap run (17) on 2nd and 3.
+  const wholeSnap = /\blateral to\b/i.test(authoritativeText(playText(play)))
+    || (play?.narrative?.fumble && !play.narrative.turnover);
+  const gain = (wholeSnap ? firstFinite(play?.raw?.stat_yardage, play?.yards) : null)
+    ?? credited ?? firstFinite(play?.yards);
+  if (distance != null && gain != null && gain < distance) return false;
   return endDown === 1;
 }
 
@@ -223,6 +241,7 @@ function buildAttributedDefensiveDelta(play, attributionRoles, tackleShare = nul
   const touchdown = play.scoring && (
     /touchdown|return td/i.test(scoringText(play))
     || /touchdown|return-touchdown|return_td/.test(String(play.type ?? '').toLowerCase())
+    || isInterceptionSummaryRow(play)
   );
   const returnYards = firstFinite(
     play.narrative?.returnYards,
@@ -316,7 +335,8 @@ const TWO_POINT_TEXT = /two.?point conversion|2.?point conversion/i;
  *   two-point try written into the same row as a touchdown — `only` when the
  *   try is their whole involvement (the try's receiver), otherwise it is
  *   credited on top of their part in the touchdown (a passer who threw both);
- * - `fumble: { lost }` when this player is the one the gamebook says fumbled.
+ * - `fumble: { lost }` when this player is the one the gamebook says fumbled;
+ * - `snapRun` when this player fell on a loose snap and ran with it.
  */
 export function buildPlayStatDelta(play, role, roleDetail = null, attributionRoles = null, credit = null) {
   const conversion = credit?.conversion ?? null;
@@ -324,18 +344,18 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
   if (conversion?.only) return conversionKey ? { [conversionKey]: 1 } : {};
   if (credit?.lateral?.onlyFumble) {
     const delta = {};
-    if (!/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) addFumble(delta, credit.fumble);
+    if (!isWipedOut(play)) addFumble(delta, credit.fumble);
     return delta;
   }
   const delta = buildInvolvementDelta(play, role, roleDetail, attributionRoles, credit?.fumble ?? null, credit?.tackleShare ?? null);
   // A defender who fumbled after taking the ball away (an interception or a
   // recovery returned and lost again) is charged like anyone else.
-  if (role === 'defense' && credit?.fumble && !/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) {
+  if (role === 'defense' && credit?.fumble && !isWipedOut(play)) {
     addFumble(delta, credit.fumble);
   }
   // The kicker's own tackle on the return (see `buildSpecialTeamsDelta`).
   if (credit?.specialTeamsTackle && countTacklers(play) === 1) delta.st_tkl_solo = 1;
-  if (credit?.returnTackle && !/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) {
+  if (credit?.returnTackle && !isWipedOut(play)) {
     delta.idp_tkl = 1;
   }
   if (role === 'passer' && credit?.lateral?.passingYards != null) {
@@ -347,10 +367,12 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
     if (!reception) delete delta.rec;
     delta.rec_yd = yards;
     // A lateral recipient did not make a second catch; the last carrier earns
-    // the touchdown/first down, rather than every receiver on the same snap.
+    // the touchdown. The first down is the catcher's in Sleeper's lines (W4
+    // DAL at HOU D.Schultz, W5 LV at NE E.Chism, W6 CHI at ATL R.Odunze; none
+    // of D.Montgomery, T.Henderson or R.Johnson for the lateral).
+    if (!reception) delete delta.rec_fd;
     if (!finalCarrier) {
       delete delta.rec_td;
-      delete delta.rec_fd;
       delete delta.rec_td_40p;
       delete delta.rec_td_50p;
     }
@@ -363,6 +385,11 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
       if (yards >= 40) delta.rec_td_40p = 1;
       if (yards >= 50) delta.rec_td_50p = 1;
     }
+  }
+  // The run after a loose snap: the snap's net gain, never a loss (see
+  // `withSnapFumbleCredit` in livePlaysFeed.js).
+  if (role === 'rusher' && credit?.snapRun && delta.rush_att) {
+    delta.rush_yd = Math.max(0, firstFinite(play?.raw?.stat_yardage) ?? 0);
   }
   if (conversionKey) delta[conversionKey] = (delta[conversionKey] ?? 0) + 1;
   addReceptionBand(delta);
@@ -423,12 +450,7 @@ function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble,
   const incomplete = play.narrative?.playKind === 'incompletion'
     || type.includes('incompletion')
     || /\bincomplete\b/i.test(description);
-  const negated = play.narrative?.negated === true
-    || /\bno play\b|wiped out by/i.test([
-      description,
-      play.raw?.short_text,
-      play.raw?.text,
-    ].filter(Boolean).join(' '));
+  const negated = isWipedOut(play);
   const delta = {};
   const firstDown = isFirstDownPlay(play);
 
@@ -631,8 +653,14 @@ function isReturnTouchdown(play) {
   return Boolean(play?.scoring) && /(?:kickoff|punt)-return-touchdown/.test(type);
 }
 
+// A return with laterals counts every carrier's yards: W9 LV at SF, "D.Laube
+// to LV 16 for 16 yards. Lateral to D.Young pushed ob at LV 37 for 21 yards"
+// (Sleeper's LV `def_kr_yd` is 25 more than the first carriers' alone).
 function getKickReturnYards(play) {
-  return firstFinite(play?.narrative?.returnYards);
+  const yards = firstFinite(play?.narrative?.returnYards);
+  if (yards == null) return yards;
+  const laterals = [...authoritativeText(playText(play)).matchAll(/\bLateral to .+? for (-?\d+) yards?/g)];
+  return laterals.reduce((sum, match) => sum + Number(match[1]), yards);
 }
 
 function isPuntPlay(play) {
@@ -686,7 +714,9 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
     : interception
       || /blocked/.test(type)
       || (fumble && /\bRECOVERED by\b/.test(String(play.raw?.text ?? '')));
-  const touchdown = play.scoring && /touchdown/i.test(scoringText(play)) && defenseScored;
+  // A scoring summary that is only the return ("Jaden Dugger 35 Yd
+  // Interception Return (Eddy Pineiro Kick)") never says touchdown.
+  const touchdown = play.scoring && (/touchdown/i.test(scoringText(play)) || isInterceptionSummaryRow(play)) && defenseScored;
   // A blocked kick returned for a score is a special-teams touchdown in
   // Sleeper's lines (`def_st_td`), ESPN's `blk_kick_ret_td`, not `def_td`.
   const blockedKickScore = touchdown && /blocked/.test(type);
@@ -701,7 +731,7 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
   // ("extra point is Blocked (J.Carter)", summary "(Ryan Fitzgerald PAT
   // blocked)"): weeks 1, 3 and 7 of 2026, PHI, CHI, LV and TB in Sleeper's lines.
   if (!play.narrative?.turnover && /\bextra point is Blocked\b|\bPAT blocked\)/.test(`${play.raw?.text ?? ''} ${play.raw?.short_text ?? ''}`)) delta.blk_kick = 1;
-  if (!play.narrative?.negated && !/\bno play\b/i.test(String(play.raw?.text ?? ''))) {
+  if (!isWipedOut(play)) {
     // The defense came up with a fumble (the gamebook capitalizes RECOVERED
     // for a change of possession).
     if (!chain && fumble && /\bFUMBLES\b[^]*?\bRECOVERED by\b/.test(String(play.raw?.text ?? ''))) delta.fum_rec = 1;
@@ -711,6 +741,13 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
     // sack counts none, and a lone sack or "(A, B)" stop counts one.
     if (hasSoloStopForLoss(play, sack)) delta.tkl_loss = 1;
     if (play.turnoverOnDowns) delta.def_4_and_stop = 1;
+    // A fourth down the defense ended by taking the ball away is a stop too
+    // in Sleeper's lines (W5 DEN at LAC, W5 CHI at GB, W10 KC at ATL, W10 CAR
+    // at NO: four interceptions, each team's `def_4_and_stop`), except one it
+    // returned for a touchdown (W4 ARI at NYG, D.Banks: none).
+    if (!play.turnoverOnDowns && Number(play.raw?.start_down) === 4 && !touchdown
+      && !isKickPlay({ typeSlug: type, rawText: playText(play) })
+      && (chain ? chain.finalSide === 'defense' : interception || (/fumble/.test(type) && /opp/.test(type)))) delta.def_4_and_stop = 1;
   }
   if (chain) Object.assign(delta, chainTakeaways(chain, 'defense'));
   else if (interception) delta.int = 1;

@@ -336,8 +336,8 @@ render the official description.
   group can be the recovery-return tackle. On a lost fumble the provider's
   `stat_yardage` is the defense's return, so `buildPlayStatDelta` credits
   `narrative.creditedYards` whenever `narrative.fumble` is set.
-- After an opponent recovery, the carrier earns a first down only if their own
-  credited yards reached the line (`isFirstDownPlay`).
+- After an opponent recovery, the carrier earns no first down
+  (`isFirstDownPlay`; see "First downs").
 - A returner is credited `narrative.returnYards` (yards to a return foul's
   spot; zero on "Return, No Gain") rather than the provider's net.
 - An interception narrative names the thrower from the official description,
@@ -443,6 +443,137 @@ Every rule here was checked against Sleeper's final lines for completed weeks.
 - **Unchanged, by evidence.** Tackles on "No Play" rows are not credited
   (crediting them broke 469 matching lines and fixed 11). Kick-coverage
   tackles stay `st_tkl_solo` and out of `idp_tkl` (924 to 1).
+
+## First downs (v9.5 parser pass, phase 2, weeks 1–10 of 2026)
+
+`isFirstDownPlay()` credits a first down when the snap ends on a new first
+down (`end_down` 1) and the player's own gain reached the line
+(`start_distance`). First-down mismatches against Sleeper's lines: 159 → 4.
+
+- **Short of the line.** A fourth down stopped short ends "1st and 10" for
+  the other side (W1 BUF at HOU, J.Allen 4th and 1 for -2; 40 such rows), and a
+  kneel on fourth down the same way (W1 DEN at KC, P.Mahomes). A flag that
+  gives the offense a new set of downs does not give the player one.
+- **Lost fumbles.** A catch or run fumbled to the other side is no first down
+  even when it reached the line (W1 SF at LAR T.Higbee, W6 NYJ at NE
+  D.Douglas, W9 LAR at WAS C.Okonkwo, and every other such row).
+- **The whole snap.** A catch with laterals, or a fumble the offense fell on
+  itself, is measured over the snap (`stat_yardage`): W4 DAL at HOU D.Schultz
+  (2 yards, then D.Montgomery 19 on 3rd and 14), W10 NE at DET R.Gilliam,
+  W2 MIN at CHI C.Williams' aborted snap.
+- **Laterals.** The first down is the catcher's, not the lateral's (Sleeper:
+  D.Schultz, E.Chism, R.Odunze each credited; D.Montgomery, T.Henderson,
+  R.Johnson not). The lateral reader accepts "pushed ob at" / "ran ob at"
+  spots, a carrier who scores ("Lateral to D.Samuel for 80 yards,
+  TOUCHDOWN") and a spaced surname ("A.St. Brown"); each used to drop the
+  receivers or credit the lateral with the catch.
+- **Touchdowns** are no first down: all 743 touchdown rows in weeks 1–10 end on
+  down -1, and Sleeper's lines agree.
+- **Injury notes** ("** Injury Update: CIN-A.Mims has returned to the game.",
+  "X was injured during the play.") are not scanned for players when the
+  narrative falls back to the gamebook (W2 CIN at HOU: a lineman got
+  T.Higgins' catch).
+- **No examples:** "AUTOMATIC FIRST DOWN" never appears in the feed.
+- **Left as is:** W1 SF at LAR K.Black (four clean conversions, Sleeper three),
+  W9 CIN at ATL M.Penix (a scramble past the line with a defensive hold at the
+  end of the run; Sleeper one fewer, no other row like it).
+- Statistics Scores' Team Stats first downs
+  (`statisticsTeamStatBreakdown.js`) OR `isFirstDownPlay()` with `end_down`
+  1 and keep their own turnover and fourth-down guards, so they are unchanged.
+
+## Penalties and reversals (v9.5 parser pass, phase 2, weeks 1–10 of 2026)
+
+- **The flag's player in the compact text.** `stripPenaltySuffix` drops the
+  penalized player only when the span starts with the gamebook's initial and
+  ends with the whole surname (`isPenalizedName`), so a spaced surname ("Amon-Ra
+  St. Brown", "Lukas Van Ness") is dropped whole; it used to stay glued to the
+  play and the run or catch went uncredited (W8 MIN at DET S.Vaki, W2 GB at NYJ
+  B.Allen). A fumble play has no single grammar, so a name-checked drop stands
+  on its own (W2 PIT at NE R.Stevenson's catch and lost fumble). A flag written
+  first ("Talanoa Hufanga 5 Yd Pnlty Trevor Lawrence Pass Complete …") is
+  stripped from the front (`stripPenaltyPrefix`; W2 JAX at DEN Q.Morris). Of
+  the 83 compact texts that lead with the flag, 80 are "No Play" snaps.
+- **Fallback name scan.** When the narrative cannot read a row, Fantasy Live's
+  name scan skips a flag's compact summary ("Kingsley Suamataia 10 Yd Pnlty"),
+  so the flagged lineman is no rusher (W2 IND at KC).
+- **Reversals.** The flag that stands, and whether the snap was wiped out, are
+  read from the corrected version (`authoritativeText`) in the narrative and in
+  `playStatDelta.isWipedOut()`. A replay can overturn a "No Play": W3 LAC at
+  BUF (J.Allen's 8-yard run and A.Mesidor's tackle) and W4 PIT at CLE (the pass
+  interference reversed to R.Spears-Jennings' interception, J.Sawyer's tip and
+  hit). Only these two rows in weeks 1–10 have a "No Play" before the reversal
+  and none after.
+- **Missing compact text.** An interception whose compact text is missing or
+  `"null"` is rebuilt from the gamebook (`shortTextFromGamebook`), as punts
+  already were (1 row in weeks 1–10, the W4 PIT at CLE pick).
+- **Checked, left as is.** A foul by the offense during the play, enforced
+  short of where the play ended: the player is credited to the foul's spot, and
+  that credit decides the first down. Only one row (W6 LAC at KC, X.Worthy: 15
+  credited yards on 1st and 10, Sleeper one first down fewer) would change with
+  a stricter rule, so it is left. Quarterback hits on "No Play" sacks or by the
+  player flagged for roughing the passer do not hold as rules: of 9 sackers on
+  "No Play" snaps and about 70 roughing fouls, only W3 J.Brooks and W8
+  K.Chaisson are a hit short in Sleeper's lines.
+
+## Edge cases checked against Sleeper (v9.5 parser pass, phase 2, weeks 1–10 of 2026)
+
+Fixed:
+
+- **Loose snaps.** A lineman who fumbles the snap ("T.McKee Aborted. J.Majors
+  FUMBLES …", "C.Humphrey to KC 16 for -4 yards. FUMBLES …") is charged `fum`
+  only, never a carry or a catch (`withSnapFumbleCredit` in livePlaysFeed.js;
+  every such lineman in Sleeper's lines). The player who fell on the snap and
+  ran with it is credited the snap's net gain and nothing for a loss
+  (`snapRun`: C.Williams +17, D.Maye +1, J.Taylor +4; A.Rodgers, T.Huntley,
+  C.Wentz, J.Daniels, D.Jones 0).
+- **Blocked kicks.** The fallback name scan skips "Center-X" and "Holder-Y",
+  and gives nobody on a blocked kick a carry, catch or pass (W2 MIN at CHI,
+  W4 DEN at SF: snapper, holder and coverage players were credited runs).
+- **Muffed punts** are the returner's `fum`, plus `fum_lost` when the kicking
+  team recovered (capital RECOVERED). A returner who fell on their own muff is
+  read as both returner and recoverer (`splitMuffedPunt` used to split
+  "Parker Washington" across the two). Muffed kickoffs the returner kept carry
+  no `fum` in Sleeper's lines and are unchanged.
+- **Names.** The nickname fallback (`lookupActor`) never gives a ball carrier's
+  credit to a defender ("Kendre Miller" was NO tackle Christen Miller: 38
+  carries) nor to a teammate whose first name shares the initial but differs
+  ("Jimmy Horn Jr." was Jaycee Horn); a common surname is looked up on the one
+  team ("Hollywood Brown" is PHI's Marquise Brown). A defensive credit the
+  gamebook writes under a legal first name ("T.Woolen", "A.Phillips",
+  "A.Gardner", "B.Okoye") that resolves to nobody on its team is the one
+  defender there with that surname: 127 credits, and every Riq Woolen, Dru
+  Phillips, Sauce Gardner and C.J. Okoye line then matches. Statistics Scores
+  does not use the fallback and is unchanged.
+- **Laterals.** A lateral catcher written "A.St. Brown" (ambiguous with DET's
+  Aamaris Brown) is resolved through the narrative's full name; a kick return
+  with a lateral counts every carrier's yards for the team's `def_kr_yd` (W9
+  LV at SF).
+- **Summary-only pick six under a fumble slug** ("Jaden Dugger 35 Yd
+  Interception Return (Eddy Pineiro Kick)" under `fumble-recovery-own`):
+  `isInterceptionSummaryRow` flips possession and scores it as the defense's
+  touchdown (SF `int`, `int_ret_yd` 35, `def_td`; Dugger `idp_int`; Pineiro
+  `xpm`). The thrower is not named, so K.Cousins' third interception stays
+  uncredited.
+- **"No Play" never changes possession** (`isPossessionChangingPlay`): W2 JAX
+  at DEN, a strip-sack under `sack-opp-fumble-recovery` wiped out by illegal
+  contact, the only such row in weeks 1–10. Statistics Scores' drive grouping
+  is unchanged in all 150 games.
+- **Fourth-down stops** include a fourth down the defense ended with an
+  interception, except one returned for a touchdown (team `def_4_and_stop`:
+  4 of 4 and 0 of 1 in Sleeper's lines).
+
+Checked, matches (no change): two-point tries (72 rows; the one defensive
+try failed), safeties, kneels (227 rows) and spikes (56), scrambles,
+onside kicks (26), fair catches (346) and touchbacks (356), fumbles out of
+bounds (187), and duplicate or corrected rows: every poll replaces a game's
+whole play list, so a corrected text under the same id replaces the old one,
+and no completed game has a duplicate id (27,752 rows).
+
+Checked, ambiguous (left): a bare initial shared by two defenders on one
+team ("A.Johnson" for JAX's Antonio and Austin Johnson, "A.Terrell" for
+ATL's A.J. and Avieon Terrell) means only one was active, which the matcher
+cannot see; a muffed punt's kicking-team recovery credits; QB hits on "No
+Play" snaps (see Penalties).
 
 ## Kicks filed under fumble slugs (v9.5 parser pass)
 
@@ -561,3 +692,4 @@ Over weeks 6–9 of 2026 every one of 7,939 rows now parses.
 | Game status classifier and its wrappers | `tests/unit/nflGameStatus.test.mjs` | `node --test tests/unit/nflGameStatus.test.mjs` |
 | Possession correction itself | `tests/unit/nflFieldGeometry.test.mjs` | `node --test tests/unit/nflFieldGeometry.test.mjs` |
 | Compound fumbles, no-gain returns and picks, sacker-less sacks, kick recoveries, both-sides shared rows, several turnovers on one snap (completed-week regressions) | `tests/unit/playNormalizationFumbles.test.mjs` | `node --test tests/unit/playNormalizationFumbles.test.mjs` |
+| First downs, laterals, penalties, aborted snaps and the other phase-2 rules, each from a completed-week row with Sleeper's values | `tests/unit/playParserSleeperParity.test.mjs` | `node --test tests/unit/playParserSleeperParity.test.mjs` |

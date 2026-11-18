@@ -227,7 +227,11 @@ function isPossessionChangingPlay(play, context = {}) {
   // the gamebook text is counted whenever it is there and the flag on it did
   // not wipe the snap out.
   const text = play?.rawText ?? play?.rawDescription ?? play?.raw?.text ?? play?.description ?? '';
-  const chain = /\bNo Play\b/i.test(authoritativeText(text)) ? null : parseTurnoverChain(text);
+  // A flag wiped the snap out: no turnover happened, whatever the slug says
+  // (W2 JAX at DEN, a sack-fumble under "sack-opp-fumble-recovery" with a
+  // "No Play" illegal contact; JAX kept the ball and ran the next snap).
+  if (/\bNo Play\b/i.test(authoritativeText(text))) return false;
+  const chain = parseTurnoverChain(text);
   // A kick under a fumble slug was settled above (`isKickFiledUnderFumble`);
   // any other chain that holds a kick keeps the slug reading.
   if (chain?.complete && !chain.kick) return chain.changes % 2 === 1;
@@ -257,11 +261,25 @@ export function getOffenseTeam(play, { homeTeam, awayTeam } = {}) {
   // Safety") is filed under the team that scored it, the defense (weeks 2 and
   // 8 of 2026: Sleeper credits LV and CIN with the safety).
   if (isSafetySummaryRow(play)) return team === homeTeam ? awayTeam : homeTeam;
+  // So is an interception return's summary filed under another slug ("Jaden
+  // Dugger 35 Yd Interception Return (Eddy Pineiro Kick)" under
+  // `fumble-recovery-own`, W9 LV at SF: Sleeper credits SF the pick and the
+  // touchdown).
+  if (isInterceptionSummaryRow(play)) return team === homeTeam ? awayTeam : homeTeam;
   // A punt on fourth down is no turnover on downs, whatever slug it is filed
   // under; `isTurnoverOnDowns` keeps its slug reading for the game clock.
   const onDowns = !isKickFiledUnderFumble(play) && isTurnoverOnDowns(play);
   if (!isPossessionChangingPlay(play) && !onDowns) return team;
   return team === homeTeam ? awayTeam : homeTeam;
+}
+
+// A scoring row that is only an interception return's summary line, under a
+// slug that does not say interception (those already change possession).
+export function isInterceptionSummaryRow(play) {
+  const text = String(play?.rawText ?? play?.raw?.text ?? play?.description ?? '').trim();
+  const type = String(play?.typeSlug ?? play?.type_slug ?? play?.type ?? play?.raw?.type_slug ?? '').toLowerCase();
+  return play?.scoring === true && !/intercept/.test(type)
+    && /^[A-Z][A-Za-z.'’ -]*? \d+ Yd Interception Return\b/.test(text);
 }
 
 // A scoring row that is only the safety's summary line, with no snap text.

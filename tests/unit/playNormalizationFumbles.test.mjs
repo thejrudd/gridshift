@@ -112,7 +112,9 @@ test('a lost fumble after a long catch credits the catch, not the recovery retur
     starter('fitzpatrick', 'Minkah Fitzpatrick', 'DB', 'NYJ'),
   ], game);
   assert.equal(statsOf(events, 'douglas').rec_yd, 39);
-  assert.equal(statsOf(events, 'douglas').rec_fd, 1);
+  // Week 6 of 2026, NYJ at NE: the catch reached the line before the fumble,
+  // but Sleeper's line counts no first down for it (Douglas rec_fd 3, not 4).
+  assert.equal(statsOf(events, 'douglas').rec_fd, undefined);
   assert.deepEqual(statsOf(events, 'fitzpatrick'), { idp_fr: 1, idp_fr_yd: 20 });
   assert.equal(events[0].play.narrative.sentence,
     'Drake Maye found DeMario Douglas for 39 yards. J.Sherwood forced a fumble, recovered by Minkah Fitzpatrick, who returned it 20 yards.');

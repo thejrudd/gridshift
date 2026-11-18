@@ -1013,24 +1013,30 @@ function canonicalizeShortText(shortText) {
  */
 const GENERATIONAL = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
 
-// The surname is the last token that isn't a generational suffix — the
-// abbreviated form in the official description drops those ("Harold Fannin Jr."
-// is written "H.Fannin").
-function lastNameToken(tokens) {
-  for (let i = tokens.length - 1; i >= 0; i -= 1) {
-    if (!GENERATIONAL.has(letters(tokens[i]))) return tokens[i];
-  }
-  return tokens[tokens.length - 1];
-}
-
 function letters(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
+// Whether a run of short_text tokens is the penalized player the gamebook
+// abbreviates ("A.St. Brown", "L.Van Ness"): the first token starts with the
+// initial and the last tokens spell the surname, however many words it has.
+// A generational suffix is skipped: the official description drops it
+// ("Harold Fannin Jr." is written "H.Fannin").
+function isPenalizedName(tokens, penalty) {
+  const abbreviated = /^([A-Za-z])[^.]*\.\s*(.+)$/.exec(penalty?.name ?? '');
+  if (!abbreviated || !tokens.length) return null;
+  const initial = abbreviated[1].toLowerCase();
+  const surnameWords = abbreviated[2].trim().split(/\s+/).length;
+  const named = GENERATIONAL.has(letters(tokens[tokens.length - 1])) ? tokens.slice(0, -1) : tokens;
+  if (named.length < surnameWords) return false;
+  return tokens[0][0].toLowerCase() === initial
+    && letters(named.slice(named.length - surnameWords).join(' ')) === letters(abbreviated[2]);
+}
+
 function stripPenaltySuffix(shortText, penalty) {
   const tail = /\s+(\d+) Yd Pnlty\s*$/.exec(shortText);
-  if (!tail) return shortText;
-  const head = shortText.slice(0, tail.index);
+  if (!tail) return stripPenaltyPrefix(shortText, penalty);
+  const head = stripPenaltyPrefix(shortText.slice(0, tail.index), penalty);
   const tokens = head.split(' ');
 
   // The official description abbreviates the penalized player as "A.Jackson",
@@ -1038,22 +1044,36 @@ function stripPenaltySuffix(shortText, penalty) {
   // start with that initial and end with that surname. Checking only the
   // surname is not enough — a shorter split can still satisfy a grammar and
   // silently absorb half the name into the previous one ("CeeDee Lamb Adoree'").
-  const abbreviated = /^([A-Za-z])[^.]*\.\s*(.+)$/.exec(penalty?.name ?? '');
-  const initial = abbreviated?.[1]?.toLowerCase() ?? null;
-  const surname = letters(abbreviated?.[2] ?? '');
+  // A spaced surname spans two tokens ("Lukas Van Ness": W2 GB at NYJ, the
+  // flag swallowed B.Allen's catch).
+  const named = Boolean(penalty?.name && /\./.test(penalty.name));
 
   // A full name first (two to four words), then a lone surname: "… Antonio
   // Williams Osa Odighizuwa" drops "Osa Odighizuwa", not just "Odighizuwa".
+  let nameOnly = null;
   for (const drop of [2, 3, 4, 1]) {
     if (drop >= tokens.length) continue;
     const dropped = tokens.slice(tokens.length - drop);
-    if (initial && dropped[0][0].toLowerCase() !== initial) continue;
-    if (surname && letters(lastNameToken(dropped)) !== surname) continue;
+    if (named && !isPenalizedName(dropped, penalty)) continue;
     const candidate = tokens.slice(0, tokens.length - drop).join(' ').trim();
     // Validate the canonical form: "Rush, No Gain" only matches once rewritten.
     if (GRAMMARS.some((grammar) => grammar.pattern.test(canonicalizeShortText(candidate)))) return candidate;
+    // A fumble play has no single grammar ("… 0 Yd Fumble Recovery Jalen
+    // Ramsey 15 Yd Pnlty": W2 PIT at NE); the name itself is the evidence.
+    if (named && nameOnly == null && drop > 1) nameOnly = candidate;
   }
-  return head.trim();
+  return nameOnly ?? head.trim();
+}
+
+// A flag the compact text writes first ("Talanoa Hufanga 5 Yd Pnlty Trevor
+// Lawrence Pass Complete for 7 Yds to Quintin Morris": W2 JAX at DEN, a
+// defensive delay of game after the catch, which Sleeper credits).
+function stripPenaltyPrefix(shortText, penalty) {
+  const lead = /^(.+?)\s+\d+ Yd Pnlty\s+(?=\S)/.exec(shortText);
+  if (!lead) return shortText;
+  const tokens = lead[1].split(' ');
+  if (tokens.length > 4 || !isPenalizedName(tokens, penalty)) return shortText;
+  return shortText.slice(lead[0].length);
 }
 
 function administrativeNarrative(play) {
@@ -1299,14 +1319,23 @@ function splitMuffedPunt(text, rawText) {
   const head = text.slice(0, recovery.index).split(' ');
   const tail = text.slice(recovery.index + recovery[0].length).trim();
   // The recoverer's name runs on from the punt; each split is tried and the
-  // punt grammar on the remainder is the validation.
+  // punt grammar on the remainder is the validation. A one-word split also
+  // validates ("Parker Parker Washington" muffed, "Washington" recovered), so
+  // a returner who fell on their own muff ("and recovers") is read as both:
+  // W2 JAX at DEN P.Washington, W2 GB at NYJ S.Moore.
+  const ownRecovery = new RegExp(`\\bMUFFS catch, and recovers\\b`).test(authoritativeText(rawText));
+  const splits = [];
   for (let drop = 1; drop <= 4 && drop < head.length; drop += 1) {
     const recoverer = head.slice(head.length - drop).join(' ');
     const matched = matchGrammar([head.slice(0, head.length - drop).join(' '), tail].filter(Boolean).join(' '));
     const returner = matched?.kind === 'punt' ? matched.parsed.actors.find((actor) => actor.role === PLAY_ROLES.RETURNER) : null;
-    if (returner) return { ...matched, fumble: { fumbler: returner.name, recoverer, returnYards: 0, muff: true } };
+    if (returner) splits.push({ ...matched, fumble: { fumbler: returner.name, recoverer, returnYards: 0, muff: true }, drop });
   }
-  return null;
+  const chosen = (ownRecovery ? splits.find((split) => split.fumble.recoverer === split.fumble.fumbler) : null)
+    ?? splits[0];
+  if (!chosen) return null;
+  const { drop: _drop, ...result } = chosen;
+  return result;
 }
 
 function muffSentence(parsed, fumble, tackle) {
@@ -1482,9 +1511,13 @@ function nameFor(abbreviated, play, shortText) {
 // so the ordinary grammars read it.
 function shortTextFromGamebook(rawText, play) {
   const text = authoritativeText(rawText);
+  const name = (value) => nameFor(value, play, '');
+  // An interception whose compact text is missing (W4 PIT at CLE, reversed
+  // from a "No Play" to the pick: Sleeper credits R.Spears-Jennings).
+  const pick = new RegExp(`\\bINTERCEPTED by (${ABBREV})(?: \\([^)]*\\))?(?: \\[[^\\]]*\\])? at ${SPOT_TEXT}\\.\\s*\\1 (?:to|pushed ob at|ran ob at) ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)`).exec(text);
+  if (pick && !/\bFUMBLES\b|\bLateral\b/i.test(text)) return `${name(pick[1])} ${Number(pick.at(-1) ?? 0)} Yd Interception Return`;
   const punt = new RegExp(`^\\s*(${ABBREV}) punts (\\d+) yards? to ${SPOT_TEXT}(?:, Center-${ABBREV})?\\.\\s*(?:(${ABBREV}) (?:to|pushed ob at|ran ob at) ${SPOT_TEXT} for (?:(-?\\d+) yards?|no gain)[^.]*\\.)?`).exec(text);
   if (!punt) return null;
-  const name = (value) => nameFor(value, play, '');
   const kick = `${name(punt[1])} ${punt[2]} Yd Punt${punt[4] ? ` ${name(punt[4])} ${Number(punt[6] ?? 0)} Yd Punt Return` : ''}`;
   const fumble = new RegExp(`FUMBLES[^,]*,\\s*(?:touched at [A-Z]{2,3} \\d+,\\s*)?RECOVERED by [A-Z]{2,3}-(${ABBREV})`).exec(text);
   return fumble && punt[4] ? `${name(punt[4])} Fumble ${name(fumble[1])} 0 Yd Fumble Recovery ${kick}` : kick;
@@ -1805,7 +1838,9 @@ export function parsePlayNarrative(play) {
   const { base: playShortText, conversion } = splitTwoPointClause(/^(?:null|undefined)$/i.test(providedShort) ? '' : providedShort);
   const shortText = playShortText;
   const rawText = String(play.rawText ?? play.description ?? '');
-  const penalty = parsePenaltyClause(rawText);
+  // The flag that stands: a replay reversal can overturn a "No Play" (W3
+  // LAC at BUF, W4 PIT at CLE), so only the corrected version is read.
+  const penalty = parsePenaltyClause(authoritativeText(rawText));
   const compact = shortText || shortTextFromGamebook(rawText, play) || '';
   const earlyChain = compact ? null : parseTurnoverChain(rawText);
   // Several turnovers read from the gamebook alone; anything else needs the
@@ -2076,7 +2111,7 @@ export function parsePlayNarrative(play) {
 
   // A flag that wipes the play out entirely has to be said out loud — the
   // action sentence on its own would read as though the yards counted.
-  const negated = penalty && /No Play/i.test(rawText);
+  const negated = penalty && /No Play/i.test(authoritativeText(rawText));
   const tryResult = conversion?.good === true ? ' Two-point try good.'
     : conversion?.good === false ? ' Two-point try failed.'
       : '';

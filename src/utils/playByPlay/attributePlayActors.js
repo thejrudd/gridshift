@@ -130,9 +130,50 @@ export function lookupActor(nameIndex, actor, team, { normalize = normalizePlaye
   const name = typeof actor === 'string' ? actor : actor?.name;
   if (!name) return null;
   const record = lookupPlayerByName(nameIndex, name, { team: team || null, normalize, prefer });
+  // The gamebook abbreviates a defender's legal first name, which a roster may
+  // not carry: "T.Woolen" is Riq Woolen, "A.Phillips" Dru Phillips, "A.Gardner"
+  // Sauce Gardner, "B.Okoye" C.J. Okoye. A defensive credit that resolves to
+  // nobody on its team is the one defender there with that surname. Weeks
+  // 1–10 of 2026: 127 credits, and every affected stat line then matches
+  // Sleeper's.
+  if (!record && surnameFallback && actor?.abbreviated && DEFENSIVE_CREDIT_ROLES.has(actor?.role)) {
+    const alias = teammateBySurname(nameIndex, String(name).split('.').slice(1).join('.').trim(), team, normalize);
+    if (alias && DEFENSIVE_POSITIONS.has(String(alias.position ?? '').toUpperCase())) return alias;
+  }
   if (record || !surnameFallback || actor?.abbreviated) return record;
   const surname = surnameOf(name);
-  return surname ? lookupPlayerByName(nameIndex, surname, { team: team || null, normalize, prefer }) : null;
+  const fallback = surname
+    ? lookupPlayerByName(nameIndex, surname, { team: team || null, normalize, prefer }) ?? teammateBySurname(nameIndex, surname, team, normalize)
+    : null;
+  // A nickname is the same player under another first name, never a defender
+  // standing in for a ball carrier: "Kendre Miller" (a running back no longer
+  // on the roster) fell back to NO defensive tackle Christen Miller, who was
+  // credited 38 carries over weeks 5–7 of 2026 (Sleeper: none).
+  if (fallback && OFFENSIVE_ACTOR_ROLES.has(actor?.role)
+    && DEFENSIVE_POSITIONS.has(String(fallback.position ?? '').toUpperCase())) return null;
+  // The direct lookup already turned down a teammate whose first name shares
+  // the initial but differs ("Jimmy Horn Jr." is not CAR's Jaycee Horn: W1 CHI
+  // at CAR, where he was charged the returner's muff). A nickname spells a
+  // different first name altogether ("Bam" Knight, "Hollywood" Brown).
+  const given = normalize(name).split(' ').filter(Boolean)[0] ?? '';
+  const found = String(fallback?.normalizedName ?? '').split(' ').filter(Boolean)[0] ?? '';
+  if (fallback && given.length > 1 && found && given[0] === found[0] && given !== found) return null;
+  return fallback;
+}
+
+const OFFENSIVE_ACTOR_ROLES = new Set([PLAY_ROLES.PASSER, PLAY_ROLES.RUSHER, PLAY_ROLES.RECEIVER]);
+
+// The index drops a bare surname that several players league-wide share
+// ("brown"), so a nickname with a common surname ("Hollywood Brown" for PHI's
+// Marquise Brown, W7–W8 of 2026: 4 catches in Sleeper's lines, none credited)
+// is looked up on the one team: the only player there with that surname.
+function teammateBySurname(nameIndex, surname, team, normalize) {
+  if (!team || !nameIndex?.meta) return null;
+  const wanted = normalize(surname).split(' ').filter(Boolean).at(-1);
+  if (!wanted) return null;
+  const found = [...nameIndex.meta.values()].filter((record) => record?.team === team
+    && String(record.normalizedName ?? '').split(' ').filter(Boolean).at(-1) === wanted);
+  return found.length === 1 ? found[0] : null;
 }
 
 const DEFENSIVE_CREDIT_ROLES = new Set([
