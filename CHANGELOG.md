@@ -1603,3 +1603,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Defenses** - The Total and Per Game headings line up with their columns at every width.
 - **Rosters** - The draft-pick scroll arrow is a tappable button without the fade, and player rows drop the repeated position and rank from season points.
 - **Scores** - The season picker is hidden when only one season is available.
+
+## v9.4.5 - Ticking Game Clock
+*2026-11-18*
+
+- **Ticking game clock** - During live games with play-by-play, the game clock on Scores and Matchups counts down between updates, shows the same second on both, and holds with the reason (Timeout, Flag, Incomplete, 2-min warning) when the clock stops. It never ticks during replay.
+- **Spring drawers** - Mobile drawers release into a spring that keeps the speed of your swipe: a quick flick closes at that speed, and a short pull springs back to rest. Swiping a drawer down and then back up before lifting your finger keeps it open.
+- **Mobile drawers** - On iPhone, a short drag on a drawer no longer closes it when you let go, and holding the drag handle no longer selects text.

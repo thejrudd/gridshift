@@ -9,6 +9,7 @@ Full token table and dark-mode values: **`docs/Design Tokens.md`**
 - `font-size: 16px` on all inputs (prevents iOS auto-zoom)
 - Safe area insets: `env(safe-area-inset-bottom)` on fixed bottom bars
 - Motion: spring-curve easing `cubic-bezier(0.32, 0.72, 0, 1)`
+- Mobile sheets (`Modal` with `mobileSheet`, `src/components/Modal.jsx`): the drag handle releases into a velocity-carrying spring (`src/utils/sheetSpring.js`, bounce 0). A flick dismisses at the finger's release speed; a short drag springs back from where it was let go, and touching the handle mid-spring catches it. The last direction of travel decides (`shouldDismissSheet`): swiping back up before release cancels, even when the sheet is still past 80px. Speed comes from `event.timeStamp` over the last 100ms, not the whole drag. Reduced motion skips the spring. The entrance stays the 240ms CSS slide, and the click iOS sends to the backdrop after a drag is ignored for 400ms.
 - Display size is controlled by `data-display-size="compact|comfortable|large"` on `<html>` and persisted under `gridshift-display-size`; Comfortable is the default. Never add DPI/device-pixel-ratio auto-scaling, CSS `zoom`, or transform scaling.
 - Use semantic `--type-*` tokens instead of new pixel font sizes. Meaningful labels start at `--type-label`; `--type-micro` is decorative/status chrome only.
 - Route roots use one intentional frame: readable (`1200px`), data (`1600px`), or workbench (`1920px`). Long lists should not stretch identity and metrics across the full monitor width.

@@ -10511,7 +10511,6 @@ body {
     box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.20);
     padding-bottom: env(safe-area-inset-bottom);
     animation: sheet-slide-up 240ms cubic-bezier(0.32, 0.72, 0, 1) both;
-    transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   .mobile-sheet-drag-handle {
@@ -10523,6 +10522,9 @@ body {
     flex-shrink: 0;
     touch-action: none;
     cursor: grab;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   .mobile-sheet-drag-handle:active {
