@@ -82,10 +82,14 @@ scoring engine when adding or changing a stat key:
 - IDP credits follow the gamebook's own markers: the parenthetical after an
   incomplete pass names a pass defender (`idp_pd`), square brackets name a
   quarterback hit (`idp_qbhit`), and "(A, B)" is a shared stop like "(A; B)".
-  A sack is also a tackle and a quarterback hit (`idp_tkl`, `idp_qbhit`); a
+  A sack is also a tackle and a quarterback hit (`idp_tkl`, `idp_qbhit`),
+  except a sack run out of bounds ("sacked ob") and a strip-sack, where only
+  the defender bracketed after FUMBLES gets the hit
+  (`isSackQuarterbackHit()`, weeks 1–10 of 2026: QB hit mismatches 67 → 23); a
   lone sacker, or a lone tackler stopping the carrier behind the line, also
   gets `idp_tkl_loss`. "Sack split by A and B" is `idp_sack: 0.5` each, with
-  no tackle for loss — the way Sleeper's lines carry them.
+  no tackle for loss — the way Sleeper's lines carry them; a spaced surname in
+  the split ("K.Van Noy") is read whole.
 - Penalty yards never count toward a player. On a play with an accepted
   penalty, rushing and receiving yards come from the narrative's
   `creditedYards` (short_text, the official credit), because the provider's
@@ -128,12 +132,22 @@ scoring engine when adding or changing a stat key:
 - Special teams follow Sleeper's own lines (checked against weeks 6–8 of
   2026): on a kickoff or punt (`isSpecialTeamsPlay()`), a lone coverage tackle
   is `st_tkl_solo` (a shared one is not credited), a forced fumble is
-  `idp_ff` + `st_ff`, a recovery is `st_fum_rec`, and players at any position
+  `idp_ff` + `st_ff`, a recovery that changed hands (capital `RECOVERED by`)
+  is `st_fum_rec` — the receiving side falling on its own muff or fumble earns
+  nothing (11 of 11 in weeks 1–10) — and players at any position
   earn them, priced at their own position so IDP keys stay IDP-only. A kicker
   or punter who tackles the returner keeps the kick and adds `st_tkl_solo`. A
   returner's touchdown is `st_td` (plus ESPN's `kr_td` / `pr_td`); the old
   GridShift-only `ret_td` fell back to a default of 6 in Sleeper leagues that
   score special-teams touchdowns at 0.
+- A punt or kickoff the provider filed under a fumble slug
+  (`fieldGeometry.isKickFiledUnderFumble()`: the standing gamebook text opens
+  with the kick, no "No Play") is a kick for `isSpecialTeamsPlay()`,
+  `isKickReturnPlay()`, the team resolution and the turnover chain, so its
+  coverage unit earns special-teams keys and its team `def_st_*`, never
+  `fum_rec`, `def_ff` or `def_4_and_stop` (weeks 4, 5, 6 and 9 of 2026:
+  S.Neal, S.Fehoko, T.Dye, A.Huntington). The game clock keeps the slug
+  reading (`isKickPossessionPlay`, `isTurnoverOnDowns` unchanged).
 - A blocked kick is the defense's play: the blocker keeps `idp_blk_kick`, the
   team gets `blk_kick`, and a blocked kick returned for a score is `st_td` for
   the scorer and `def_st_td` (ESPN `blk_kick_ret_td`) for the team, not
@@ -155,6 +169,23 @@ scoring engine when adding or changing a stat key:
   returned and fumbled to the passing team) its own team defense gets
   `fum_rec` through `TEAM_DEFENSE_TAKEAWAY`; no completed week has shown that
   case yet, so it follows the owner's rule rather than a Sleeper line.
+- Team `tkl_loss` is the sum of the team's players' `idp_tkl_loss`, the way
+  Sleeper's team lines add up (281 of 300 in weeks 1–10 of 2026): one for a
+  stop behind the line with a solo tackler (a lone name, or A in "(A, B)") or
+  a lone sacker, none for "(A; B)" or a split sack. A player's
+  `idp_tkl_loss` follows the same solo share (`credit.tackleShare`), and a
+  sack's loss is read from its own clause ("sacked … for -7 yards"), since a
+  strip-sack's provider yardage can be the recovery (`sackLossYards()`).
+  Team mismatches 91 → 30.
+- A safety's scoring-summary row ("Team Safety", "<Name> Safety") is filed
+  under the team that scored it; `getOffenseTeam` flips it
+  (`isSafetySummaryRow`), so `safe` goes to that team (weeks 2 and 8).
+- A blocked try after the offense's touchdown ("extra point is Blocked
+  (J.Carter)", summary "PAT blocked)") is the defense's `blk_kick` and the
+  blocker's `idp_blk_kick` (weeks 1, 3 and 7: 4 of 4 team lines).
+- Team `sack_yd` stays the provider's yardage: Sleeper's strip-sack yards
+  follow neither it nor the sack clause (week 2 NE: C.Barmore 11, clause 9,
+  provider 19), and the clause made 4 more team lines wrong than right.
 - The team's `def_pass_def` is the number of defenders the gamebook credits
   with a pass defensed on the snap (breakups, tips, interceptions), not every
   incompletion. An interception is also the intercepter's `idp_pd`.

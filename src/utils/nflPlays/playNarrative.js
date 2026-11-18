@@ -453,12 +453,14 @@ export function parseFumbleCredit(rawText) {
   const before = text.slice(0, fumble.index);
   // A lateral transfers possession to another offensive player, even when
   // the original pass receiver still opens the preceding sentence.
+  // A spaced surname ("A.St. Brown") is the carrier's whole name (week 5 of
+  // 2026, DET at ARI: St. Brown's punt-return fumble).
   const lateral = [...before.matchAll(new RegExp(`\\blateral to (${ABBREV})\\b`, 'gi'))].at(-1);
-  const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV})`, 'g'))];
+  const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV_SPACED})`, 'g'))];
   const sentence = before.slice(sentenceStarts.at(-1)?.index ?? 0);
   const receiver = /\bsacked\b/i.test(sentence)
     ? null
-    : new RegExp(`\\bpass\\b[^.]*?\\bto (${ABBREV})`, 'i').exec(sentence)?.[1] ?? null;
+    : new RegExp(`\\b[Pp]ass\\b[^.]*?\\bto (${ABBREV_SPACED})`).exec(sentence)?.[1] ?? null;
   return {
     fumbledBy: (lateral && lateral.index > (sentenceStarts.at(-1)?.index ?? 0) ? lateral[1] : null)
       ?? receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text),
@@ -489,13 +491,15 @@ export function parseFumble(rawText) {
 // `parseFumbleCredit`): a lateral's last carrier, a completed pass's receiver,
 // or the sentence's first name.
 function carrierBefore(before, text) {
+  // A spaced surname ("A.St. Brown") is the carrier's whole name (week 5 of
+  // 2026, DET at ARI: St. Brown's punt-return fumble).
   const lateral = [...before.matchAll(new RegExp(`\\blateral to (${ABBREV})\\b`, 'gi'))].at(-1);
-  const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV})`, 'g'))];
+  const sentenceStarts = [...before.matchAll(new RegExp(`(?:^|\\.\\s+)(?:\\([^)]*\\)\\s*)?(${ABBREV_SPACED})`, 'g'))];
   const start = sentenceStarts.at(-1)?.index ?? 0;
   const sentence = before.slice(start);
   const receiver = /\bsacked\b/i.test(sentence)
     ? null
-    : new RegExp(`\\bpass\\b[^.]*?\\bto (${ABBREV})`, 'i').exec(sentence)?.[1] ?? null;
+    : new RegExp(`\\b[Pp]ass\\b[^.]*?\\bto (${ABBREV_SPACED})`).exec(sentence)?.[1] ?? null;
   return (lateral && lateral.index > start ? lateral[1] : null)
     ?? receiver ?? sentenceStarts.at(-1)?.[1] ?? firstAbbreviatedName(text);
 }
@@ -872,7 +876,9 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
     const subjectClause = /^(?:\([^)]*\)\s*)?(.+?)\s+sacked\s+(?!at\b|for\b|ob\b)/i.exec(text)?.[1] ?? null;
     const explicit = cleanDefensiveName(byClause) ?? cleanDefensiveName(subjectClause);
     // "(sack split by Z.Allen and N.Bonitto)": a half sack each.
-    const split = new RegExp(`sack split by (${ABBREV}) and (${ABBREV})`, 'i').exec(text);
+    // A spaced surname ("sack split by I.Pace and K.Van Noy") is read whole;
+    // such a split used to drop both sackers (week 3 of 2026, MIN at TB).
+    const split = new RegExp(`sack split by (${ABBREV_SPACED}) and (${ABBREV_SPACED})`).exec(text);
     if (split) [split[1], split[2]].forEach((name) => add(PLAY_ROLES.SACKER, name));
     else if (explicit) add(PLAY_ROLES.SACKER, explicit);
     // A sack-fumble's last tackle group can be the one that stopped the
@@ -907,6 +913,9 @@ export function parseDefensiveActors(rawText, { typeSlug = null } = {}) {
   const blockedBy = new RegExp(`\\b(?:kick|punt|field goal|extra point)(?: is)? blocked by (${ABBREV})`, 'i').exec(text)?.[1]
     ?? /\b(?:kick|punt|field goal|extra point)(?: is)? blocked by ([^.,;]+?)(?:[.,;]|$)/i.exec(text)?.[1]
     ?? new RegExp(`\\bBLOCKED \\((${ABBREV})\\)`).exec(text)?.[1]
+    // The try after a touchdown: "extra point is Blocked (D.Odeyingbo)" (weeks
+    // 1 and 3 of 2026: J.Carter and T.Booker have idp_blk_kick in Sleeper's lines).
+    ?? new RegExp(`\\bextra point is Blocked \\((${ABBREV_SPACED})\\)`).exec(text)?.[1]
     ?? null;
   if (blockedBy) add(PLAY_ROLES.KICK_BLOCKER, blockedBy);
 

@@ -12,14 +12,22 @@
 
 import { calcPoints } from '../scoringEngine.js';
 import { PLAY_ROLES, authoritativeText, parseTurnoverChain } from '../nflPlays/playNarrative.js';
-import { isKickPossessionPlay, kickingTeamRecovered } from '../nflPlays/fieldGeometry.js';
+import {
+  isKickFiledUnderFumble, isKickPlay, isKickPossessionPlay, kickingTeamRecovered,
+} from '../nflPlays/fieldGeometry.js';
 
 // A kickoff or punt: its defensive credits are special-teams stats in Sleeper's
 // lines (`st_tkl_solo`, `st_ff`, `st_fum_rec`, `st_td`), not IDP ones. A blocked
-// kick is the defense's play and keeps its IDP credits.
+// kick is the defense's play and keeps its IDP credits. A punt or kickoff filed
+// under a fumble slug is read from its text (`isKickFiledUnderFumble`).
 export function isSpecialTeamsPlay(play) {
   const type = String(play?.type ?? play?.typeSlug ?? play?.raw?.type_slug ?? '').toLowerCase();
-  return /kickoff|punt/.test(type) && !/blocked/.test(type) && isKickPossessionPlay({ typeSlug: type });
+  if (/kickoff|punt/.test(type) && !/blocked/.test(type) && isKickPossessionPlay({ typeSlug: type })) return true;
+  return isKickFiledUnderFumble({ typeSlug: type, rawText: playText(play) });
+}
+
+function playText(play) {
+  return play?.raw?.text ?? play?.rawText ?? play?.description ?? '';
 }
 
 /**
@@ -146,6 +154,45 @@ function countTacklers(play) {
   return sackers || actors.filter((actor) => actor.role === PLAY_ROLES.TACKLER).length;
 }
 
+// A run or catch the stop left behind the line.
+function isStopForLoss(play) {
+  const carried = firstFinite(play.narrative?.creditedYards);
+  return carried != null && carried < 0 && play.narrative?.playKind !== 'incompletion';
+}
+
+// The sack's own loss from its clause ("sacked at TB 39 for -7 yards"): on a
+// strip-sack the provider's yardage can be the recovery (week 1 of 2026:
+// B.Mafe, R.McCreary, G.Rousseau each a tackle for loss in Sleeper's lines).
+function sackLossYards(play) {
+  const text = authoritativeText(playText(play));
+  const clause = /\bsacked\b[^.]*?\bfor (-?\d+) yards?/i.exec(text)?.[1];
+  if (clause != null) return Math.abs(Number(clause));
+  return Math.abs(firstFinite(play.raw?.stat_yardage, play.yards) ?? 0);
+}
+
+function hasSoloStopForLoss(play, sack) {
+  const actors = play?.defensiveActors ?? [];
+  const sackers = actors.filter((actor) => actor.role === PLAY_ROLES.SACKER).length;
+  if (sack) return sackers === 1 && sackLossYards(play) > 0;
+  if (!isStopForLoss(play)) return false;
+  const tacklers = actors.filter((actor) => actor.role === PLAY_ROLES.TACKLER);
+  return tacklers.length === 1 || tacklers.some((actor) => actor.share === 'solo');
+}
+
+// Whether a sack is also the sacker's quarterback hit in Sleeper's lines
+// (weeks 1–10 of 2026). Not when the quarterback was run out of bounds
+// ("sacked ob at …": D.Thomas, R.Height, E.Jones and 12 more lines one hit
+// over), and not on a strip-sack, where the gamebook brackets the hitter
+// after FUMBLES ("FUMBLES (K.Gordon) [K.Gordon]") and a sacker it leaves out
+// gets none (J.Carter twice, K.Chaisson, W.Anderson). The bracketed hitter is
+// credited as a `QB_HITTER` either way.
+function isSackQuarterbackHit(play) {
+  const text = authoritativeText(playText(play));
+  if (!text) return true;
+  if (/\bsacked ob\b/i.test(text)) return false;
+  return !/\bsacked\b[\s\S]*\bFUMBLES\b/.test(text);
+}
+
 function getSackYards(play, description) {
   const providerYards = firstFinite(play.raw?.stat_yardage);
   if (providerYards != null) return Math.abs(providerYards);
@@ -161,7 +208,7 @@ function scoringText(play) {
   return [play?.description, play?.raw?.text].filter(Boolean).join(' ');
 }
 
-function buildAttributedDefensiveDelta(play, attributionRoles) {
+function buildAttributedDefensiveDelta(play, attributionRoles, tackleShare = null) {
   const roles = new Set(attributionRoles ?? []);
   const delta = {};
   if (isSpecialTeamsPlay(play)) return buildSpecialTeamsDelta(play, roles);
@@ -191,10 +238,11 @@ function buildAttributedDefensiveDelta(play, attributionRoles) {
   // assisted by how many are named). A tackle for loss is credited only to a
   // lone tackler behind the line, the way Sleeper's lines report it; a shared
   // stop for loss carries none there.
+  // "(A, B)" is A's solo stop, and A's tackle for loss (`tackleShare`).
   if (roles.has(PLAY_ROLES.TACKLER)) {
     delta.idp_tkl = 1;
-    const carried = firstFinite(play.narrative?.creditedYards);
-    if (alone && carried != null && carried < 0 && play.narrative?.playKind !== 'incompletion') delta.idp_tkl_loss = 1;
+    const solo = tackleShare ? tackleShare === 'solo' : alone;
+    if (solo && isStopForLoss(play)) delta.idp_tkl_loss = 1;
   }
   // A sack is also a tackle and a quarterback hit in Sleeper's stat lines, and
   // a lone sacker's is a tackle for loss. A shared sack is half each.
@@ -203,8 +251,8 @@ function buildAttributedDefensiveDelta(play, attributionRoles) {
     delta.idp_sack = share;
     if (sackYards) delta.idp_sack_yd = Math.round(sackYards * share * 10) / 10;
     delta.idp_tkl = 1;
-    delta.idp_qbhit = 1;
-    if (alone && sackYards > 0) delta.idp_tkl_loss = 1;
+    if (isSackQuarterbackHit(play)) delta.idp_qbhit = 1;
+    if (alone && sackLossYards(play) > 0) delta.idp_tkl_loss = 1;
   }
   if (roles.has(PLAY_ROLES.FORCER)) delta.idp_ff = 1;
   if (roles.has(PLAY_ROLES.PASS_DEFENDER)) delta.idp_pd = 1;
@@ -248,7 +296,11 @@ function buildSpecialTeamsDelta(play, roles) {
     delta.idp_ff = 1;
     delta.st_ff = 1;
   }
-  if (roles.has(PLAY_ROLES.RECOVERER)) {
+  // Only a recovery that changed hands (capital RECOVERED: the kicking team
+  // came up with it). The receiving side falling on its own muff or fumble
+  // ("recovered by SEA-C.Surratt") earns nothing in Sleeper's lines: none of
+  // the 11 such recoverers in weeks 1–10 of 2026 has `st_fum_rec`.
+  if (roles.has(PLAY_ROLES.RECOVERER) && kickingTeamRecovered({ rawText: playText(play) })) {
     delta.st_fum_rec = 1;
     if (play.scoring && /touchdown/i.test(scoringText(play))) delta.st_td = 1;
   }
@@ -275,7 +327,7 @@ export function buildPlayStatDelta(play, role, roleDetail = null, attributionRol
     if (!/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) addFumble(delta, credit.fumble);
     return delta;
   }
-  const delta = buildInvolvementDelta(play, role, roleDetail, attributionRoles, credit?.fumble ?? null);
+  const delta = buildInvolvementDelta(play, role, roleDetail, attributionRoles, credit?.fumble ?? null, credit?.tackleShare ?? null);
   // A defender who fumbled after taking the ball away (an interception or a
   // recovery returned and lost again) is charged like anyone else.
   if (role === 'defense' && credit?.fumble && !/\bno play\b|wiped out by/i.test(`${play?.description ?? ''} ${play?.raw?.text ?? ''}`)) {
@@ -335,7 +387,7 @@ function kickDistanceBands(prefix, yards) {
   return { [`${prefix}_${band}`]: 1, ...(yards >= 50 ? { [`${prefix}_50p`]: 1 } : {}) };
 }
 
-function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble) {
+function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble, tackleShare = null) {
   const description = play.description;
   const yards = play.yards || extractYardsFromText(description) || 0;
   // Rushing and receiving credit. An accepted penalty is netted into the
@@ -425,7 +477,7 @@ function buildInvolvementDelta(play, role, roleDetail, attributionRoles, fumble)
     return buildTeamDefensePlayDelta(play, roleDetail);
   } else if (role === 'defense') {
     if (Array.isArray(attributionRoles) && attributionRoles.length) {
-      return buildAttributedDefensiveDelta(play, attributionRoles);
+      return buildAttributedDefensiveDelta(play, attributionRoles, tackleShare);
     }
     if (/sack/i.test(description)) {
       delta.idp_sack = 1;
@@ -534,7 +586,7 @@ export const TEAM_DEFENSE_TAKEAWAY = 'takeaway';
  */
 function readTurnoverChain(play) {
   const text = String(play?.raw?.text ?? play?.rawText ?? '');
-  if (!text || isKickPossessionPlay({ typeSlug: play?.type ?? play?.typeSlug ?? play?.raw?.type_slug })) return null;
+  if (!text || isKickPlay({ typeSlug: play?.type ?? play?.typeSlug ?? play?.raw?.type_slug, rawText: text })) return null;
   if (play?.narrative?.negated || /\bno play\b/i.test(authoritativeText(text))) return null;
   const chain = parseTurnoverChain(text);
   return chain?.complete && !chain.kick ? chain : null;
@@ -645,16 +697,19 @@ export function buildTeamDefensePlayDelta(play, detail = null) {
     delta.sack_yd = Math.abs(play.yards || extractYardsFromText(description) || 0);
   }
   if (/blocked/.test(type) || /\bBLOCKED\b/.test(String(play.raw?.text ?? ''))) delta.blk_kick = 1;
+  // A blocked try after the offense's touchdown is the defense's blocked kick
+  // ("extra point is Blocked (J.Carter)", summary "(Ryan Fitzgerald PAT
+  // blocked)"): weeks 1, 3 and 7 of 2026, PHI, CHI, LV and TB in Sleeper's lines.
+  if (!play.narrative?.turnover && /\bextra point is Blocked\b|\bPAT blocked\)/.test(`${play.raw?.text ?? ''} ${play.raw?.short_text ?? ''}`)) delta.blk_kick = 1;
   if (!play.narrative?.negated && !/\bno play\b/i.test(String(play.raw?.text ?? ''))) {
     // The defense came up with a fumble (the gamebook capitalizes RECOVERED
     // for a change of possession).
     if (!chain && fumble && /\bFUMBLES\b[^]*?\bRECOVERED by\b/.test(String(play.raw?.text ?? ''))) delta.fum_rec = 1;
-    // A stop behind the line: a sack for a loss, or a run or catch tackled for
-    // a loss. The team counts it however many defenders shared it.
-    const loss = (sack && Math.abs(play.yards || 0) > 0)
-      || (firstFinite(play.narrative?.creditedYards) < 0 && play.narrative?.playKind !== 'incompletion'
-        && (play.defensiveActors ?? []).some((actor) => actor.role === PLAY_ROLES.TACKLER));
-    if (loss) delta.tkl_loss = 1;
+    // A stop behind the line that one defender is credited with: Sleeper's
+    // team `tkl_loss` is the sum of its players' `idp_tkl_loss` (281 of 300
+    // team lines in weeks 1–10 of 2026), so a stop shared "(A; B)" or a split
+    // sack counts none, and a lone sack or "(A, B)" stop counts one.
+    if (hasSoloStopForLoss(play, sack)) delta.tkl_loss = 1;
     if (play.turnoverOnDowns) delta.def_4_and_stop = 1;
   }
   if (chain) Object.assign(delta, chainTakeaways(chain, 'defense'));
