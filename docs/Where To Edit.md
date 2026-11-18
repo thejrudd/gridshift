@@ -264,8 +264,16 @@ Rules: any change here must audit both Statistics Scores and Fantasy Live. Count
 | File | Owns |
 | --- | --- |
 | `src/context/SleeperContext.jsx` | League/roster state, shared live NFL state, the coalesced current-week fantasy-stat refresh, and the season-aware `currentFantasyWeek` — widest blast radius in the app |
-| `src/api/sleeperApi.js` | Sleeper API client |
-| `src/components/companion/CompanionConnect.jsx` | Connect flow |
+| `src/api/sleeperApi.js` | Sleeper API client; `getWeeksWithTeams` (weekly stats with game-time team/opponent) and `getAllPlayers` (shared in-flight, IndexedDB copy for a day) |
+| `src/utils/sleeperWeekTeams.js` | Pure Fantasy season-package rules: Sleeper row mapping, week range from `/state/nfl`, which weeks to refetch, schedule team fallback, three-season memory cap |
+| `src/utils/statsCache.js` | IndexedDB store for season packages (per-week final metadata) and the players DB |
+| `src/components/companion/CompanionConnect.jsx` | Connect flow; `onContinueWithoutLeague` adds the "Continue Without a League" button (connect page and league picker, never the switcher modal) |
+| `src/App.jsx` — `LeagueContextHeader`, `handleContinueWithoutLeague` | Top-right button: "Switch" with a league, "Connect League" without one (Predictions, Statistics, Scout subnavs on lg+); skipping ends any onboarding handoff and routes to Statistics |
+| `src/components/Sidebar.jsx`, `src/components/BottomTabBar.jsx` (`hiddenTabs`), `src/components/NavBar.jsx` (`onConnectLeague`), `src/components/ActionSheet.jsx` (`hasLeague`) | Hidden league tabs; mobile Connect pill in the top bar and the "Connect League" menu row, shown only with no league |
+| `src/data/onboardingTour.js` (`ONBOARDING_TOUR`, `ONBOARDING_PREVIEW_TOUR`), `src/hooks/useOnboardingTour.js`, `src/utils/onboardingTour.js` | First-run tour steps and phases (`welcome` → `tour` → `connect`); the league-less list covers every section |
+| `src/components/tour/TourFantasyPreview.jsx`, `src/data/tourPreviewData.js`, `src/components/OnboardingConnectModal.jsx` | Sample-data Fantasy, League, Trade, and Draft screens shown only in the league-less tour, and its closing "Connect league / Continue without a league" prompt |
+
+GridShift works without a league. Statistics, Predictions, and Scout need none. With no league, `leagueDependentHiddenTabs` in `App.jsx` hides Fantasy, League, Trade, and Draft from the sidebar and bottom bar (the `hiddenTabs` prop) and they return when a league is chosen; that includes the open one, so a deep link, first load, or disconnect on a league tab shows that tab's connect page with no section selected, and its "Continue Without a League" button leaves for Statistics. The first-run tour needs no league: with none connected, `tourPreviewActive` in `App.jsx` unhides those four tabs and renders `TourFantasyPreview` (static sample data, never league context) in place of the connect page; finishing the tour (`finishPreview`) returns to Fantasy and opens the connect prompt, and skipping it just closes. Any no-league entry point opens the same switcher modal, so connecting has one path. Keep new league-free features reachable without a league.
 
 Sleeper is the supported fantasy connection. Current-week consumers should use `currentFantasyWeek` from this context rather than re-deriving from `last_scored_leg` or issuing their own `/state/nfl` request. Completed-week analytics may continue to use `last_scored_leg` when they explicitly need a settled-data boundary.
 

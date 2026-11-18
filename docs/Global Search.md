@@ -472,6 +472,12 @@ must not become a live query.
 3. If the app already holds the Sleeper player directory for its own reasons, the
    live player slice supersedes the static one. Search never fetches it itself.
 4. Fantasy-league records rebuild with the league; they are small and in memory.
+5. With no league connected, `filterStaticRecordsForLeague` drops the Fantasy,
+   League, Trade, and Draft destinations and the `league.switch` command from the
+   static slice (and drops `league.connect` once one is connected), so search never offers a page the nav hides. The artifact stays
+   league-agnostic; the filter runs in `useGlobalSearch`. Mark a new league-only
+   destination by its `section` in `appViews.js`, or add a command id to
+   `LEAGUE_COMMAND_IDS` in `buildIndex.js`.
 
 The static slice has no Sleeper dependency, so player search now works for ESPN
 users, where `loadPlayers` returns `{}`.

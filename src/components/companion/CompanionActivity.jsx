@@ -228,7 +228,6 @@ function ActivityEntry({ entry, darkMode, onViewPlayer }) {
         </div>
         <div className="league-activity-entry__heading">
           <strong>{entry.label}</strong>
-          {moves.length > 0 && <span>{moves.length} move{moves.length === 1 ? '' : 's'}</span>}
         </div>
         {moves.length > 0 ? (
           <>

@@ -80,3 +80,13 @@ test('final: compares complete positions with projection and names the top bench
 test('scored sources return null without starters', () => {
   assert.equal(buildMatchupScoredSources([{ id: 'e', name: 'Empty' }], 0), null);
 });
+
+test('a roster spot with no player record adds no points or row', () => {
+  const sources = buildMatchupScoredSources([
+    starter('q1', 'Dak Prescott', 'QB', 26.2),
+    { id: 'ghost', name: 'Player record unavailable', position: '?', weekPts: null, isUnavailable: true },
+  ], 26.2, { phase: 'final' });
+  assert.deepEqual(sources.rows.map((row) => row.label), ['QB']);
+  assert.equal(sources.total, 26.2);
+  assert.equal(sources.adjustment, 0);
+});

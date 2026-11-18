@@ -4,9 +4,12 @@
 //     The team's finished regular-season games (box lines, team stats, quarter
 //     scores, drive results, scoring plays) built from Statistics Scores game
 //     details, its remaining schedule, every team's record, and league unit
-//     ranks from all finished team-game stat lines. Finished games are cached
-//     for the life of the process; the league team-stat pull refreshes every
-//     15 minutes through the shared BALLDONTLIE gateway.
+//     ranks from all finished team-game stat lines. A finished game's detail is
+//     held once per game (finishedGameDetails.js, shared with the player
+//     dashboard and backed by the finished-games archive) and each team's
+//     result from it is cached for the life of the process; the league
+//     team-stat pull refreshes every 15 minutes through the shared BALLDONTLIE
+//     gateway.
 
 import express from 'express';
 import process from 'node:process';
@@ -17,10 +20,9 @@ import {
   buildTeamRanks,
   upcomingGames,
 } from '../src/utils/teamSeason/teamSeasonModel.js';
-import {
-  fetchStatisticsScoresGameDetail,
-  fetchStatisticsScoresGames,
-} from './statisticsScoresHandlers.js';
+import { fetchStatisticsScoresGames, seasonCacheControl } from './statisticsScoresHandlers.js';
+import { createBuiltGameCache, createFinishedGameDetailStore, isSettledFinalDetail } from './finishedGameDetails.js';
+import { isFinalGame } from '../src/utils/liveScoringFeed.js';
 
 const MIN_SEASON = 2022;
 const DETAIL_CONCURRENCY = 3;
@@ -29,7 +31,7 @@ const TEAM_STATS_TTL_MS = 15 * 60_000;
 const DEPTH_CHART_TTL_MS = 60 * 60_000;
 const ESPN_DEPTH_CHART_URL = (team) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${team}/depthcharts`;
 
-const isFinal = (game) => /^final/i.test(String(game?.status ?? ''));
+const isFinal = (game) => isFinalGame(game);
 
 function badRequest(message) {
   const error = new Error(message);
@@ -50,14 +52,20 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
-export function createTeamSeasonService({ gateway, snapshotStore, env = process.env, fetcher = fetch } = {}) {
-  const gameCache = new Map(); // `${gameId}|${team}` -> built game (finished games with plays only)
+export function createTeamSeasonService({
+  gateway,
+  snapshotStore,
+  archive = null,
+  env = process.env,
+  fetcher = fetch,
+  // Shared with the player dashboard so each finished game is held once.
+  gameDetails = createFinishedGameDetailStore({ gateway, snapshotStore, archive, env }),
+} = {}) {
+  const builtGames = createBuiltGameCache({ maxEntries: MAX_GAME_ENTRIES }); // finished, settled games per subject
   const depthCache = new Map(); // ESPN team abbreviation -> { at, depthchart }
 
-  function remember(key, value) {
-    gameCache.set(key, value);
-    while (gameCache.size > MAX_GAME_ENTRIES) gameCache.delete(gameCache.keys().next().value);
-  }
+
+
 
   async function leagueTeamStats(season) {
     if (!gateway?.supports?.('teamStats')) return [];
@@ -114,17 +122,22 @@ export function createTeamSeasonService({ gateway, snapshotStore, env = process.
         throw badRequest('That team has no games this season.');
       }
 
+      let teamStatsFailed = false;
       const [built, teamStatRows] = await Promise.all([
         mapWithConcurrency(finals, DETAIL_CONCURRENCY, async (game) => {
           const key = `${game.id}|${team}`;
-          if (gameCache.has(key)) return gameCache.get(key);
-          const detail = await fetchStatisticsScoresGameDetail({ gameId: game.id, phase: 'regular', gateway, env, snapshotStore });
-          const result = buildTeamGame(detail, team);
-          // Games whose plays have not landed are rebuilt on the next request.
-          if (result && detail.coverage?.plays) remember(key, result);
-          return result;
+          const cachedGame = builtGames.get(key);
+          if (cachedGame !== undefined) return { result: cachedGame, settled: true };
+          return builtGames.coalesce(key, async () => {
+            const detail = await gameDetails.get({ gameId: game.id, phase: 'regular' });
+            const result = buildTeamGame(detail, team);
+            // Games whose plays or box scores have not landed are rebuilt on the next request.
+            const settled = isSettledFinalDetail(detail);
+            if (result && settled) builtGames.set(key, result);
+            return { result, settled };
+          });
         }),
-        leagueTeamStats(season).catch(() => []),
+        leagueTeamStats(season).catch(() => { teamStatsFailed = true; return []; }),
       ]);
 
       const { teams, standings } = buildStandings(allGames);
@@ -133,11 +146,14 @@ export function createTeamSeasonService({ gateway, snapshotStore, env = process.
         season,
         team,
         teams,
-        games: built.filter(Boolean),
+        games: built.map(({ result }) => result).filter(Boolean),
         schedule: upcomingGames(allGames, team),
         standings,
         ranks,
         leagueGames,
+        // False when the league team stats failed or a finished game's plays
+        // had not landed: the payload is then only cached briefly.
+        complete: !teamStatsFailed && built.every(({ settled }) => settled),
       };
     },
   };
@@ -161,7 +177,7 @@ export function createTeamSeasonRouter(options = {}) {
   router.get('/season', async (req, res) => {
     try {
       const payload = await service.season(req.query);
-      res.set('Cache-Control', 'no-store').json({ ok: true, ...payload });
+      res.set('Cache-Control', seasonCacheControl(payload.season, { complete: payload.complete !== false })).json({ ok: true, ...payload });
     } catch (error) {
       const status = error.statusCode ?? 500;
       res.status(status).set('Cache-Control', 'no-store').json({

@@ -135,7 +135,9 @@ test('a fumble names the ball carrier and the recovering defender', () => {
   assert.deepEqual(actorNames(narrative, PLAY_ROLES.RECOVERER), ['Quinyon Mitchell']);
 });
 
-test('a scoring-summary pick-six excludes the appended conversion snap', () => {
+// No other row carries the try after a defensive touchdown: every such kicker
+// in weeks 1–9 of 2026 was one extra point short of Sleeper's line without it.
+test('a scoring-summary pick-six credits the appended try to the scoring side', () => {
   const narrative = parsePlayNarrative({
     typeSlug: 'interception-return-touchdown',
     shortText: "Wade Woodaz 80 Yd Interception Return (Ka'imi Fairbairn Kick)",
@@ -145,9 +147,12 @@ test('a scoring-summary pick-six excludes the appended conversion snap', () => {
 
   assert.equal(narrative.confident, true);
   assert.equal(narrative.sentence, 'Wade Woodaz intercepted the pass and returned it 80 yards for a touchdown.');
-  assert.deepEqual(narrative.actors.map(({ role, name }) => ({ role, name })), [
-    { role: 'intercepter', name: 'Wade Woodaz' },
+  assert.deepEqual(narrative.actors.map(({ role, name, side = null }) => ({ role, name, side })), [
+    { role: 'intercepter', name: 'Wade Woodaz', side: null },
+    { role: 'kicker', name: "Ka'imi Fairbairn", side: 'defense' },
   ]);
+  assert.equal(narrative.actors[1].detail, 'extra point good');
+  assert.equal(narrative.extraPoint.sentence, "Ka'imi Fairbairn made the extra point after a Wade Woodaz touchdown.");
 });
 
 test('an interception inside the end zone preserves the provider signed spot', () => {

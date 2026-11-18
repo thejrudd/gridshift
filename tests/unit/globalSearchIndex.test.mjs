@@ -270,3 +270,25 @@ test('a fuzzy match must share the term first letter', () => {
   assert.equal(scoreTerm(index, 'wire').has(0), false, 'wire must not reach Zaire');
   assert.ok(scoreTerm(index, 'lamr').has(1), 'a same-letter typo still reaches its player');
 });
+
+test('league-only destinations and commands are dropped when no league is connected', async () => {
+  const { buildStaticRecords, filterStaticRecordsForLeague, isLeagueDependentRecord } = await import(
+    '../../src/utils/globalSearch/buildIndex.js'
+  );
+  const records = buildStaticRecords();
+  const ids = (list) => new Set(list.map((record) => record.id));
+
+  const without = ids(filterStaticRecordsForLeague(records, false));
+  for (const hidden of ['fantasy.rosters', 'league.standings', 'trade.agent', 'draft.warRoom', 'league.switch']) {
+    assert.equal(without.has(hidden), false, `${hidden} needs a league`);
+  }
+  for (const kept of ['statistics.scores', 'scout.prospects', 'predictions.predictions', 'league.connect', 'theme.toggle', 'guide']) {
+    assert.equal(without.has(kept), true, `${kept} needs no league`);
+  }
+
+  const withLeague = filterStaticRecordsForLeague(records, true);
+  assert.equal(withLeague.some((record) => record.id === 'league.connect'), false, 'connected: nothing to connect');
+  assert.equal(withLeague.length, records.length - 1, 'a connected league keeps every other record');
+  assert.equal(records.some(isLeagueDependentRecord), true);
+  assert.equal(records.filter((record) => record.kind === 'nflTeam').every((record) => !isLeagueDependentRecord(record)), true);
+});

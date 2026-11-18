@@ -37,3 +37,12 @@ test('completed and invalid onboarding states are handled safely', () => {
   }), ONBOARDING_PHASE.idle);
   assert.equal(normalizeOnboardingStatus('unexpected'), null);
 });
+
+test('the connect prompt is a phase of its own, never an initial one', () => {
+  assert.equal(ONBOARDING_PHASE.connect, 'connect');
+  for (const storedStatus of [null, ...Object.values(ONBOARDING_STATUS)]) {
+    for (const hasLeague of [true, false]) {
+      assert.notEqual(getInitialOnboardingPhase({ isFirstRun: true, storedStatus, hasLeague }), ONBOARDING_PHASE.connect);
+    }
+  }
+});

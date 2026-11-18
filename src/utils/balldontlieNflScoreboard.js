@@ -1,16 +1,18 @@
 import { NFL_SEASON_PHASES } from './espnNflScoreboard.js';
+import { CLOCK_QUARTER_STATUS, classifyNflGameStatus, readLivePeriod } from './nflGameStatus.js';
 import { reconcileProviderClockAnchor } from './providerAnchoredGameClock.js';
 import { NFL_SCOREBOARD_TIME_ZONE } from './statisticsScoresGrouping.js';
 import {
   NON_SNAP_SLUGS,
   canonicalTeam,
-  getOffenseTeam,
   isNonSnapPlay,
   isTurnoverOnDowns,
 } from './nflPlays/fieldGeometry.js';
 import { buildPlayerNumbers, collectPlayNames } from './nflPlays/playNarrative.js';
 import { enrichPlaySequenceContext } from './nflPlays/playSequenceContext.js';
 import { normalizeCanonicalPlay } from './playByPlay/normalizePlay.js';
+import { getElapsedSeconds, parseClockSeconds } from './playByPlay/gameClock.js';
+import { sortPlaysChronologically } from './playByPlay/playOrder.js';
 import { buildPlayerQuarterStats, getStatisticsPlayerKey } from './statisticsPlayerQuarterStats.js';
 import { formatPlayerHeight, formatPlayerWeight } from './playerMeasurements.js';
 
@@ -55,39 +57,20 @@ function teamFromBdl(team, fallback = 'TBD') {
   };
 }
 
-function normalizeStatusState(value) {
-  return String(value ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ');
-}
-
 function getLiveClock(game) {
   const status = firstString(game?.status) ?? '';
-  const statusMatch = status.match(/^(\d{1,2}:\d{2})\s*(?:-|·)\s*(\d+)(?:st|nd|rd|th)(?:\s+(?:q|quarter))?$/i);
-  const explicitPeriod = game?.period == null || game.period === '' ? Number.NaN : Number(game.period);
-  const parsedPeriod = Number(statusMatch?.[2]);
-
+  const statusMatch = CLOCK_QUARTER_STATUS.exec(status);
+  const period = readLivePeriod(game);
   return {
-    period: Number.isFinite(explicitPeriod) && explicitPeriod > 0
-      ? String(explicitPeriod)
-      : Number.isFinite(parsedPeriod)
-        ? String(parsedPeriod)
-        : null,
+    period: period == null ? null : String(period),
     clock: firstString(game?.time, game?.clock, statusMatch?.[1]),
   };
 }
 
+// The shared lifecycle classifier (`nflGameStatus.js`), also behind Fantasy
+// Live's isLiveGame / isFinalGame.
 function getStatus(game) {
-  const raw = String(game?.status ?? '').toLowerCase();
-  const state = normalizeStatusState(game?.status_state ?? game?.statusState);
-  if (state.includes('postpon') || raw.includes('postpon')) return 'postponed';
-  if (state.includes('delay') || raw.includes('delay')) return 'delayed';
-  if (['completed', 'complete', 'final', 'post', 'closed'].includes(state)
-    || raw.includes('final') || raw.includes('complete')) return 'final';
-  if (state.includes('half') || raw.includes('half')) return 'halftime';
-  if (['scheduled', 'pre', 'not started', 'upcoming'].includes(state)) return 'scheduled';
-  if (['in progress', 'live', 'in'].includes(state)
-    || raw.includes('progress') || raw.includes('live')
-    || /quarter|\bq[1-4]\b/.test(raw) || getLiveClock(game).period) return 'live';
-  return 'scheduled';
+  return classifyNflGameStatus(game);
 }
 
 function getStatusLabel(game, status) {
@@ -498,7 +481,13 @@ function formatPlaySpot(play, team, game) {
  */
 export function normalizeBdlScorePlay(play, game, { nameHints = null, playerNumbers = null } = {}) {
   if (!play) return null;
-  const canonical = normalizeCanonicalPlay(play, { gameId: game?.id ?? null, nameHints, playerNumbers });
+  const canonical = normalizeCanonicalPlay(play, {
+    gameId: game?.id ?? null,
+    homeTeam: game?.home?.id ?? null,
+    awayTeam: game?.away?.id ?? null,
+    nameHints,
+    playerNumbers,
+  });
   const description = firstString(play.text, play.short_text, 'Play unavailable') ?? 'Play unavailable';
   const down = play.start_down > 0
     ? `${ordinal(play.start_down)} & ${play.start_distance ?? '—'}`
@@ -550,23 +539,23 @@ export function normalizeBdlScorePlay(play, game, { nameHints = null, playerNumb
     homeWinProbability: canonical.homeWinProbability,
     awayScore: asScore(play.away_score),
     homeScore: asScore(play.home_score),
+    // Canonical semantics, read by every Scores consumer instead of re-parsing
+    // (`readPlayNarrative`). `narrative` is the parser's full answer, confident
+    // or not; `offenseTeam`/`defenseTeam` are the shared resolution, which
+    // honours a provider `defense_team`; `defensiveActors` are the gamebook's
+    // explicit defensive credits.
+    narrative: canonical.parsedNarrative,
+    offenseTeam: canonical.offenseTeam,
+    defenseTeam: canonical.defenseTeam,
+    defensiveActors: canonical.defensiveActors,
   };
 }
 
-function parseBdlClockSeconds(value) {
-  const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-  const minutes = Number(match[1]);
-  const seconds = Number(match[2]);
-  if (!Number.isInteger(minutes) || !Number.isInteger(seconds) || seconds > 59) return null;
-  return (minutes * 60) + seconds;
-}
-
+// Game-clock arithmetic is `playByPlay/gameClock.js`: a strict "M:SS" clock,
+// quarters of 900 seconds (overtime included), and no stand-in for a missing
+// clock — an unreadable clock never moves a scorecard.
 function getBdlClockProgress(period, clock) {
-  const periodNumber = Number(period);
-  const clockSeconds = parseBdlClockSeconds(clock);
-  if (!Number.isInteger(periodNumber) || periodNumber < 1 || clockSeconds == null) return null;
-  return ((periodNumber - 1) * 900) + (900 - Math.min(900, clockSeconds));
+  return getElapsedSeconds(period, clock, { strict: true, missingClockSecondsLeft: null });
 }
 
 function timestampValue(value) {
@@ -716,35 +705,9 @@ function isPeriodBoundaryPlay(play) {
     .some((value) => /^end(?:\s+of)?\s+(?:quarter(?:\s*[1-4])?|half|game)$/i.test(value));
 }
 
-function getBdlPlayProgress(play) {
-  const period = Number(play?.period);
-  const clock = /^(\d{1,2}):(\d{2})$/.exec(String(play?.clock_display ?? play?.clock ?? '').trim());
-  if (!Number.isFinite(period) || period < 1 || !clock) return null;
-  const minutes = Number(clock[1]);
-  const seconds = Number(clock[2]);
-  if (seconds > 59) return null;
-  return ((period - 1) * 900) + (900 - Math.min(900, (minutes * 60) + seconds));
-}
-
-function sortBdlPlaysChronologically(plays) {
-  return plays
-    .map((play, index) => ({
-      play,
-      index,
-      progress: getBdlPlayProgress(play),
-      wallclock: Date.parse(play?.wallclock ?? ''),
-    }))
-    .sort((left, right) => {
-      if (Number.isFinite(left.progress) && Number.isFinite(right.progress) && left.progress !== right.progress) {
-        return left.progress - right.progress;
-      }
-      if (Number.isFinite(left.wallclock) && Number.isFinite(right.wallclock) && left.wallclock !== right.wallclock) {
-        return left.wallclock - right.wallclock;
-      }
-      return left.index - right.index;
-    })
-    .map(({ play }) => play);
-}
+// One chronological order for every surface: game clock, then wallclock, then
+// arrival order (`playByPlay/playOrder.js`).
+const sortBdlPlaysChronologically = sortPlaysChronologically;
 
 /** The provider row that the full drilldown feed will place last. */
 export function getLatestBdlScorePlay(plays = []) {
@@ -752,9 +715,7 @@ export function getLatestBdlScorePlay(plays = []) {
 }
 
 function playClockSeconds(play) {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(String(play?.clock_display ?? play?.clock ?? '').trim());
-  if (!match || Number(match[2]) > 59) return null;
-  return (Number(match[1]) * 60) + Number(match[2]);
+  return parseClockSeconds(play?.clock_display ?? play?.clock, { strict: true });
 }
 
 function displayPlayClock(play) {
@@ -918,7 +879,9 @@ export function groupBdlPlaysIntoDrives(plays = [], game, { playerNumbers = null
   const groups = [];
   normalized.forEach((play) => {
     const current = groups.at(-1);
-    const team = getOffenseTeam(play, { homeTeam, awayTeam }) ?? current?.team ?? awayTeam ?? 'NFL';
+    // The adapter's shared resolution (`resolveOffenseDefenseTeams`), which
+    // also honours a provider `defense_team`.
+    const team = play.offenseTeam ?? current?.team ?? awayTeam ?? 'NFL';
     const half = halfOf(play) ?? current?.half ?? null;
     // Halftime always breaks the drive, even when the same offense takes the
     // field on both sides of it — otherwise the second-half kickoff lands at

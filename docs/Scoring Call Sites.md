@@ -57,11 +57,16 @@ scoring engine when adding or changing a stat key:
   `calcPoints()` consumes, including IDP tackles, sacks, interceptions, forced
   fumbles, recoveries, pass defenses, quarterback hits, safeties, blocked kicks,
   and defensive touchdowns where the active scoring profile supports them.
-- A tackle stays generic `idp_tkl` in the stat delta, because provider text
-  does not say solo or assisted. `estimatePlayPoints()` prices it the league's
-  way when the league does not pay `idp_tkl`: one tackler named as
-  `idp_tkl_solo`, several as `idp_tkl_ast` (each through `calcPoints()` with
-  the player's position). Without this a solo/assisted IDP league priced every
+- A tackle stays generic `idp_tkl` in the stat delta. `estimatePlayPoints()`
+  prices it the league's way when the league does not pay `idp_tkl`, through
+  `getPricedTackleKey(play, delta, settings, share)`: the player's own share
+  from the gamebook's tackle group (`parseTackleShares`: a lone tackler and the
+  first name of "(A, B)" are `idp_tkl_solo`; the second name of "(A, B)" and
+  every name of "(A; B)" are `idp_tkl_ast`), carried on the match, the credit
+  and the event as `tackleShare`. Without a share (a sack, a tackler only the
+  narrative names) one stopper reads solo and several assisted. Each goes
+  through `calcPoints()` with the player's position. The scoring-play card
+  (`matchupPlayBreakdown.js`) passes `event.tackleShare` so it agrees. Without this a solo/assisted IDP league priced every
   tackle at 0 and the play never reached the feed. The estimate is display
   only; Sleeper's line settles the exact total through reconciliation.
 - A starter explicitly named as a tackler on an interception return is matched
@@ -77,10 +82,14 @@ scoring engine when adding or changing a stat key:
 - IDP credits follow the gamebook's own markers: the parenthetical after an
   incomplete pass names a pass defender (`idp_pd`), square brackets name a
   quarterback hit (`idp_qbhit`), and "(A, B)" is a shared stop like "(A; B)".
-  A sack is also a tackle and a quarterback hit (`idp_tkl`, `idp_qbhit`); a
+  A sack is also a tackle and a quarterback hit (`idp_tkl`, `idp_qbhit`),
+  except a sack run out of bounds ("sacked ob") and a strip-sack, where only
+  the defender bracketed after FUMBLES gets the hit
+  (`isSackQuarterbackHit()`, weeks 1–10 of 2026: QB hit mismatches 67 → 23); a
   lone sacker, or a lone tackler stopping the carrier behind the line, also
   gets `idp_tkl_loss`. "Sack split by A and B" is `idp_sack: 0.5` each, with
-  no tackle for loss — the way Sleeper's lines carry them.
+  no tackle for loss — the way Sleeper's lines carry them; a spaced surname in
+  the split ("K.Van Noy") is read whole.
 - Penalty yards never count toward a player. On a play with an accepted
   penalty, rushing and receiving yards come from the narrative's
   `creditedYards` (short_text, the official credit), because the provider's
@@ -93,6 +102,25 @@ scoring engine when adding or changing a stat key:
   (`isFirstDownPlay()`: an automatic first down from a defensive flag is not
   the player's) and a fourth-down conversion (`isTurnoverOnDowns()`, shared
   with Statistics Scores' drives).
+- A first down (`pass_fd`, `rush_fd`, `rec_fd`) needs the snap to end on a new
+  first down and the player's gain to reach the line (`isFirstDownPlay()`,
+  weeks 1–10 of 2026: first-down mismatches 159 → 4). A fourth down stopped
+  short ends "1st and 10" for the other side and is no first down; a catch or
+  run fumbled to the other side is none even when it reached the line; a
+  touchdown is none (every touchdown row ends on down -1, and Sleeper's lines
+  agree). A catch with laterals, or a fumble the offense kept, is measured over
+  the whole snap (the provider's net).
+- A snap a flag wiped out ("No Play") credits nothing; whether it was wiped
+  out, and which flag stands, are read from the corrected version of a
+  reversed play (`isWipedOut()` in `playStatDelta.js`, `authoritativeText`), so
+  a replay that overturns the "No Play" restores the play's credits (weeks 3
+  and 4 of 2026).
+- A lineman who fumbles the snap is charged `fum` (and `fum_lost`) only; the
+  player who fell on the loose snap and ran is credited the snap's net gain,
+  never a loss (`credit.snapRun`). A muffed punt is the returner's `fum`
+  (`fum_lost` when the kicking team recovered); a muffed kickoff is not.
+- Team `def_4_and_stop` also counts a fourth down ended by a takeaway that was
+  not returned for a touchdown (weeks 5 and 10 of 2026).
 - The scoring-play hover (`buildPlayPointsBreakdown()` in
   `src/utils/matchupPlayBreakdown.js`) scores a play's stat delta through
   `buildFantasyScoringBreakdown()` with the player's position, and prices a
@@ -109,8 +137,10 @@ scoring engine when adding or changing a stat key:
   on a lost fumble is the defense's return.
 - For an identifiable completed pass followed by laterals, Fantasy Live's
   matcher supplies carrier-specific receiving yardage to `buildPlayStatDelta`;
-  only the original receiver has a reception, and only the final carrier earns
-  a receiving touchdown or first down. On a lost fumble the recovery spot
+  only the original receiver has a reception, only the final carrier earns
+  a receiving touchdown, and the first down is the catcher's (Sleeper's lines,
+  weeks 4–6 of 2026). A carrier run out of bounds ("pushed ob at"), one who
+  scores (no spot), and a spaced surname ("A.St. Brown") are all read. On a lost fumble the recovery spot
   determines the final carrier's share; provider yardage can be the return.
   Unclear or penalty-adjusted splits fail closed
   while retaining a separately identifiable fumble.
@@ -123,12 +153,22 @@ scoring engine when adding or changing a stat key:
 - Special teams follow Sleeper's own lines (checked against weeks 6–8 of
   2026): on a kickoff or punt (`isSpecialTeamsPlay()`), a lone coverage tackle
   is `st_tkl_solo` (a shared one is not credited), a forced fumble is
-  `idp_ff` + `st_ff`, a recovery is `st_fum_rec`, and players at any position
+  `idp_ff` + `st_ff`, a recovery that changed hands (capital `RECOVERED by`)
+  is `st_fum_rec` — the receiving side falling on its own muff or fumble earns
+  nothing (11 of 11 in weeks 1–10) — and players at any position
   earn them, priced at their own position so IDP keys stay IDP-only. A kicker
   or punter who tackles the returner keeps the kick and adds `st_tkl_solo`. A
   returner's touchdown is `st_td` (plus ESPN's `kr_td` / `pr_td`); the old
   GridShift-only `ret_td` fell back to a default of 6 in Sleeper leagues that
   score special-teams touchdowns at 0.
+- A punt or kickoff the provider filed under a fumble slug
+  (`fieldGeometry.isKickFiledUnderFumble()`: the standing gamebook text opens
+  with the kick, no "No Play") is a kick for `isSpecialTeamsPlay()`,
+  `isKickReturnPlay()`, the team resolution and the turnover chain, so its
+  coverage unit earns special-teams keys and its team `def_st_*`, never
+  `fum_rec`, `def_ff` or `def_4_and_stop` (weeks 4, 5, 6 and 9 of 2026:
+  S.Neal, S.Fehoko, T.Dye, A.Huntington). The game clock keeps the slug
+  reading (`isKickPossessionPlay`, `isTurnoverOnDowns` unchanged).
 - A blocked kick is the defense's play: the blocker keeps `idp_blk_kick`, the
   team gets `blk_kick`, and a blocked kick returned for a score is `st_td` for
   the scorer and `def_st_td` (ESPN `blk_kick_ret_td`) for the team, not
@@ -139,6 +179,43 @@ scoring engine when adding or changing a stat key:
   the defense that allowed it. `def_ff` requires a defender who forced the
   fumble. A summary-only "fumble return touchdown" row cannot tell an
   offensive end-zone recovery from a defensive one and credits no defense.
+- Takeaways follow the gamebook's turnover chain (`parseTurnoverChain`) and
+  Sleeper's team lines (weeks 1–9 of 2026): `int` and `int_ret_yd` (every
+  return, not only a score) to the side that picked it off; `fum_rec` and
+  `fum_ret_yd` only when the recovering side is not the side that fumbled —
+  falling on your own side's fumble earns no `fum_rec` and no `idp_fr`;
+  `def_ff` only for a force by the side that was on defense, because Sleeper
+  files a force by the offense after a turnover as `ff_misc` (scored by no
+  league). When the offense takes the ball back on the same snap (a pick
+  returned and fumbled to the passing team) its own team defense gets
+  `fum_rec` through `TEAM_DEFENSE_TAKEAWAY`; no completed week has shown that
+  case yet, so it follows the owner's rule rather than a Sleeper line.
+- Team `tkl_loss` is the sum of the team's players' `idp_tkl_loss`, the way
+  Sleeper's team lines add up (281 of 300 in weeks 1–10 of 2026): one for a
+  stop behind the line with a solo tackler (a lone name, or A in "(A, B)") or
+  a lone sacker, none for "(A; B)" or a split sack. A player's
+  `idp_tkl_loss` follows the same solo share (`credit.tackleShare`), and a
+  sack's loss is read from its own clause ("sacked … for -7 yards"), since a
+  strip-sack's provider yardage can be the recovery (`sackLossYards()`).
+  Team mismatches 91 → 30.
+- A safety's scoring-summary row ("Team Safety", "<Name> Safety") is filed
+  under the team that scored it; `getOffenseTeam` flips it
+  (`isSafetySummaryRow`), so `safe` goes to that team (weeks 2 and 8).
+- A blocked try after the offense's touchdown ("extra point is Blocked
+  (J.Carter)", summary "PAT blocked)") is the defense's `blk_kick` and the
+  blocker's `idp_blk_kick` (weeks 1, 3 and 7: 4 of 4 team lines).
+- Team `sack_yd` stays the provider's yardage: Sleeper's strip-sack yards
+  follow neither it nor the sack clause (week 2 NE: C.Barmore 11, clause 9,
+  provider 19), and the clause made 4 more team lines wrong than right.
+- The team's `def_pass_def` is the number of defenders the gamebook credits
+  with a pass defensed on the snap (breakups, tips, interceptions), not every
+  incompletion. An interception is also the intercepter's `idp_pd`.
+- A defender who fumbles after taking the ball away is charged `fum` (and
+  `fum_lost` when the other side recovered) like any carrier; a touchdown after
+  the defense took the ball away is never the passer's, receiver's or runner's.
+- The try after a defensive or return touchdown is the scoring side's kicker's
+  `xpm` / `xpmiss`, read from the scoring summary row (the feed has no separate
+  extra-point row).
 - `STAT_TO_SCORING_KEY` maps Sleeper's `def_st_td`, `def_st_ff`,
   `def_st_fum_rec`, `st_ff` and `st_fum_rec`; Sleeper's D/ST forced fumble
   `ff` (stat line and `scoring_settings`) maps to the internal `def_ff`.
@@ -146,11 +223,23 @@ scoring engine when adding or changing a stat key:
   `bonus_rec_yd_100`, `bonus_tkl_10p`, `bonus_sack_2p`, `idp_pass_def_3p`, and
   the rest of `MILESTONE_BONUSES` in `livePlaysFeed.js`) are added to the play
   that carries the player across the line, priced through `calcPoints()` with
-  the position, and taken back by a play that drops them under it.
+  the position, and taken back by a play that drops them under it. "Carries
+  across" is judged in `sortPlaysChronologically()` order
+  (`playByPlay/playOrder.js`: game clock, then wallclock, then arrival); the old
+  key sorted plays without a wallclock ahead of every timed play.
 - `liveReconciliation.js` treats tackles as one family (`idp_tkl`, or
   `idp_tkl_solo` + `idp_tkl_ast`): plays confirm, fallback rows are sized, and
   fallback rows retire on the tackle count, and a fallback row mirrors the
   tackle keys Sleeper reported so it scores exactly as Sleeper's line would.
+- Reconciliation audit for the turnover-chain pass: the new or wider
+  emissions are `idp_pd` on every interceptor (in `PLAY_MATCH_STATS`, aliased
+  to Sleeper's `idp_pass_def`, so the play now confirms against a pass defensed
+  Sleeper already counted instead of leaving a surplus), `xpm` / `xpmiss` on a
+  return touchdown's try (in the set; the kicker's line confirms it), `fum` on
+  a defender (not in the set; `fum_lost` is, and confirms as for any carrier),
+  and team `int_ret_yd`, `fum_ret_yd`, a counted `def_pass_def`, and the
+  `takeaway` team-defense row (outside the set, so team defense rows stay with
+  the points step, as before). No new key can create a `Stat update` row.
 - `PLAY_MATCH_STATS` in `playStatDelta.js` is the reconciliation coverage set,
   not a second scoring profile. Every positive key used to confirm an
   individual provider play or create a `Stat update` fallback must be covered,

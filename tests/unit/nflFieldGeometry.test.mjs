@@ -594,3 +594,17 @@ test('a drive is not broken in two by a fourth-down flag', () => {
   assert.equal(drives[0].team, 'DAL');
   assert.equal(drives[0].plays.length, 3);
 });
+
+test('the gamebook writes midfield as a bare 50', async () => {
+  const { possessionTextToPercent, FIELD_SPOT_PATTERN } = await import('../../src/utils/nflPlays/fieldSpots.js');
+  const { spotPhrase, parseInterception } = await import('../../src/utils/nflPlays/playNarrative.js');
+  assert.equal(possessionTextToPercent('50', { homeTeam: 'WAS' }), 50);
+  assert.equal(spotPhrase('50'), 'at midfield');
+  // Week 3 of 2026, SEA at WAS: a pick-six from midfield.
+  assert.equal(parseInterception('S.Darnold pass short middle intended for A.Barner INTERCEPTED by K.Medrano at 50. K.Medrano for 50 yards, TOUCHDOWN.').at, '50');
+  // Only 50, and never a distance.
+  const spot = new RegExp(`at ${FIELD_SPOT_PATTERN}`);
+  assert.equal(spot.exec('kicks at 45 yards')?.[1], undefined);
+  assert.equal(spot.exec('at 50 yards')?.[1], undefined);
+  assert.equal(spot.exec('at SEA 50')?.[1], 'SEA 50');
+});

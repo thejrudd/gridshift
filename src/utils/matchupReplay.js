@@ -6,6 +6,7 @@
 // that moment, oriented to the viewer's side ("mine") and the opponent's.
 
 import { normalizeBdlScoreboardGame } from './balldontlieNflScoreboard.js';
+import { getGameProgress } from './playByPlay/gameClock.js';
 
 const EPSILON = 1e-6;
 
@@ -118,11 +119,11 @@ export function getLiveGameProgress(game) {
   const normalized = game ? normalizeBdlScoreboardGame(game) : null;
   if (normalized?.status === 'halftime') return 0.5;
   if (normalized?.status !== 'live') return null;
-  const period = Number(normalized.live?.period);
-  const clock = /^(\d{1,2}):(\d{2})$/.exec(String(normalized.live?.clock ?? '').trim());
-  if (!Number.isFinite(period) || period < 1 || !clock) return null;
-  const secondsLeft = Math.min(900, Math.max(0, Number(clock[1]) * 60 + Number(clock[2])));
-  return Math.min(1, Math.max(0, ((period - 1) * 900 + (900 - secondsLeft)) / 3600));
+  return getGameProgress(normalized.live?.period, normalized.live?.clock, {
+    strict: true,
+    missingClockSecondsLeft: null,
+    overtime: 'clamp',
+  });
 }
 
 /** Both / Mine / Theirs / Big plays. `side` is the event's side: 'mine' | 'opp'. */

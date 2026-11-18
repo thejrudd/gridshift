@@ -1,14 +1,8 @@
-import { canonicalTeam, getOffenseTeam } from './nflPlays/fieldGeometry.js';
-import { PLAY_ROLES, parseInterception, parsePlayNarrative } from './nflPlays/playNarrative.js';
-
-const GENERATIONAL_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
-const OFFENSIVE_ROLES = new Set([
-  PLAY_ROLES.PASSER,
-  PLAY_ROLES.RECEIVER,
-  PLAY_ROLES.RUSHER,
-  PLAY_ROLES.KICKER,
-  PLAY_ROLES.PUNTER,
-]);
+import { canonicalTeam } from './nflPlays/fieldGeometry.js';
+import { PLAY_ROLES, parseInterception } from './nflPlays/playNarrative.js';
+import { buildPlayerNameIndex, lookupPlayerByName } from './nflPlays/playerNameIndex.js';
+import { attributePlayActors, collectPlayActors } from './playByPlay/attributePlayActors.js';
+import { readPlayNarrative, resolveOffenseDefenseTeams } from './playByPlay/normalizePlay.js';
 
 const CATEGORY_IDS = Object.freeze([
   'passing',
@@ -56,42 +50,6 @@ function letters(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
-function nameTokens(value) {
-  return String(value ?? '')
-    .replace(/[’']/g, '')
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function lastNameToken(tokens) {
-  for (let index = tokens.length - 1; index >= 0; index -= 1) {
-    if (!GENERATIONAL_SUFFIXES.has(letters(tokens[index]))) return tokens[index];
-  }
-  return tokens.at(-1) ?? '';
-}
-
-function nameAliases(value) {
-  const text = String(value ?? '').trim();
-  if (!text) return [];
-
-  const tokens = nameTokens(text);
-  const last = letters(lastNameToken(tokens));
-  const first = letters(tokens[0]);
-  const aliases = [letters(text)];
-  if (first && last) {
-    aliases.push(`${first[0]}${last}`);
-    aliases.push(`${first}${last}`);
-  }
-
-  // Official descriptions abbreviate a name as `D.Prescott` or `J.Jeudy`.
-  // Keep the surname boundary so a full-name player index can resolve those
-  // names without accepting an ambiguous surname-only match.
-  const abbreviated = /^([a-z])\.(.+)$/i.exec(text);
-  if (abbreviated) aliases.push(`${abbreviated[1].toLowerCase()}${letters(abbreviated[2])}`);
-
-  return [...new Set(aliases.filter(Boolean))];
-}
-
 /**
  * Stable key shared by the normalized player rows and the play-derived split.
  * Provider player IDs win when present; the team/name fallback keeps fixtures
@@ -115,38 +73,6 @@ function periodLabel(period) {
   return period <= 4 ? `Q${period}` : period === 5 ? 'OT' : `OT${period - 4}`;
 }
 
-function normalizedPlayTeam(play) {
-  return canonicalTeam(firstString(play?.team?.abbreviation, play?.team?.id, play?.team));
-}
-
-function otherTeam(team, { homeTeam, awayTeam }) {
-  const home = canonicalTeam(homeTeam);
-  const away = canonicalTeam(awayTeam);
-  if (!team || !home || !away) return null;
-  if (team === home) return away;
-  if (team === away) return home;
-  return null;
-}
-
-function roleTeam(role, play, context) {
-  const possessionTeam = normalizedPlayTeam(play);
-  const homeTeam = canonicalTeam(context.homeTeam);
-  const awayTeam = canonicalTeam(context.awayTeam);
-  const offenseTeam = canonicalTeam(getOffenseTeam(
-    { ...play, team: possessionTeam },
-    { homeTeam, awayTeam },
-  ));
-
-  if (OFFENSIVE_ROLES.has(role) || role === PLAY_ROLES.FUMBLER) return offenseTeam || possessionTeam;
-  if (role === PLAY_ROLES.TACKLER || role === PLAY_ROLES.SACKER) {
-    return otherTeam(offenseTeam, { homeTeam, awayTeam }) || possessionTeam;
-  }
-  if (role === PLAY_ROLES.INTERCEPTER || role === PLAY_ROLES.RETURNER || role === PLAY_ROLES.RECOVERER) {
-    return possessionTeam || otherTeam(offenseTeam, { homeTeam, awayTeam });
-  }
-  return possessionTeam;
-}
-
 function buildPlayerIndex(players) {
   return indexRosterRows(players.map((row) => ({
     key: getStatisticsPlayerKey(row),
@@ -155,36 +81,29 @@ function buildPlayerIndex(players) {
   })));
 }
 
+// The shared name index (`nflPlays/playerNameIndex.js`), keyed by box-score
+// row key. Matching itself is `playByPlay/attributePlayActors.js`, the same
+// rule Fantasy Live credits starters with.
 function indexRosterRows(rows) {
-  const byTeamAlias = new Map();
-  const byAlias = new Map();
-
-  for (const row of rows) {
-    for (const alias of nameAliases(row.name)) {
-      const teamAlias = `${row.team}:${alias}`;
-      if (!byTeamAlias.has(teamAlias)) byTeamAlias.set(teamAlias, row.key);
-      else if (byTeamAlias.get(teamAlias) !== row.key) byTeamAlias.set(teamAlias, null);
-
-      if (!byAlias.has(alias)) byAlias.set(alias, row.key);
-      else if (byAlias.get(alias) !== row.key) byAlias.set(alias, null);
-    }
-  }
-
-  return { byTeamAlias, byAlias };
+  return buildPlayerNameIndex(rows.map((row) => ({ id: row.key, name: row.name, team: row.team })));
 }
 
-function matchActor(actor, team, index) {
-  const aliases = nameAliases(actor?.name);
-  const normalizedTeam = canonicalTeam(team);
-  for (const alias of aliases) {
-    const teamMatch = index.byTeamAlias.get(`${normalizedTeam}:${alias}`);
-    if (teamMatch) return teamMatch;
+function matchName(index, name, team) {
+  if (!name) return null;
+  return lookupPlayerByName(index, name, { team: canonicalTeam(team) || null })?.id ?? null;
+}
+
+/**
+ * Who ran the play and who defended it, canonical team ids. A play that
+ * already carries its resolved sides (the Scores adapter's `offenseTeam` /
+ * `defenseTeam`, which honour a provider `defense_team`) keeps them.
+ */
+function playSides(play, { homeTeam, awayTeam }) {
+  if (play?.offenseTeam && play?.defenseTeam) {
+    return { offenseTeam: canonicalTeam(play.offenseTeam), defenseTeam: canonicalTeam(play.defenseTeam) };
   }
-  for (const alias of aliases) {
-    const globalMatch = index.byAlias.get(alias);
-    if (globalMatch) return globalMatch;
-  }
-  return null;
+  const { offenseTeam, defenseTeam } = resolveOffenseDefenseTeams(play, { homeTeam, awayTeam, normalizeTeam: canonicalTeam });
+  return { offenseTeam: offenseTeam || null, defenseTeam: defenseTeam || null };
 }
 
 function getBucket(store, playerKey, category, period) {
@@ -249,20 +168,29 @@ function touchdown(play, narrative) {
 }
 
 function playerActorMap(narrative, play, context, index) {
-  const actors = [...(narrative.actors ?? [])];
-  if (!actors.some((actor) => actor.role === PLAY_ROLES.PASSER)) {
+  // Statistics credits the narrative's own actors (plus a recovered passer on
+  // an interception); it does not merge the gamebook's extra defensive credits
+  // the way Fantasy Live does.
+  const extraActors = [];
+  if (!(narrative.actors ?? []).some((actor) => actor.role === PLAY_ROLES.PASSER)) {
     const interception = isInterception(play, narrative)
       ? parseInterception(play?.rawText || play?.description)
       : null;
     const passerName = interception?.passer || play?.inferredPasserName;
-    if (passerName) actors.push({ role: PLAY_ROLES.PASSER, name: passerName, inferred: true });
+    if (passerName) extraActors.push({ role: PLAY_ROLES.PASSER, name: passerName, inferred: true });
   }
-  return actors
-    .map((actor) => ({
-      ...actor,
-      playerKey: matchActor(actor, roleTeam(actor.role, play, context), index),
-    }))
-    .filter((actor) => actor.playerKey);
+  const actors = collectPlayActors(play, {
+    narrative: { ...narrative, confident: true },
+    includeDefensiveActors: false,
+    extraActors,
+  });
+  return attributePlayActors(play, index, {
+    actors,
+    ...playSides(play, context),
+    normalizeTeam: canonicalTeam,
+  })
+    .filter(({ playerId }) => playerId)
+    .map(({ actor, playerId }) => ({ ...actor, playerKey: playerId }));
 }
 
 function calculatePasserRating(bucket) {
@@ -495,7 +423,7 @@ export function buildPlayerQuarterStats({
     if (!period) continue;
     periods.add(period);
 
-    const narrative = parsePlayNarrative(play);
+    const narrative = readPlayNarrative(play);
     const interception = isInterception(play, narrative)
       ? parseInterception(play?.rawText || play?.description)
       : null;
@@ -539,21 +467,18 @@ export function attributePlays({ plays = [], roster = [], homeTeam = null, awayT
   const context = { homeTeam, awayTeam };
   const index = indexRosterRows(roster.map((row) => ({ ...row, team: canonicalTeam(row.team) })));
   const entries = plays.map((play) => {
-    const narrative = parsePlayNarrative(play);
+    const narrative = readPlayNarrative(play);
     const intercepted = isInterception(play, narrative);
     const pickParse = intercepted ? parseInterception(play?.rawText || play?.description) : null;
     const usable = (narrative.confident || Boolean(pickParse?.passer)) && !narrative.administrative;
     const actors = usable ? playerActorMap(narrative, play, context, index) : [];
-    const offenseTeam = canonicalTeam(getOffenseTeam(
-      { ...play, team: normalizedPlayTeam(play) },
-      { homeTeam: canonicalTeam(homeTeam), awayTeam: canonicalTeam(awayTeam) },
-    ));
+    const { offenseTeam, defenseTeam } = playSides(play, context);
     return {
       play,
       narrative,
       actors,
       offenseTeam,
-      defenseTeam: otherTeam(offenseTeam, context),
+      defenseTeam,
       negated: Boolean(narrative.negated),
       administrative: Boolean(narrative.administrative),
       pass: actors.length > 0 && isPass(play, narrative, actors),
@@ -565,7 +490,9 @@ export function attributePlays({ plays = [], roster = [], homeTeam = null, awayT
   });
   return {
     entries,
-    matchName: (name, team) => (name ? matchActor({ name }, team, index) : null),
+    // With a team, a name that does not resolve on that roster stays
+    // unmatched; with none, it must be unique across the game.
+    matchName: (name, team) => matchName(index, name, team),
   };
 }
 

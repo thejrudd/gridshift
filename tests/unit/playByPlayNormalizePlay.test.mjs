@@ -217,10 +217,12 @@ test('team-defense scoring detection covers sacks, turnovers, safeties and break
     description: 'D.Hunter sacked F.Mendoza for -7 yards.',
     yards: -7,
   })), true);
+  // A lone sacker's sack for a loss is also the team's tackle for loss (the
+  // sum of its players' idp_tkl_loss in Sleeper's team lines).
   assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
     description: 'D.Hunter sacked F.Mendoza for -7 yards.',
     yards: -7,
-  // A sack for a loss is also the team's tackle for loss.
+    defensiveActors: [{ role: 'sacker', name: 'D.Hunter' }],
   })), { sack: 1, sack_yd: 7, tkl_loss: 1 });
   assert.deepEqual(buildTeamDefensePlayDelta(statPlay({
     description: 'W.Woodaz intercepted the pass and returned it 80 yards for a touchdown.',

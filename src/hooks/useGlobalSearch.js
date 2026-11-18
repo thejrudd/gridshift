@@ -12,6 +12,7 @@ import {
   buildLeagueRecords,
   buildStaticRecords,
   composeIndex,
+  filterStaticRecordsForLeague,
 } from '../utils/globalSearch/buildIndex.js';
 import {
   buildPlayerRecords,
@@ -168,11 +169,11 @@ export default function useGlobalSearch({
   const index = useMemo(() => {
     if (!base) return null;
     return composeIndex({
-      staticRecords: base.staticRecords,
+      staticRecords: filterStaticRecordsForLeague(base.staticRecords, Boolean(league)),
       playerRecords: livePlayerRecords ?? base.playerRecords,
       leagueRecords,
     });
-  }, [base, livePlayerRecords, leagueRecords]);
+  }, [base, league, livePlayerRecords, leagueRecords]);
 
   // ── Recents ───────────────────────────────────────────────────────────────
   // Recorded when a result or answer is opened, never per keystroke. Writes are
