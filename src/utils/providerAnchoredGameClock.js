@@ -1,3 +1,4 @@
+import { parseClockSeconds } from './playByPlay/gameClock.js';
 import { isNonSnapPlay, isKickPossessionPlay, isTurnoverOnDowns } from './nflPlays/fieldGeometry.js';
 
 // Legacy name kept for the anchor's `staleAfterMs` field and existing callers.
@@ -23,12 +24,7 @@ const FROZEN_GAME_STATUSES = new Set(['halftime', 'delayed', 'final']);
 
 export function parseProviderGameClock(value) {
   if (Number.isFinite(value)) return Math.max(0, Math.floor(Number(value)));
-  const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-  const minutes = Number(match[1]);
-  const seconds = Number(match[2]);
-  if (!Number.isInteger(minutes) || !Number.isInteger(seconds) || seconds > 59) return null;
-  return (minutes * 60) + seconds;
+  return parseClockSeconds(value, { strict: true });
 }
 
 export function formatProviderGameClock(value) {
