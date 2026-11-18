@@ -1584,3 +1584,14 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Played games locked** - In Advanced mode, games already played are greyed out with the final score and can't be changed.
 - **Weeks in order on desktop** - Advanced mode lists a team's weeks down the first column, then continues in the second.
 - **Rank dots on touch screens** - On a player's Statistics page, tapping a rank dot names that player and highlights the dot; tapping the same player again opens their stats page.
+
+## v9.4.4 - Mobile UI Polish
+*2026-11-18*
+
+- **Schedule game sheet** - A compact score bar stays under the header once the scoreboard scrolls away, and finished games drop the repeated week and the "Now" record label.
+- **Team page header** - The header is condensed to the current-season record, division place, and point differential; the next-game banner is one tappable card, and phones get wider side margins.
+- **League Standings** - One table with a single sticky header, highlights for playoff spots and division leaders, and team names that open the roster.
+- **League Activity and Fantasy Scoring** - Flatter layouts without boxes inside boxes; scoring details stay on one line, and Activity no longer shows a move count per transaction.
+- **Defenses** - The Total and Per Game headings line up with their columns at every width.
+- **Rosters** - The draft-pick scroll arrow is a tappable button without the fade, and player rows drop the repeated position and rank from season points.
+- **Scores** - The season picker is hidden when only one season is available.
