@@ -102,6 +102,25 @@ scoring engine when adding or changing a stat key:
   (`isFirstDownPlay()`: an automatic first down from a defensive flag is not
   the player's) and a fourth-down conversion (`isTurnoverOnDowns()`, shared
   with Statistics Scores' drives).
+- A first down (`pass_fd`, `rush_fd`, `rec_fd`) needs the snap to end on a new
+  first down and the player's gain to reach the line (`isFirstDownPlay()`,
+  weeks 1–10 of 2026: first-down mismatches 159 → 4). A fourth down stopped
+  short ends "1st and 10" for the other side and is no first down; a catch or
+  run fumbled to the other side is none even when it reached the line; a
+  touchdown is none (every touchdown row ends on down -1, and Sleeper's lines
+  agree). A catch with laterals, or a fumble the offense kept, is measured over
+  the whole snap (the provider's net).
+- A snap a flag wiped out ("No Play") credits nothing; whether it was wiped
+  out, and which flag stands, are read from the corrected version of a
+  reversed play (`isWipedOut()` in `playStatDelta.js`, `authoritativeText`), so
+  a replay that overturns the "No Play" restores the play's credits (weeks 3
+  and 4 of 2026).
+- A lineman who fumbles the snap is charged `fum` (and `fum_lost`) only; the
+  player who fell on the loose snap and ran is credited the snap's net gain,
+  never a loss (`credit.snapRun`). A muffed punt is the returner's `fum`
+  (`fum_lost` when the kicking team recovered); a muffed kickoff is not.
+- Team `def_4_and_stop` also counts a fourth down ended by a takeaway that was
+  not returned for a touchdown (weeks 5 and 10 of 2026).
 - The scoring-play hover (`buildPlayPointsBreakdown()` in
   `src/utils/matchupPlayBreakdown.js`) scores a play's stat delta through
   `buildFantasyScoringBreakdown()` with the player's position, and prices a
@@ -118,8 +137,10 @@ scoring engine when adding or changing a stat key:
   on a lost fumble is the defense's return.
 - For an identifiable completed pass followed by laterals, Fantasy Live's
   matcher supplies carrier-specific receiving yardage to `buildPlayStatDelta`;
-  only the original receiver has a reception, and only the final carrier earns
-  a receiving touchdown or first down. On a lost fumble the recovery spot
+  only the original receiver has a reception, only the final carrier earns
+  a receiving touchdown, and the first down is the catcher's (Sleeper's lines,
+  weeks 4–6 of 2026). A carrier run out of bounds ("pushed ob at"), one who
+  scores (no spot), and a spaced surname ("A.St. Brown") are all read. On a lost fumble the recovery spot
   determines the final carrier's share; provider yardage can be the return.
   Unclear or penalty-adjusted splits fail closed
   while retaining a separately identifiable fumble.

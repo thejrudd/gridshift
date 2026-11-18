@@ -30,4 +30,13 @@ Output per week, in `tmp/play-audit/<season>/week-<n>/`:
 - **The official sources disagree**: usually a stat correction one of them hasn't applied yet. Recheck after Wednesday before treating it as evidence.
 - **Provider gap**: the official stat has a play no feed row records (week 8: one of Tony Pollard's carries is missing from both BALLDONTLIE and ESPN play-by-play). The play feed can't fix this; note it and move on.
 
+## Results
+
+v9.5 parser pass, phase 2 (weeks 1–10 of 2026, offline from the cached
+downloads): player stats 27,931/28,757 → 28,240/28,760 (826 → 520
+mismatches; 595 → 293 without the solo/assisted tackle split), team defense
+2,582/2,721 → 2,600/2,721 (139 → 121). First downs 159 → 4. The rules and
+their evidence are in [[Play-By-Play Normalization]] ("First downs",
+"Penalties and reversals", "Edge cases checked against Sleeper").
+
 A weekly scheduled run audits the latest completed week every Wednesday morning and publishes a report. It changes no code: clear causes come with a proposed fix, and unclear ones are written up for a decision.
