@@ -36,6 +36,12 @@ document, finish all of these in the same pass:
    not use the repository's `update.sh`; it targets a different install layout.
 4. Report the release URL and the deploy result. A failed deploy is not a
    passing step: report the script output and leave the release in place.
+5. Archive the Claude Code sessions whose work just shipped. List the open
+   sessions, match each one to the released or pushed items by its title and
+   history, and archive those. A session that also holds unshipped work stays
+   open; leave a session you cannot place open and name it in the report. Do
+   the same after any other push the user asks for. Report what was archived
+   and what was kept.
 
 Commits to any other branch keep the no-push rule.
 
