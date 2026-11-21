@@ -17553,6 +17553,57 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   opacity: 0.78;
 }
 
+.companion-heatmap-drilldown-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 900px;
+  max-height: min(88dvh, 960px);
+  background: var(--color-bg) !important;
+  box-shadow: 0 8px 40px color-mix(in srgb, var(--color-signature-fg) 40%, transparent);
+}
+
+.companion-heatmap-drilldown-heading {
+  position: relative;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.companion-heatmap-drilldown-hero {
+  --heatmap-hero-ink: var(--color-prediction-share-qr);
+  --heatmap-hero-base: var(--color-signature-fg);
+  padding: 16px 52px;
+  color: var(--heatmap-hero-ink);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--heatmap-away, var(--color-accent)) 49%, var(--heatmap-hero-base)),
+    var(--heatmap-hero-base),
+    color-mix(in srgb, var(--heatmap-home, var(--color-accent)) 48%, var(--heatmap-hero-base))
+  );
+  border-top: 3px solid var(--color-signature);
+}
+
+.companion-heatmap-drilldown-content {
+  padding: 0 24px 16px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  min-height: 0;
+}
+
+.companion-heatmap-drilldown-subtitle {
+  margin-top: 4px;
+  font-size: var(--type-label);
+}
+
+.companion-heatmap-drilldown-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-separator);
+}
+
 .companion-heatmap-drilldown-close {
   position: absolute;
   z-index: 2;
@@ -17599,13 +17650,20 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0.02em;
-  color: var(--color-label);
+  color: inherit;
 }
 
 .companion-heatmap-drilldown-matchup-sep {
   font-size: var(--type-emphasis);
   font-weight: 600;
-  color: var(--color-label-tertiary);
+  color: inherit;
+}
+
+.companion-heatmap-drilldown-matchup img,
+.companion-heatmap-drilldown-schedule-chip img,
+.companion-heatmap-game-opponent img {
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .companion-heatmap-drilldown-summary {
@@ -17690,7 +17748,12 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   align-items: center;
   gap: 2px;
   padding: 5px 2px;
-  background: var(--color-fill);
+  border-bottom: 3px solid var(--heatmap-matchup-rank, var(--color-separator));
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--heatmap-matchup-rank, var(--color-separator)) 18%, transparent),
+    transparent 78%
+  );
   color: var(--color-label-secondary);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -17698,7 +17761,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-schedule-chip span {
-  font-size: var(--type-micro);
+  font-size: var(--type-label);
   font-weight: 600;
   opacity: 0.78;
 }
@@ -17721,9 +17784,167 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-player-list {
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.companion-heatmap-player-sort {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.companion-heatmap-player-sort > span {
+  flex: 1 1 auto;
+  font: 800 var(--type-heading-sm)/1 var(--font-display, 'Barlow Condensed', sans-serif);
+  color: var(--color-label);
+}
+
+.companion-heatmap-player-entry {
+  border-top: 1px solid var(--color-separator);
+}
+
+.companion-player-row.companion-heatmap-player-row {
+  --heatmap-player-row-grid: 34px minmax(0, 1fr) auto 16px;
+  --heatmap-player-metric-grid: 60px 64px;
+  min-height: 52px;
+  border: 0;
+  border-radius: 0;
+}
+
+.companion-heatmap-player-row:has(.companion-player-row__status-slot) {
+  --heatmap-player-row-grid: 34px minmax(0, 1fr) auto auto 16px;
+}
+
+.companion-heatmap-player-row .companion-player-row__columns {
+  gap: var(--density-space-sm);
+}
+
+.companion-heatmap-player-row .companion-player-row__trailing {
+  color: var(--companion-player-value-fg);
+}
+
+.companion-heatmap-player-row[aria-expanded="true"] .companion-heatmap-player-chevron {
+  rotate: 180deg;
+}
+
+.companion-heatmap-player-row .companion-player-row__identity {
+  flex-wrap: wrap;
+  gap: 3px 6px;
+}
+
+.companion-heatmap-player-row .companion-player-row__identity-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.companion-heatmap-player-row .companion-player-row__column:has(.heatmap-wide-metric) {
+  display: none;
+}
+
+.companion-heatmap-player-detail {
+  padding: 8px 14px 10px;
+  border-left: 2px solid var(--color-signature);
+}
+
+.companion-heatmap-game-log {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--color-label);
+  font-size: var(--type-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.companion-heatmap-game-log :is(th, td) {
+  text-align: end;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.companion-heatmap-game-log :is(th, td):nth-child(-n+2) {
+  text-align: start;
+}
+
+.companion-heatmap-game-log thead {
+  color: var(--color-label-secondary);
+}
+
+.companion-heatmap-game-opponent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.companion-heatmap-score-breakdown {
+  margin: 8px 0 0;
+  font-size: var(--type-label);
+}
+
+.companion-heatmap-score-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.companion-heatmap-score-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.companion-heatmap-player-stats {
+  min-height: 44px;
+  font-size: var(--type-label);
+  font-weight: 700;
+  color: var(--color-label);
+}
+
+@media (min-width: 1024px) {
+  .companion-heatmap-drilldown-hero {
+    padding-inline: 24px 66px;
+    text-align: start;
+  }
+  .companion-heatmap-drilldown-matchup { justify-content: flex-start; }
+  .companion-heatmap-drilldown-stats {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 24px;
+  }
+  .companion-heatmap-drilldown-schedule { grid-column: 1 / -1; }
+  .companion-heatmap-drilldown-schedule-strip {
+    grid-template-columns: repeat(auto-fit, minmax(48px, 86px));
+  }
+  .companion-player-row.companion-heatmap-player-row {
+    --heatmap-player-metric-grid: 72px repeat(3, 78px) 70px;
+  }
+  .companion-heatmap-player-row .companion-player-row__column:has(.heatmap-wide-metric) {
+    display: block;
+  }
+  .companion-heatmap-player-results:not(.is-upcoming) .companion-heatmap-player-row {
+    --heatmap-player-metric-grid: 58px repeat(5, 60px) 60px;
+  }
+  .companion-heatmap-player-results:not(.is-upcoming) .companion-heatmap-player-row:not(:has(.heatmap-wide-metric)) {
+    --heatmap-player-metric-grid: 58px 60px;
+  }
+}
+
+@media (max-width: 480px) {
+  .companion-heatmap-drilldown-content { padding-inline: 12px; }
+  .companion-heatmap-drilldown-hero { padding-inline: 8px 48px; }
+  .companion-heatmap-drilldown-matchup { gap: 7px; }
+  .companion-heatmap-drilldown-matchup img { width: 34px; height: 34px; }
+  .companion-player-row.companion-heatmap-player-row {
+    --heatmap-player-row-grid: minmax(0, 1fr) auto 16px;
+    --heatmap-player-metric-grid: 50px 52px;
+  }
+  .companion-player-row.companion-heatmap-player-row:has(.companion-player-row__status-slot) {
+    --heatmap-player-row-grid: minmax(0, 1fr) auto auto 16px;
+  }
+  .companion-heatmap-player-row .companion-player-row__avatar { display: none; }
+  .companion-heatmap-player-detail { padding-inline: 8px; }
 }
 
 .companion-player-preview-section-title {
