@@ -1304,6 +1304,7 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   const base = responsiveFixtureOverrides();
   const fixturePlayers = {
     ...players,
+    104: { ...players[104], injury_status: 'Questionable' },
     900: { ...players[104], player_id: '900', espn_id: '1900', full_name: 'Waiver Receiver', first_name: 'Waiver', last_name: 'Receiver', injury_status: 'IR' },
     901: { ...players[104], player_id: '901', team: 'PHI' },
     902: { ...players[104], player_id: '902', team: 'NYG' },
@@ -1317,8 +1318,8 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
       stats: { ...stats, gp: 1 },
     });
     await route.fulfill({ json: week <= 6 ? [
-      playerRow('104', { rec: 4, rec_tgt: 6, rec_yd: week === 1 ? 200 : 40 }),
-      playerRow('900', { rec: 2, rec_tgt: 3, rec_yd: 30 }),
+      playerRow('104', { rec: 4, rec_tgt: 6, rec_yd: week === 1 ? 200 : 40, off_snp: week === 1 ? 27 : 42, tm_off_snp: 60 }),
+      playerRow('900', { rec: 2, rec_tgt: 3, rec_yd: 30, off_snp: 30, tm_off_snp: 60 }),
       playerRow('901', { rec: 6, rec_yd: 200 }, 'PHI', 'NYG'),
       playerRow('902', { rec: 2, rec_yd: 30 }, 'NYG', 'PHI'),
     ] : [] });
@@ -1360,6 +1361,7 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
       offensePct: index === 0 ? 0.30 : 0.75,
     })) : [] });
   });
+  await page.route('**/api/players/1004/gamelog/*', route => route.fulfill({ json: [] }));
   await page.route('**/api/players/1900/gamelog/*', route => route.fulfill({ json: [{
     eventId: 'stats-page-game',
     meta: { week: 6, myTeam: 'DAL', opponent: 'vs PHI', completed: true },
@@ -1367,6 +1369,11 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
 
   await page.goto('/fantasy/heatmap?pos=WR');
   await dismissWhatsNew(page);
+  const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
+  if (hasHover) {
+    await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+  }
   const row = page.locator('tbody tr').filter({ hasText: /^DAL/ });
   const historical = row.locator('td[data-heatmap-column-week="1"]');
   const upcoming = row.locator('td[data-heatmap-column-week="7"]');
@@ -1376,16 +1383,58 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   const dialog = page.getByRole('dialog', { name: 'Heatmap drilldown' });
   await expect(dialog.getByText('DAL WR scored', { exact: true })).toBeVisible();
   await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
-  await expect(dialog.getByText('Target Magnet')).toBeVisible();
+  const target = dialog.getByRole('button', { name: /^Target Magnet details/ });
+  await expect(target).toContainText('65.8%');
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
-  await expect(dialog.getByText('IR', { exact: true })).toBeVisible();
+  const injured = dialog.getByText('IR', { exact: true });
+  const questionable = dialog.getByText('Q', { exact: true });
+  await expect(injured).toBeVisible();
+  await expect(questionable).toBeVisible();
+  expect(await injured.evaluate(node => getComputedStyle(node).color))
+    .not.toEqual(await questionable.evaluate(node => getComputedStyle(node).color));
   await expect(dialog.locator('.companion-heatmap-drilldown-heading')).not.toContainText('PPR');
   const upcomingWidth = await dialog.evaluate(node => node.getBoundingClientRect().width);
   const waiver = dialog.getByRole('button', { name: /^Waiver Receiver details/ });
   await expect(waiver).toHaveAttribute('aria-expanded', 'false');
   await expect(waiver).toContainText('67.5%');
+  if (hasHover) {
+    await waiver.hover();
+    await waiver.hover({ position: { x: 20, y: 20 } });
+    await expect.poll(() => waiver.evaluate(node =>
+      [...node.children].some(child => child.style.maskComposite === 'exclude'))).toBe(true);
+  }
   const schedule = dialog.getByRole('list', { name: 'DAL WR matchup rank by week' });
   await expect(schedule.getByRole('listitem')).toHaveCount(7);
+  const startingViewport = page.viewportSize();
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 720 },
+    { width: 1440, height: 600 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await dialog.evaluate(node => {
+      const hero = node.querySelector('.companion-heatmap-drilldown-hero');
+      const matchup = hero.querySelector('.companion-heatmap-drilldown-matchup');
+      const matchupBounds = new Range();
+      matchupBounds.selectNodeContents(matchup);
+      const heroBounds = hero.getBoundingClientRect();
+      const title = matchupBounds.getBoundingClientRect();
+      const stats = node.querySelector('.companion-heatmap-drilldown-stat').getBoundingClientRect();
+      const schedule = node.querySelector('.companion-heatmap-drilldown-schedule').getBoundingClientRect();
+      const content = node.querySelector('.companion-heatmap-drilldown-content');
+      return {
+        centered: Math.abs(title.left + title.right - heroBounds.left - heroBounds.right) < 2,
+        underStats: schedule.top >= stats.bottom,
+        sidewaysOverflow: content.scrollWidth > content.clientWidth + 1,
+      };
+    });
+    expect(geometry, `${viewport.width}×${viewport.height}`).toEqual({
+      centered: true, underStats: viewport.width < 800, sidewaysOverflow: false,
+    });
+  }
+  await page.setViewportSize(startingViewport);
   const amber = schedule.getByRole('listitem').nth(0);
   const green = schedule.getByRole('listitem').nth(1);
   await expect(amber).toHaveClass(/is-mixed/);
@@ -1417,6 +1466,11 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await expect(headings.getByRole('button', { name: 'Tgt/G, sorted ascending' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Last 4', exact: true }).click();
   await expect(waiver).toContainText('75%');
+  await expect(target).toContainText('70%');
+  await target.click();
+  const targetLog = dialog.getByRole('table', { name: 'Target Magnet game log' });
+  await expect(targetLog.getByText('70%', { exact: true })).toHaveCount(4);
+  await target.click();
   await expect(waiver.getByText('WR #3 overall', { exact: true })).toBeVisible();
   await waiver.click();
   await expect(waiver).toHaveAttribute('aria-expanded', 'true');
@@ -1443,6 +1497,7 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await expect(dialog.getByRole('button', { name: 'Last 4', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const pastWaiver = dialog.getByRole('button', { name: /^Waiver Receiver details/ });
   await expect(pastWaiver).toContainText('30%');
+  await expect(dialog.getByRole('button', { name: /^Target Magnet details/ })).toContainText('45%');
   await dialog.getByRole('button', { name: 'Season', exact: true }).click();
   await expect(pastWaiver).toContainText('30%');
   await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import {
   getAvailabilityStatusBadgeStyle,
   getAvailabilityStatusLabel,
+  getAvailabilityStatusTone,
 } from '../../utils/playerAvailabilityStatus';
 import useCompanionPlayerLocalContrast from '../../hooks/useCompanionPlayerLocalContrast.js';
 
@@ -12,19 +13,22 @@ export default function PlayerStatusBadge({
   responsiveCompact = false,
   className = '',
   localContrast = true,
+  variant = 'badge',
 }) {
   const label = getAvailabilityStatusLabel(status, compact);
   const compactLabel = responsiveCompact ? getAvailabilityStatusLabel(status, true) : null;
   const title = [status, detail].filter(Boolean).join(' · ');
   const ref = useRef(null);
-  const contrast = useCompanionPlayerLocalContrast(ref, localContrast);
+  const textOnly = variant === 'text';
+  const contrast = useCompanionPlayerLocalContrast(ref, localContrast && !textOnly);
   if (!label) return null;
 
   return (
     <span
       ref={ref}
       className={`player-status-badge font-bold px-1.5 py-0.5 rounded-lg shrink-0 leading-none ${responsiveCompact ? 'is-responsive-compact' : ''} ${className}`}
-      style={{
+      data-text-tone={textOnly ? getAvailabilityStatusTone(status) : undefined}
+      style={textOnly ? undefined : {
         ...getAvailabilityStatusBadgeStyle(status),
         ...(contrast ? {
           background: contrast.background,

@@ -17571,19 +17571,25 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .companion-heatmap-drilldown-hero {
   --heatmap-hero-ink: var(--color-prediction-share-qr);
-  --heatmap-hero-base: var(--color-signature-fg);
-  padding: 16px 52px;
+  --heatmap-hero-base: var(--color-prediction-share-ink);
+  padding: 17px 48px;
+  text-align: center;
   color: var(--heatmap-hero-ink);
   background: linear-gradient(
     110deg,
-    color-mix(in srgb, var(--heatmap-away, var(--color-accent)) 49%, var(--heatmap-hero-base)),
-    var(--heatmap-hero-base),
-    color-mix(in srgb, var(--heatmap-home, var(--color-accent)) 48%, var(--heatmap-hero-base))
+    color-mix(in srgb, var(--heatmap-away, var(--color-accent)) 50%, var(--heatmap-hero-base)),
+    color-mix(in srgb, var(--heatmap-home, var(--color-accent)) 50%, var(--heatmap-hero-base))
+  );
+  background: linear-gradient(
+    110deg in oklch,
+    color-mix(in oklch, var(--heatmap-away, var(--color-accent)) 58%, var(--heatmap-hero-base)),
+    color-mix(in oklch, var(--heatmap-home, var(--color-accent)) 58%, var(--heatmap-hero-base))
   );
   border-top: 3px solid var(--color-signature);
 }
 
 .companion-heatmap-drilldown-content {
+  container: heatmap-drilldown / inline-size;
   padding: 0 24px 16px;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -17591,8 +17597,8 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-subtitle {
-  margin-top: 4px;
-  font-size: var(--type-label);
+  margin-top: 6px;
+  font-size: var(--type-meta);
 }
 
 .companion-heatmap-drilldown-filter {
@@ -17647,9 +17653,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   letter-spacing: 0.14em;
   line-height: 1;
   text-transform: uppercase;
-  /* Inherits the status colour (live red, favourite or hero foreground). */
   color: inherit;
-  opacity: 0.78;
 }
 
 .companion-heatmap-drilldown-matchup {
@@ -17687,17 +17691,18 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
   margin: 0;
-  border-top: 1px solid var(--color-separator);
+  padding-block: 14px;
+  border-bottom: 1px solid var(--color-separator);
 }
 
 .companion-heatmap-drilldown-stat {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-separator);
+  display: grid;
+  align-content: start;
+  gap: 4px;
 }
 
 .companion-heatmap-drilldown-stat dt {
@@ -17708,17 +17713,14 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-stat dd {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  display: grid;
+  gap: 3px;
   margin: 0;
 }
 
 .companion-heatmap-drilldown-stat-value {
   font-family: var(--font-display, 'Barlow Condensed', sans-serif);
-  font-size: var(--type-heading-sm);
+  font-size: var(--type-heading-md);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -17726,6 +17728,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-stat-value small {
+  font-family: var(--font-body, 'Figtree', sans-serif);
   font-size: var(--type-label);
   font-weight: 700;
   color: var(--color-label-secondary);
@@ -17739,13 +17742,33 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-schedule {
-  flex-wrap: wrap;
-  row-gap: 10px;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-separator);
 }
 
-.companion-heatmap-drilldown-stat dd.companion-heatmap-drilldown-schedule-weeks {
-  display: block;
-  flex: 1 0 100%;
+.companion-heatmap-drilldown-schedule dt {
+  color: var(--color-label-secondary);
+  font-weight: 700;
+  font-size: var(--type-meta);
+}
+
+.companion-heatmap-drilldown-schedule-rank {
+  margin: 0;
+  color: var(--color-label);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-heading-sm);
+  font-weight: 800;
+}
+
+.companion-heatmap-drilldown-schedule-weeks {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
 }
 
 .companion-heatmap-drilldown-schedule-strip {
@@ -17785,7 +17808,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-schedule-chip.is-mixed {
-  --heatmap-matchup-rank: var(--color-signature);
+  --heatmap-matchup-rank: var(--color-scoring-kicking);
 }
 
 .companion-heatmap-drilldown-schedule-chip.is-unfavorable {
@@ -17798,7 +17821,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-schedule-chip strong {
-  color: var(--color-label);
+  color: color-mix(in srgb, var(--color-label) 72%, var(--heatmap-matchup-rank, var(--color-label)));
   font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-emphasis);
   font-weight: 800;
@@ -17806,13 +17829,13 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .companion-heatmap-drilldown-schedule-chip.is-bye {
   justify-content: center;
-  color: var(--color-label-tertiary);
+  color: var(--color-label-secondary);
 }
 
 .companion-heatmap-drilldown-summary-note {
   padding-top: 8px;
   font-size: var(--type-label);
-  color: var(--color-label-tertiary);
+  color: var(--color-label-secondary);
 }
 
 .companion-heatmap-drilldown-player-list {
@@ -17898,6 +17921,16 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   flex: 0 0 auto;
 }
 
+.companion-heatmap-player-row .player-status-badge[data-text-tone] {
+  padding: 0;
+  color: color-mix(in srgb, var(--color-label) 62%, var(--color-accent-red));
+  font-size: var(--type-label);
+}
+
+.companion-heatmap-player-row .player-status-badge[data-text-tone="warning"] {
+  color: color-mix(in srgb, var(--color-label) 62%, var(--color-scoring-kicking));
+}
+
 .companion-heatmap-player-row .companion-player-row__identity-label {
   font-size: var(--type-emphasis);
   white-space: normal;
@@ -17906,10 +17939,11 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .companion-heatmap-player-row .companion-player-row__meta {
   display: flex;
-  font-size: var(--type-micro);
+  font-size: var(--type-label);
   font-weight: 600;
   letter-spacing: normal;
   text-transform: none;
+  color: color-mix(in srgb, var(--color-label) 77%, transparent);
 }
 
 .companion-heatmap-player-row .companion-player-row__metric-value {
@@ -17981,29 +18015,64 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   color: var(--color-label);
 }
 
-@media (min-width: 1024px) {
-  .companion-heatmap-drilldown-hero {
-    padding-inline: 24px 66px;
-    text-align: start;
+@container heatmap-drilldown (min-width: 760px) {
+  .companion-heatmap-drilldown-stats:has(.companion-heatmap-drilldown-schedule) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 2.4fr);
+    gap: 16px;
   }
-  .companion-heatmap-drilldown-matchup { justify-content: flex-start; }
-  .companion-heatmap-drilldown-stats {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 24px;
+
+  .companion-heatmap-drilldown-stat-value { font-size: var(--type-heading-lg); }
+
+  .companion-heatmap-drilldown-schedule {
+    grid-column: auto;
+    padding: 0 0 0 16px;
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--color-separator);
   }
-  .companion-heatmap-drilldown-schedule { grid-column: 1 / -1; }
+
   .companion-heatmap-drilldown-schedule-strip {
-    --schedule-chip-max-width: 86px;
+    --schedule-chip-max-width: 72px;
+    --schedule-chip-gap: 4px;
   }
+
   .companion-heatmap-player-results {
+    --heatmap-player-row-grid: 44px minmax(0, 1fr) auto 16px;
     --heatmap-player-metric-width: 86px;
   }
+
+  .companion-player-row.is-compact.companion-heatmap-player-row { min-height: 64px; }
+
+  .companion-player-row.is-compact.companion-heatmap-player-row .companion-player-row__avatar {
+    width: 44px;
+    height: 44px;
+  }
+
+  .companion-heatmap-player-row .companion-player-row__identity-label { font-size: var(--type-heading-sm); }
+}
+
+@media (min-width: 800px) {
+  .companion-heatmap-drilldown-hero { padding-block: 22px; }
+  .companion-heatmap-drilldown-matchup-team { font-size: var(--type-display); }
+  .companion-heatmap-drilldown-matchup img { width: 50px; height: 50px; }
+  .companion-heatmap-drilldown-subtitle { font-size: var(--type-body); }
+}
+
+@media (prefers-contrast: more) {
+  .companion-heatmap-drilldown-panel :is(
+    .companion-player-row__meta,
+    .companion-heatmap-player-column-heading,
+    .companion-heatmap-drilldown-stat dt,
+    .companion-heatmap-drilldown-stat-value small,
+    .companion-heatmap-drilldown-stat-rank,
+    .companion-heatmap-drilldown-schedule dt,
+    .companion-heatmap-drilldown-schedule-chip,
+    .companion-heatmap-drilldown-summary-note
+  ) { color: var(--color-label); }
 }
 
 @media (max-width: 480px) {
   .companion-heatmap-drilldown-content { padding-inline: 12px; }
-  .companion-heatmap-drilldown-hero { padding-inline: 8px 48px; }
+  .companion-heatmap-drilldown-hero { padding-inline: 44px; }
   .companion-heatmap-drilldown-matchup { gap: 7px; }
   .companion-heatmap-drilldown-matchup img { width: 34px; height: 34px; }
   .companion-heatmap-player-results {

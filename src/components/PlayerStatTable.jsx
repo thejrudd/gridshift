@@ -2114,10 +2114,15 @@ const PlayerStatTable = ({
     [position, sleeperWeeklyRows],
   );
   const activeSnapCounts = snapCountsState.key === snapCountKey ? snapCountsState.rows : EMPTY_SNAP_COUNTS;
+  const weeklySnapRows = (String(year) === String(leagueStatsSeason)
+    ? sleeperWeeklyStats
+    : sleeperStatsBySeason?.[String(year)]?.weeklyStats)?.[sleeperId] ?? EMPTY_SNAP_COUNTS;
   const gameLogWithSnapCounts = useMemo(() => {
-    if (!activeSnapCounts.length || !Array.isArray(gameLog)) return gameLog;
+    if ((!activeSnapCounts.length && !weeklySnapRows.length) || !Array.isArray(gameLog)) return gameLog;
+    const statsByWeek = new Map(weeklySnapRows.map(row => [Number(row.week), row]));
     return gameLog.map((game) => {
-      const percentage = selectGameSnapPercentage(game, activeSnapCounts, position, Number(year));
+      const weekStats = statsByWeek.get(Number(game.meta?.week));
+      const percentage = selectGameSnapPercentage(game, activeSnapCounts, position, Number(year), weekStats);
       if (percentage === null) return game;
       const categories = game?.statsJson?.splits?.categories ?? [];
       const snapStat = {
@@ -2138,7 +2143,7 @@ const PlayerStatTable = ({
         },
       };
     });
-  }, [activeSnapCounts, gameLog, position, year]);
+  }, [activeSnapCounts, gameLog, position, weeklySnapRows, year]);
   const displayGameLog = isTeamDefenseFantasyPosition && (!Array.isArray(gameLogWithSnapCounts) || gameLogWithSnapCounts.length === 0)
     ? fallbackTeamDefenseGameLog
     : gameLogWithSnapCounts;

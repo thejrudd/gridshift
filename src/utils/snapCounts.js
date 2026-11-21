@@ -39,7 +39,7 @@ export function parseCsv(text = '') {
 }
 
 function finiteNumber(value) {
-  if (value === '' || value === null || value === undefined) return null;
+  if (value == null || (typeof value === 'string' && !value.trim())) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -83,7 +83,7 @@ export function buildPlayerSnapCounts(playerCsv, snapCsv, espnPlayerId) {
   });
 }
 
-export function selectGameSnapPercentage(game, snapCounts, position, season) {
+export function selectGameSnapPercentage(game, snapCounts, position, season, weeklyStats) {
   const meta = game?.meta ?? {};
   if (meta.isBye || meta.isInactive || !Number.isFinite(Number(meta.week))) return null;
   const group = String(position ?? '').toUpperCase();
@@ -111,7 +111,14 @@ export function selectGameSnapPercentage(game, snapCounts, position, season) {
     && normalizeTeam(row.team) === team
   ));
   const fraction = match?.[field];
-  return Number.isFinite(fraction) ? Math.round(fraction * 1000) / 10 : null;
+  if (Number.isFinite(fraction)) return Math.round(fraction * 1000) / 10;
+  if (meta.isPostseason || !weeklyStats) return null;
+
+  const prefix = field === 'stPct' ? 'st' : field === 'defensePct' ? 'def' : 'off';
+  const playerSnaps = finiteNumber(weeklyStats[prefix + '_snp']);
+  const teamSnaps = finiteNumber(weeklyStats['tm_' + prefix + '_snp']);
+  if (playerSnaps == null || teamSnaps == null || playerSnaps < 0 || teamSnaps <= 0 || playerSnaps > teamSnaps) return null;
+  return Math.round((playerSnaps / teamSnaps) * 1000) / 10;
 }
 
 export async function fetchPlayerSnapCounts(season, playerId, fetchImpl = fetch) {

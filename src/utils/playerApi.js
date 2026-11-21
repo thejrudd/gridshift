@@ -125,8 +125,8 @@ function markPlayerDataServerDown() {
  * { data, incomplete } on success. `incomplete` also covers a stale copy
  * served while ESPN was failing, so neither is stored as permanent.
  */
-async function fetchFromPlayerDataServer(path, { markDown = true } = {}) {
-  if (Date.now() < playerDataServerDownUntil) return null;
+async function fetchFromPlayerDataServer(path, { useCooldown = true } = {}) {
+  if (useCooldown && Date.now() < playerDataServerDownUntil) return null;
   try {
     const res = await browserFetch(`${PLAYER_DATA_API}${path}`);
     const isJson = (res.headers?.get?.('content-type') ?? '').includes('json');
@@ -136,13 +136,13 @@ async function fetchFromPlayerDataServer(path, { markDown = true } = {}) {
     if (!res.ok) {
       // 400 means this request is outside what the sidecar serves (for example
       // seasons before its minimum); anything else means it is unavailable.
-      if (res.status !== 400 && markDown) markPlayerDataServerDown();
+      if (res.status !== 400 && useCooldown) markPlayerDataServerDown();
       return null;
     }
     // Without the sidecar (dev server, misrouted proxy) the SPA fallback answers
     // with index.html; treat that like an outage rather than a parse error.
     if (!isJson) {
-      if (markDown) markPlayerDataServerDown();
+      if (useCooldown) markPlayerDataServerDown();
       return null;
     }
     return {
@@ -151,7 +151,7 @@ async function fetchFromPlayerDataServer(path, { markDown = true } = {}) {
         || res.headers.get('X-GridShift-Stale') === '1',
     };
   } catch {
-    if (markDown) markPlayerDataServerDown();
+    if (useCooldown) markPlayerDataServerDown();
     return null;
   }
 }
@@ -1006,12 +1006,17 @@ export async function fetchPlayerSnapCounts(playerId, season) {
   const isHistorical = s < CURRENT_SEASON;
   if (!Number.isInteger(s) || s < 2012 || !/^\d{1,10}$/.test(String(playerId))) return [];
 
-  return cachedPlayerData(`snap_v1_${playerId}_${s}`, async () => {
-    const viaServer = await fetchFromPlayerDataServer(`/${playerId}/snaps/${s}`, { markDown: false });
+  return cachedPlayerData(`snap_v2_${playerId}_${s}`, async () => {
+    // Snap counts use a different upstream from the ESPN player routes.
+    const viaServer = await fetchFromPlayerDataServer(`/${playerId}/snaps/${s}`, { useCooldown: false });
     if (viaServer?.notFound) return { data: [] };
     if (viaServer) return viaServer;
     return { data: await fetchNflversePlayerSnapCounts(s, playerId, browserFetch) };
-  }, { ttl: isHistorical ? TTL.historical : TTL.stats, final: isHistorical });
+  }, {
+    ttl: isHistorical ? TTL.historical : TTL.stats,
+    final: isHistorical,
+    shouldCache: (rows) => Array.isArray(rows) && rows.length > 0,
+  });
 }
 
 /**

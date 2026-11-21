@@ -226,8 +226,9 @@ export default function CompanionPlayerRow({
   const hasTeamGradient = Boolean(theme?.gradient) && !hasTeamTint;
   const accentColor = theme?.borderColor ?? getCompanionPositionColor(position) ?? 'var(--color-accent)';
   const hoverBg = theme?.hoverTint ?? 'var(--color-fill-secondary)';
+  const tintStrength = (darkMode ? 27 : 16) + (selected || isHovered ? 9 : 0);
   const rowBg = hasTeamTint
-    ? 'linear-gradient(90deg, ' + (selected || isHovered ? hoverBg : theme.tint) + ', transparent 78%)'
+    ? `linear-gradient(90deg, color-mix(in srgb, ${theme.primary} ${tintStrength}%, transparent), transparent 82%)`
     : hasTeamGradient ? theme.gradient : (theme?.tint ?? (selected ? 'var(--color-fill-secondary)' : 'var(--color-fill)'));
   const rowForeground = hasTeamGradient ? theme.gradientForeground : 'var(--color-label)';
   const rowMuted = hasTeamGradient ? theme.gradientMuted : 'var(--color-label-secondary)';
@@ -247,14 +248,14 @@ export default function CompanionPlayerRow({
   const resolvedGridTemplate = compact ? (compactGridTemplate ?? gridTemplate) : gridTemplate;
   const rowTitle = title ?? [label, ...normalizedMeta].filter(Boolean).join(' · ');
   const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
-    enabled: isInteractive && isHovered && !hasTeamTint,
+    enabled: isInteractive && isHovered,
     color: accentColor,
     cardColor: theme?.color ?? null,
     darkMode,
     coreColor: darkMode ? '#FFFFFF' : null,
     outerColor: accentColor,
   });
-  const baseShadow = isInteractive && isHovered && !hasTeamTint ? '0 5px 12px rgba(12,15,20,0.09)' : 'none';
+  const baseShadow = isInteractive && isHovered ? '0 5px 12px rgba(12,15,20,0.09)' : 'none';
   const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
 
   const rootStyle = {
