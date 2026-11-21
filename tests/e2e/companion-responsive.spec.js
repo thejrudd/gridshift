@@ -1449,6 +1449,30 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
     } else {
       await expect(seasonPoints).toBeVisible();
       await expect(waiver.locator('.companion-heatmap-extra-total')).toHaveText('25');
+      if (viewport.width === 768 || viewport.width === 1280) {
+        const html = page.locator('html');
+        const displaySize = await html.getAttribute('data-display-size');
+        await html.evaluate(node => { node.dataset.displaySize = 'large'; });
+        await seasonPoints.click();
+        const descending = dialog.getByRole('button', { name: 'Season Pts, sorted descending' });
+        const firstPlayer = dialog.locator('.companion-heatmap-player-row').first();
+        await expect(firstPlayer).toContainText('Target Magnet');
+        const measureHeading = node => {
+          const heading = node.getBoundingClientRect();
+          const content = node.querySelector('.companion-heatmap-player-heading-content');
+          const label = content.firstElementChild.getBoundingClientRect();
+          const arrow = content.lastElementChild.getBoundingClientRect();
+          return Math.abs(label.top - arrow.top) < 1 && label.right <= arrow.left
+            && label.left >= heading.left - 1 && arrow.right <= heading.right + 1;
+        };
+        expect(await descending.evaluate(measureHeading)).toBe(true);
+        await descending.click();
+        const ascending = dialog.getByRole('button', { name: 'Season Pts, sorted ascending' });
+        expect(await ascending.evaluate(measureHeading)).toBe(true);
+        await expect(firstPlayer).toContainText('Waiver Receiver');
+        await dialog.getByRole('button', { name: 'PPG', exact: true }).click();
+        await html.evaluate((node, size) => { node.dataset.displaySize = size ?? 'comfortable'; }, displaySize);
+      }
     }
   }
   await page.setViewportSize(startingViewport);
@@ -1526,9 +1550,10 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
 
   await row.locator('td[data-heatmap-column-week="5"]').click();
   await dialog.getByRole('button', { name: /^Waiver Receiver details/ }).click();
-  const historicalLog = dialog.getByRole('table', { name: 'Waiver Receiver game log' });
-  await expect(historicalLog.locator('tbody').getByRole('rowheader')).toHaveText(['5', '4', '3', '2', '1']);
-  await expect(historicalLog.getByText('IR - Concussion')).toBeVisible();
+  const breakdown = dialog.locator('dl[aria-label="Waiver Receiver scoring breakdown"]');
+  await expect(breakdown.locator('dt')).toHaveText(['Rec Yards · 30', 'Reception · 2']);
+  await expect(breakdown.locator('dd')).toHaveText(['+3.0', '+2.0']);
+  await expect(dialog.getByRole('table', { name: 'Waiver Receiver game log' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
 
   await page.getByRole('button', { name: 'Show Filters' }).click();
@@ -1649,6 +1674,17 @@ test('Heatmap prioritizes each defensive position stat and keeps inactive games 
   const inactive = lbLog.getByRole('row', { name: /^1 / });
   await expect(inactive.getByText('DNP', { exact: true })).toBeVisible();
   await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(3);
+
+  await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await page.getByRole('button', { name: 'Sacks', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  await page.locator('tbody tr').filter({ hasText: /^DAL/ }).locator('td[data-heatmap-column-week="1"]').click();
+  await edge.click();
+  const breakdown = dialog.locator('dl[aria-label="Edge Rusher scoring breakdown"]');
+  await expect(breakdown.locator('dt')).toHaveText(['Tackle · 4', 'Sack · 1']);
+  await expect(breakdown.locator('dd')).toHaveText(['+4.0', '+2.0']);
+  await expect(edgeLog).toHaveCount(0);
 });
 
 test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page }) => {
