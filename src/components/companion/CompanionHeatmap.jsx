@@ -5,7 +5,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getStatisticsScoresEspnWeek } from '../../api/statisticsScoresApi.js';
 import { calcPoints, DEFAULT_SCORING } from '../../utils/scoringEngine';
 import { buildFantasyScoringBreakdown } from '../../utils/fantasyBreakdownRows.js';
-import { buildFilteredHeatmapMatchupTables, buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
+import { buildFilteredHeatmapMatchupTables, buildHeatmapMatchupRatings, getCachedOffenseAllowedTable, getHeatmapCompletedGameWeeks, getHeatmapLatestCompletedWeek, getHeatmapOffenseStatValue, getHeatmapPlayerActivity, getHeatmapPlayerActivityColumns, getHeatmapPlayerGameTeam, isHeatmapInactiveWeek, resolveHeatmapOffenseStatMode, sortHeatmapRowsByMatchupRank } from '../../utils/fantasyHeatmapData.js';
 import { getFantasyLeagueMaxWeek } from '../../utils/fantasySeasonWeeks.js';
 import { normalizeEspnScoreboardEvent, NFL_SEASON_PHASES } from '../../utils/espnNflScoreboard.js';
 import { resolveFantasyLiveAvailability } from '../../utils/fantasyLiveAvailability.js';
@@ -141,17 +141,6 @@ const DEF_STAT_MODES = [
   { id: 'idp_qbhit',    label: 'QB Hit',      statKey: 'idp_qbhit', aliases: ['idp_qb_hit'], positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_qbhit'] },
   { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_def_td'] },
 ];
-
-const PLAYER_USAGE_STATS = {
-  QB: ['pass_att', 'Att'],
-  RB: ['rush_att', 'Car'],
-  WR: ['rec_tgt', 'Tgt'],
-  TE: ['rec_tgt', 'Tgt'],
-  K: ['fga', 'FGA'],
-  DL: ['idp_tkl', 'Tkl'],
-  LB: ['idp_tkl', 'Tkl'],
-  DB: ['idp_tkl', 'Tkl'],
-};
 
 const FUTURE_STAT_AVERAGE_LABELS = {
   pass_sack: 'Sacks/G',
@@ -1558,15 +1547,17 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       const entries = new Map((weeklyStats?.[playerId] ?? []).map(entry => [Number(entry.week), entry]));
       const games = buildPlayerFormRows({
         playerId, player, weeklyStats, scheduleMap, scoringSettings: activeScoringSettings, throughWeek: maxFantasyWeek,
-      }).filter(game => isFinalScheduleGame(scheduleMap?.[game.week]?.[game.team])).map(game => ({
+      }).filter(game => isFinalScheduleGame(scheduleMap?.[game.week]?.[game.team])
+        && !isHeatmapInactiveWeek(entries.get(game.week))).map(game => ({
         ...game,
         entry: entries.get(game.week),
       }));
-      const row = { position, team, games, completed, rank: null };
+      const seasonPoints = games.length ? games.reduce((sum, game) => sum + game.points, 0) : null;
+      const row = { position, team, games, completed, seasonPoints, rank: null };
       form[playerId] = row;
       if (games.length) {
         const list = byPosition.get(position) ?? [];
-        list.push({ row, points: games.reduce((sum, game) => sum + game.points, 0) });
+        list.push({ row, points: seasonPoints });
         byPosition.set(position, list);
       }
     }
@@ -1638,23 +1629,39 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       points: pointsDisplay ? row.val : calcPoints(row.entry, activeScoringSettings, row.position),
       entry: row.entry,
     } : null;
-    const [usageKey, activityLabel] = PLAYER_USAGE_STATS[seasonForm?.position ?? row.position] ?? [];
-    const games = (row.games ?? (pastGame ? [pastGame] : [])).map(game => {
-      const raw = game.entry?.[usageKey];
-      const activity = raw == null || raw === '' ? null : Number(raw);
-      return { ...game, activity: Number.isFinite(activity) ? activity : null };
+    const activityColumns = getHeatmapPlayerActivityColumns(row.position);
+    const games = row.games ?? (pastGame ? [pastGame] : []);
+    const averages = activityColumns.map(column => {
+      const values = games.map(game => getHeatmapPlayerActivity(column, game.entry)).filter(value => value != null);
+      return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     });
-    const activityValues = games.map(game => game.activity).filter(value => value != null);
-    const activity = activityValues.length
-      ? activityValues.reduce((sum, value) => sum + value, 0) / activityValues.length
-      : null;
+    const throughWeek = upcomingPlayers ? maxFantasyWeek : pastGame?.week;
+    const completed = pastGame && matchupWindow === 'recent'
+      ? getHeatmapCompletedGameWeeks(scheduleMap, pastGame.team, Array.from({ length: throughWeek }, (_, index) => index + 1))
+      : row.weeks ?? [];
+    const firstWeek = matchupWindow === 'recent' ? completed.slice(-4)[0] ?? throughWeek : 1;
+    const inWindow = week => week >= firstWeek && week <= throughWeek;
+    const logGames = new Map((seasonForm?.games ?? []).filter(game => inWindow(game.week)).map(game => [game.week, game]));
+    const playerWeeks = weeklyStats?.[row.playerId] ?? [];
+    for (const entry of playerWeeks) {
+      const week = Number(entry.week);
+      if (!inWindow(week) || !isHeatmapInactiveWeek(entry)) continue;
+      const gameTeam = getHeatmapPlayerGameTeam(entry, rawPlayer, playerWeeks);
+      const scheduled = scheduleMap?.[week]?.[gameTeam];
+      if (!isFinalScheduleGame(scheduled)) continue;
+      logGames.set(week, {
+        week, team: gameTeam, opponent: scheduled.opp, isHome: scheduled.home, inactive: true,
+      });
+    }
+    if (pastGame && !logGames.get(pastGame.week)?.inactive) logGames.set(pastGame.week, pastGame);
     return {
       ...row,
       team,
       player: { ...rawPlayer, id: row.playerId, name: row.name, team, position: row.position },
       espnId: row.position === 'DEF' ? null : rawPlayer?.espn_id ?? espnIdOverrides?.[row.playerId] ?? rawPlayer?.sourceIds?.espn,
-      games, activity, activityLabel,
-      weeks: row.weeks ?? (pastGame ? [pastGame.week] : []),
+      games, activityColumns, activity: averages[0] ?? null, tackles: averages[1] ?? null,
+      seasonPoints: seasonForm?.seasonPoints ?? null,
+      logGames: [...logGames.values()], firstWeek, throughWeek,
       rank: seasonForm?.rank != null
         ? getPositionFilterLabel(seasonForm.position) + ' #' + seasonForm.rank + ' overall'
         : null,
