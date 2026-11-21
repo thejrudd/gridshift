@@ -14,7 +14,8 @@ const formatValue = (value) => value == null ? MISSING : Number(value).toLocaleS
 const formatSnap = (value) => value == null ? MISSING : formatValue(value) + '%';
 
 function snapForGame(game, counts, position, season) {
-  return selectGameSnapPercentage({ meta: { week: game.week, myTeam: game.team } }, counts, position, season);
+  const meta = { week: game.week, myTeam: game.team };
+  return selectGameSnapPercentage({ meta }, counts, position, season, game.entry);
 }
 
 function usePlayerSnaps(rows, season) {
@@ -84,9 +85,7 @@ function GameLog({ row, season, counts }) {
           const opponent = officialOpp?.[2]?.toUpperCase() ?? game.opponent;
           const site = officialOpp ? (officialOpp[1] === '@' ? '@' : 'v ') : game.isHome === true ? 'v ' : game.isHome === false ? '@' : '';
           const url = getBundledNflTeamLogoUrl(opponent);
-          const snap = official
-            ? selectGameSnapPercentage(official, counts, position, season)
-            : snapForGame(game, counts, position, season);
+          const snap = snapForGame(game, counts, position, season);
           return (
             <tr key={playerId + ':' + game.week}>
               <th scope="row">{game.week}</th>
@@ -114,8 +113,8 @@ export default function HeatmapPlayerResults({
   const snapsById = usePlayerSnaps(rows, season);
   const entries = useMemo(() => rows.map(row => {
     const counts = snapsById?.[row.espnId] ?? EMPTY;
-    const samples = (upcoming ? row.games : [row.game]).filter(Boolean).map(game =>
-      snapForGame(game, counts, row.position, season)).filter(value => value != null);
+    const samples = row.games.map(game => snapForGame(game, counts, row.position, season))
+      .filter(value => value != null);
     const snap = samples.length ? samples.reduce((total, value) => total + value, 0) / samples.length : null;
     return { ...row, counts, snap };
   }).sort((a, b) => {
@@ -125,7 +124,7 @@ export default function HeatmapPlayerResults({
     if (right == null) return -1;
     const order = sort.key === 'name' ? left.localeCompare(right) : left - right;
     return sort.direction === 'desc' ? -order : order;
-  }), [rows, season, snapsById, sort, upcoming]);
+  }), [rows, season, snapsById, sort]);
 
   const activityLabels = new Set(entries.filter(row => row.activity != null).map(row => row.activityLabel));
   const hasActivity = activityLabels.size > 0;
@@ -191,7 +190,7 @@ export default function HeatmapPlayerResults({
                 ariaControls={panelId}
                 metaSegments={meta}
                 identityAccessory={status.status
-                  ? <PlayerStatusBadge status={status.status} detail={upcoming ? null : 'Current status'} compact />
+                  ? <PlayerStatusBadge status={status.status} detail={upcoming ? null : 'Current status'} compact variant="text" />
                   : null}
                 gridTemplate="var(--heatmap-player-row-grid)"
                 columnGridTemplate="var(--heatmap-player-metric-grid)"

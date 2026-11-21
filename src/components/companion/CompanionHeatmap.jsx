@@ -2492,16 +2492,14 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                             <dt>{stat.label}</dt>
                             <dd>
                               <span className="companion-heatmap-drilldown-stat-value">{stat.value.toFixed(1)} <small>PPG</small></span>
-                              {stat.rank && <span className="companion-heatmap-drilldown-stat-rank">{stat.rank}</span>}
+                              {stat.rank && <span className="companion-heatmap-drilldown-stat-rank">{stat.rank} in NFL</span>}
                             </dd>
                           </div>
                         ))}
                         {upcoming.length > 0 && (
-                          <div className="companion-heatmap-drilldown-stat companion-heatmap-drilldown-schedule">
+                          <div className="companion-heatmap-drilldown-schedule">
                             <dt>{scoringTeam} {activePos} upcoming schedule</dt>
-                            <dd>
-                              {scheduleRank && <span className="companion-heatmap-drilldown-stat-value">{scheduleRank}</span>}
-                            </dd>
+                            {scheduleRank && <dd className="companion-heatmap-drilldown-schedule-rank">{scheduleRank}</dd>}
                             <dd className="companion-heatmap-drilldown-schedule-weeks">
                             <ol className="companion-heatmap-drilldown-schedule-strip" aria-label={`${scoringTeam} ${activePos} matchup rank by week`}>
                               {upcoming.map(game => {

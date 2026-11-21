@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
-import { fetchGameLog, fetchPlayerCareerStats, fetchPlayerProfile, fetchPlayerStats } from '../../src/utils/playerApi.js';
+import { fetchGameLog, fetchPlayerCareerStats, fetchPlayerProfile, fetchPlayerSnapCounts, fetchPlayerStats } from '../../src/utils/playerApi.js';
 
 // playerApi remembers for a minute that the GridShift API is down. Date is
 // mocked so each test can start with that cooldown lapsed.
@@ -108,6 +108,20 @@ describe('player stats: GridShift API first, ESPN as fallback', () => {
     calls.length = 0;
     await fetchPlayerStats('9006', 1997);
     assert.equal(calls[0], `${PLAYER_DATA_PREFIX}9006/stats/1997`, 'a 400 does not put the API on cooldown');
+  });
+
+  it('uses the snap endpoint even when an ESPN stats failure starts the cooldown', async () => {
+    const snaps = [{ week: 1, gameType: 'reg', team: 'CIN', offensePct: 0.83 }];
+    const snapUrl = `${PLAYER_DATA_PREFIX}9022/snaps/2024`;
+    const calls = stubFetch((url) => {
+      if (url === snapUrl) return jsonResponse(snaps);
+      return url.startsWith(PLAYER_DATA_PREFIX) ? htmlResponse() : jsonResponse(ESPN_STATS);
+    });
+    await fetchPlayerStats('9022', 2024);
+    calls.length = 0;
+
+    assert.deepEqual(await fetchPlayerSnapCounts('9022', 2024), snaps);
+    assert.deepEqual(calls, [snapUrl]);
   });
 
   it('falls back to ESPN when the API answers with the SPA fallback page, then skips the API for a while', async () => {
