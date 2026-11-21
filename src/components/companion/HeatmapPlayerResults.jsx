@@ -4,8 +4,7 @@ import { fetchGameLog, fetchPlayerSnapCounts, fetchTeamDefenseGameLog } from '..
 import { getPlayerAvailabilityContext } from '../../utils/playerAvailabilityStatus.js';
 import { getBundledNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
 import { selectGameSnapPercentage } from '../../utils/snapCounts.js';
-import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
-import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
+import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 
 const EMPTY = [];
@@ -70,13 +69,13 @@ function GameLog({ row, season, counts }) {
       played.set(week, { week, team: game.meta.myTeam });
     }
   }
-  const showTargets = ['RB', 'WR', 'TE'].includes(position);
+  const showActivity = row.activityLabel && [...played.values()].some(game => game.activity != null);
   if (!played.size) return <p className="companion-heatmap-game-log-empty">No completed games in this window.</p>;
 
   return (
     <table className="companion-heatmap-game-log" aria-label={row.name + ' game log'}>
       <thead>
-        <tr><th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Snap %</th>{showTargets && <th scope="col">Tgt</th>}<th scope="col">Pts</th></tr>
+        <tr><th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Snap %</th>{showActivity && <th scope="col">{row.activityLabel}</th>}<th scope="col">Pts</th></tr>
       </thead>
       <tbody>
         {[...played.values()].sort((left, right) => right.week - left.week).map(game => {
@@ -92,11 +91,11 @@ function GameLog({ row, season, counts }) {
             <tr key={playerId + ':' + game.week}>
               <th scope="row">{game.week}</th>
               <td><span className="companion-heatmap-game-opponent">
+                <span>{opponent ? site + opponent : MISSING}</span>
                 {url && <img src={url} width="18" height="18" alt="" loading="lazy" />}
-                {opponent ? site + opponent : MISSING}
               </span></td>
               <td>{formatSnap(snap)}</td>
-              {showTargets && <td>{formatValue(game.targets)}</td>}
+              {showActivity && <td>{formatValue(game.activity)}</td>}
               <td>{formatValue(game.points)}</td>
             </tr>
           );
@@ -118,45 +117,59 @@ export default function HeatmapPlayerResults({
     const samples = (upcoming ? row.games : [row.game]).filter(Boolean).map(game =>
       snapForGame(game, counts, row.position, season)).filter(value => value != null);
     const snap = samples.length ? samples.reduce((total, value) => total + value, 0) / samples.length : null;
-    const latestSnap = row.latestGame ? snapForGame(row.latestGame, counts, row.position, season) : null;
-    return { ...row, counts, snap, latestSnap };
+    return { ...row, counts, snap };
   }).sort((a, b) => {
     const left = a[sort.key];
     const right = b[sort.key];
     if (left == null) return right == null ? 0 : 1;
     if (right == null) return -1;
-    return sort.direction === 'desc' ? right - left : left - right;
+    const order = sort.key === 'name' ? left.localeCompare(right) : left - right;
+    return sort.direction === 'desc' ? -order : order;
   }), [rows, season, snapsById, sort, upcoming]);
 
-  const changeSort = (key) => setSort(current => ({
-    key,
-    direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc',
-  }));
-  const sortable = (key, label) => (
-    <CompanionSelectorButton size="xs" active={sort.key === key} onClick={() => changeSort(key)}>
-      {label}{sort.key === key ? (sort.direction === 'desc' ? ' ↓' : ' ↑') : ''}
-    </CompanionSelectorButton>
-  );
+  const activityLabels = new Set(entries.filter(row => row.activity != null).map(row => row.activityLabel));
+  const hasActivity = activityLabels.size > 0;
+  const mixedActivity = activityLabels.size > 1;
+  const activityHeader = mixedActivity ? 'Usage' : [...activityLabels][0] + (upcoming ? '/G' : '');
+  const sortable = (key, label, className) => {
+    const active = sort.key === key;
+    const requestDirection = active
+      ? (sort.direction === 'desc' ? 'asc' : 'desc')
+      : (key === 'name' ? 'asc' : 'desc');
+    const current = active ? (sort.direction === 'desc' ? ', sorted descending' : ', sorted ascending') : '';
+    return (
+      <button
+        type="button"
+        className={'companion-heatmap-player-column-heading gs-focusable' + (className ? ' ' + className : '')}
+        data-direction={active ? sort.direction : undefined}
+        aria-label={label + current}
+        onClick={() => setSort({ key, direction: requestDirection })}
+      >
+        {label}{active && <span aria-hidden="true">{sort.direction === 'desc' ? ' ↓' : ' ↑'}</span>}
+      </button>
+    );
+  };
 
   return (
-    <section className={'companion-heatmap-player-results' + (upcoming ? ' is-upcoming' : '')}>
-      <div className="companion-heatmap-player-sort" role="group" aria-label="Sort player results">
-        <span>{upcoming ? 'Players' : 'Game leaders'}</span>
-        {sortable('snap', 'Snap %')}
-        {sortable('value', valueLabel)}
+    <section className={'companion-heatmap-player-results' + (hasActivity ? ' has-activity' : '')}
+      aria-label={upcoming ? 'Players' : 'Game leaders'}>
+      <div className="companion-heatmap-player-headings" role="group" aria-label="Sort player results">
+        {sortable('name', 'Player', 'companion-heatmap-player-name-heading')}
+        <div className="companion-heatmap-player-metric-headings">
+          {sortable('snap', 'Snap %')}
+          {hasActivity && sortable('activity', activityHeader)}
+          {sortable('value', valueLabel)}
+        </div>
       </div>
       <div className="companion-heatmap-drilldown-player-list">
         {entries.map(row => {
           const expanded = expandedId === row.playerId;
           const status = getPlayerAvailabilityContext(row.player);
-          const meta = [row.rank, upcoming && rosterReady ? (row.rostered ? 'Rostered' : 'Unrostered') : null];
-          const extraMetrics = upcoming ? [
-            <CompanionPlayerMetric key="targets" className="heatmap-wide-metric" compact value={formatValue(row.targets)} label="Tgt/G" />,
-            <CompanionPlayerMetric key="latest" className="heatmap-wide-metric" compact value={formatSnap(row.latestSnap)} label="Latest snap %" />,
-            <CompanionPlayerMetric key="total" className="heatmap-wide-metric" compact value={formatValue(row.total)} label={row.totalLabel} />,
-          ] : (row.boxMetrics ?? []).map(({ key, value, label }) => (
-            <CompanionPlayerMetric key={key} className="heatmap-wide-metric" compact value={formatValue(value)} label={label} />
-          ));
+          const meta = [
+            row.rank,
+            upcoming && rosterReady ? (row.rostered ? 'Rostered' : 'Unrostered') : null,
+            row.estimated ? 'Team est.' : null,
+          ];
           const canNavigate = canOpenStats && (upcoming || Boolean(row.espnId));
           const panelId = detailId + '-' + row.playerId;
           return (
@@ -167,6 +180,7 @@ export default function HeatmapPlayerResults({
                 compact
                 className="companion-heatmap-player-row"
                 showAccentRail={false}
+                subtleTeamGradient
                 showTeamLogo={false}
                 showPosition={false}
                 interactive
@@ -182,12 +196,16 @@ export default function HeatmapPlayerResults({
                 gridTemplate="var(--heatmap-player-row-grid)"
                 columnGridTemplate="var(--heatmap-player-metric-grid)"
                 columns={[
-                  <CompanionPlayerMetric key="snap" compact value={formatSnap(row.snap)} label="Snap %" title={upcoming ? 'Average of reported game snap percentages' : undefined} />,
-                  ...extraMetrics,
-                  <CompanionPlayerMetric key="value" compact value={formatValue(row.value)} label={valueLabel} />,
+                  <CompanionPlayerMetric key="snap" compact value={formatSnap(row.snap)}
+                    className={row.snap != null ? 'companion-heatmap-snap-value' : ''}
+                    title={upcoming ? 'Average of reported game snap percentages' : undefined} />,
+                  hasActivity && (row.activity == null ? <span key="activity" aria-hidden="true" /> : (
+                    <CompanionPlayerMetric key="activity" compact value={formatValue(row.activity)}
+                      label={mixedActivity ? row.activityLabel + (upcoming ? '/G' : '') : undefined} />
+                  )),
+                  <CompanionPlayerMetric key="value" compact value={formatValue(row.value)} />,
                 ]}
                 trailing={<CaretDownIcon size={16} aria-hidden="true" className="companion-heatmap-player-chevron" />}
-                status={row.estimated ? <CompanionPlayerStatus label="est." title="Team attribution estimated" /> : null}
               />
               <div id={panelId} className="companion-heatmap-player-detail" hidden={!expanded}>
                 {expanded && <GameLog key={season + ':' + row.playerId} row={row} season={season} counts={row.counts} />}

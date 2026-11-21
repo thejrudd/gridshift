@@ -17604,6 +17604,21 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   border-bottom: 1px solid var(--color-separator);
 }
 
+.companion-heatmap-drilldown-filter .companion-selector-button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.companion-heatmap-drilldown-filter .companion-selector-button.is-active {
+  border-bottom-color: var(--color-signature);
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-label);
+}
+
 .companion-heatmap-drilldown-close {
   position: absolute;
   z-index: 2;
@@ -17734,15 +17749,20 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-drilldown-schedule-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-  gap: 3px;
+  --schedule-chip-max-width: 52px;
+  --schedule-chip-gap: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--schedule-chip-gap);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .companion-heatmap-drilldown-schedule-chip {
+  flex: 0 0 min(var(--schedule-chip-max-width), calc((100% - 6 * var(--schedule-chip-gap) - 1px) / 7));
+  min-inline-size: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -17751,8 +17771,8 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   border-bottom: 3px solid var(--heatmap-matchup-rank, var(--color-separator));
   background: linear-gradient(
     to top,
-    color-mix(in srgb, var(--heatmap-matchup-rank, var(--color-separator)) 18%, transparent),
-    transparent 78%
+    color-mix(in srgb, var(--heatmap-matchup-rank, var(--color-separator)) 25%, transparent),
+    transparent 80%
   );
   color: var(--color-label-secondary);
   font-variant-numeric: tabular-nums;
@@ -17760,13 +17780,25 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   text-align: center;
 }
 
+.companion-heatmap-drilldown-schedule-chip.is-favorable {
+  --heatmap-matchup-rank: var(--color-accent-green);
+}
+
+.companion-heatmap-drilldown-schedule-chip.is-mixed {
+  --heatmap-matchup-rank: var(--color-signature);
+}
+
+.companion-heatmap-drilldown-schedule-chip.is-unfavorable {
+  --heatmap-matchup-rank: var(--color-accent-red);
+}
+
 .companion-heatmap-drilldown-schedule-chip span {
   font-size: var(--type-label);
   font-weight: 600;
-  opacity: 0.78;
 }
 
 .companion-heatmap-drilldown-schedule-chip strong {
+  color: var(--color-label);
   font-family: var(--font-display, 'Barlow Condensed', sans-serif);
   font-size: var(--type-emphasis);
   font-weight: 800;
@@ -17787,33 +17819,60 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   border-bottom: 1px solid var(--color-separator);
 }
 
-.companion-heatmap-player-sort {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0;
+.companion-heatmap-player-results {
+  --heatmap-player-row-grid: 34px minmax(0, 1fr) auto 16px;
+  --heatmap-player-metric-width: 64px;
+  --heatmap-player-metric-grid: repeat(2, var(--heatmap-player-metric-width));
 }
 
-.companion-heatmap-player-sort > span {
-  flex: 1 1 auto;
-  font: 800 var(--type-heading-sm)/1 var(--font-display, 'Barlow Condensed', sans-serif);
+.companion-heatmap-player-results.has-activity {
+  --heatmap-player-metric-grid: repeat(3, var(--heatmap-player-metric-width));
+}
+
+.companion-heatmap-player-headings {
+  display: grid;
+  grid-template-columns: var(--heatmap-player-row-grid);
+  gap: var(--density-space-sm);
+  padding-inline: 8px;
+}
+
+.companion-heatmap-player-metric-headings {
+  display: grid;
+  grid-template-columns: var(--heatmap-player-metric-grid);
+  gap: var(--density-space-sm);
+}
+
+.companion-heatmap-player-column-heading {
+  min-height: 44px;
+  padding-inline: 0;
+  color: var(--color-label-secondary);
+  text-align: end;
+  font-size: var(--type-label);
+  font-weight: 700;
+}
+
+.companion-heatmap-player-column-heading[data-direction] {
   color: var(--color-label);
+}
+
+.companion-heatmap-player-column-heading[data-direction] span {
+  color: color-mix(in srgb, var(--color-label) 65%, var(--color-signature));
+}
+
+.companion-heatmap-player-name-heading {
+  grid-column: 1 / -3;
+  text-align: start;
 }
 
 .companion-heatmap-player-entry {
   border-top: 1px solid var(--color-separator);
 }
 
-.companion-player-row.companion-heatmap-player-row {
-  --heatmap-player-row-grid: 34px minmax(0, 1fr) auto 16px;
-  --heatmap-player-metric-grid: 60px 64px;
+.companion-player-row.is-compact.companion-heatmap-player-row {
+  gap: var(--density-space-sm);
   min-height: 52px;
   border: 0;
   border-radius: 0;
-}
-
-.companion-heatmap-player-row:has(.companion-player-row__status-slot) {
-  --heatmap-player-row-grid: 34px minmax(0, 1fr) auto auto 16px;
 }
 
 .companion-heatmap-player-row .companion-player-row__columns {
@@ -17829,17 +17888,37 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 }
 
 .companion-heatmap-player-row .companion-player-row__identity {
-  flex-wrap: wrap;
-  gap: 3px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.companion-heatmap-player-row .companion-player-row__identity-accessory {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 .companion-heatmap-player-row .companion-player-row__identity-label {
+  font-size: var(--type-emphasis);
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
-.companion-heatmap-player-row .companion-player-row__column:has(.heatmap-wide-metric) {
-  display: none;
+.companion-heatmap-player-row .companion-player-row__meta {
+  display: flex;
+  font-size: var(--type-micro);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.companion-heatmap-player-row .companion-player-row__metric-value {
+  font-size: var(--type-body);
+  font-weight: 750;
+}
+
+.companion-heatmap-player-row .companion-heatmap-snap-value .companion-player-row__metric-value {
+  color: color-mix(in srgb, var(--color-label) 65%, var(--color-signature));
 }
 
 .companion-heatmap-player-detail {
@@ -17915,19 +17994,10 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   }
   .companion-heatmap-drilldown-schedule { grid-column: 1 / -1; }
   .companion-heatmap-drilldown-schedule-strip {
-    grid-template-columns: repeat(auto-fit, minmax(48px, 86px));
+    --schedule-chip-max-width: 86px;
   }
-  .companion-player-row.companion-heatmap-player-row {
-    --heatmap-player-metric-grid: 72px repeat(3, 78px) 70px;
-  }
-  .companion-heatmap-player-row .companion-player-row__column:has(.heatmap-wide-metric) {
-    display: block;
-  }
-  .companion-heatmap-player-results:not(.is-upcoming) .companion-heatmap-player-row {
-    --heatmap-player-metric-grid: 58px repeat(5, 60px) 60px;
-  }
-  .companion-heatmap-player-results:not(.is-upcoming) .companion-heatmap-player-row:not(:has(.heatmap-wide-metric)) {
-    --heatmap-player-metric-grid: 58px 60px;
+  .companion-heatmap-player-results {
+    --heatmap-player-metric-width: 86px;
   }
 }
 
@@ -17936,13 +18006,15 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   .companion-heatmap-drilldown-hero { padding-inline: 8px 48px; }
   .companion-heatmap-drilldown-matchup { gap: 7px; }
   .companion-heatmap-drilldown-matchup img { width: 34px; height: 34px; }
-  .companion-player-row.companion-heatmap-player-row {
+  .companion-heatmap-player-results {
     --heatmap-player-row-grid: minmax(0, 1fr) auto 16px;
-    --heatmap-player-metric-grid: 50px 52px;
+    --heatmap-player-metric-width: clamp(42px, 13vw, 52px);
   }
-  .companion-player-row.companion-heatmap-player-row:has(.companion-player-row__status-slot) {
-    --heatmap-player-row-grid: minmax(0, 1fr) auto auto 16px;
+  .companion-heatmap-player-row .companion-player-row__meta {
+    flex-wrap: wrap;
+    row-gap: 2px;
   }
+  .companion-heatmap-player-row .companion-player-row__meta-item { white-space: normal; }
   .companion-heatmap-player-row .companion-player-row__avatar { display: none; }
   .companion-heatmap-player-detail { padding-inline: 8px; }
 }
