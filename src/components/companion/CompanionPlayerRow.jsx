@@ -199,6 +199,7 @@ export default function CompanionPlayerRow({
   role = undefined,
   tabIndex = undefined,
   teamThemeOptions = undefined,
+  subtleTeamGradient = false,
   separateAction = false,
 }) {
   const [isHovered, setIsHovered] = useState(false);
@@ -221,10 +222,13 @@ export default function CompanionPlayerRow({
         : undefined
   );
   const theme = team ? getTeamVisualTheme(team, darkMode, resolvedTeamThemeOptions) : null;
-  const hasTeamGradient = Boolean(theme?.gradient);
+  const hasTeamTint = subtleTeamGradient && Boolean(theme?.tint);
+  const hasTeamGradient = Boolean(theme?.gradient) && !hasTeamTint;
   const accentColor = theme?.borderColor ?? getCompanionPositionColor(position) ?? 'var(--color-accent)';
-  const rowBg = hasTeamGradient ? theme.gradient : (theme?.tint ?? (selected ? 'var(--color-fill-secondary)' : 'var(--color-fill)'));
   const hoverBg = theme?.hoverTint ?? 'var(--color-fill-secondary)';
+  const rowBg = hasTeamTint
+    ? 'linear-gradient(90deg, ' + (selected || isHovered ? hoverBg : theme.tint) + ', transparent 78%)'
+    : hasTeamGradient ? theme.gradient : (theme?.tint ?? (selected ? 'var(--color-fill-secondary)' : 'var(--color-fill)'));
   const rowForeground = hasTeamGradient ? theme.gradientForeground : 'var(--color-label)';
   const rowMuted = hasTeamGradient ? theme.gradientMuted : 'var(--color-label-secondary)';
   const rowSubtle = hasTeamGradient ? theme.gradientSubtle : 'var(--color-fill-secondary)';
@@ -243,28 +247,28 @@ export default function CompanionPlayerRow({
   const resolvedGridTemplate = compact ? (compactGridTemplate ?? gridTemplate) : gridTemplate;
   const rowTitle = title ?? [label, ...normalizedMeta].filter(Boolean).join(' · ');
   const { glowHandlers, borderOverlay, glowShadow } = useCardGlow({
-    enabled: isInteractive && isHovered,
+    enabled: isInteractive && isHovered && !hasTeamTint,
     color: accentColor,
     cardColor: theme?.color ?? null,
     darkMode,
     coreColor: darkMode ? '#FFFFFF' : null,
     outerColor: accentColor,
   });
-  const baseShadow = isInteractive && isHovered ? '0 5px 12px rgba(12,15,20,0.09)' : 'none';
+  const baseShadow = isInteractive && isHovered && !hasTeamTint ? '0 5px 12px rgba(12,15,20,0.09)' : 'none';
   const rowShadow = glowShadow ? `${glowShadow}, ${baseShadow}` : baseShadow;
 
   const rootStyle = {
-    background: isHovered && !hasTeamGradient ? hoverBg : rowBg,
+    background: isHovered && !hasTeamGradient && !hasTeamTint ? hoverBg : rowBg,
     '--companion-player-accent': selected ? 'var(--color-signature)' : accentColor,
     '--companion-player-fg': rowForeground,
     '--companion-player-muted': rowMuted,
     '--companion-player-subtle': rowSubtle,
     '--companion-player-value-fg': rowValueForeground,
     '--companion-player-value-muted': rowValueMuted,
-    '--companion-player-start-fg': theme?.gradientStartForeground ?? rowForeground,
-    '--companion-player-mid-fg': theme?.gradientMidForeground ?? rowForeground,
-    '--companion-player-end-fg': theme?.gradientEndForeground ?? rowValueForeground,
-    '--companion-player-full-fg': theme?.gradientFullForeground ?? rowForeground,
+    '--companion-player-start-fg': hasTeamTint ? rowForeground : theme?.gradientStartForeground ?? rowForeground,
+    '--companion-player-mid-fg': hasTeamTint ? rowForeground : theme?.gradientMidForeground ?? rowForeground,
+    '--companion-player-end-fg': hasTeamTint ? rowValueForeground : theme?.gradientEndForeground ?? rowValueForeground,
+    '--companion-player-full-fg': hasTeamTint ? rowForeground : theme?.gradientFullForeground ?? rowForeground,
     gridTemplateColumns: resolvedGridTemplate,
     boxShadow: selected && showAccentRail ? `${rowShadow === 'none' ? '' : `${rowShadow}, `}inset 3px 0 0 var(--color-signature)` : rowShadow,
     opacity: disabled ? 0.45 : 1,

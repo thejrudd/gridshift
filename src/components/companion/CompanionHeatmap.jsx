@@ -142,6 +142,17 @@ const DEF_STAT_MODES = [
   { id: 'idp_def_td',   label: 'TD',          statKey: 'idp_def_td', positions: ['DL', 'LB', 'DB'], scoringKeys: ['idp_def_td'] },
 ];
 
+const PLAYER_USAGE_STATS = {
+  QB: ['pass_att', 'Att'],
+  RB: ['rush_att', 'Car'],
+  WR: ['rec_tgt', 'Tgt'],
+  TE: ['rec_tgt', 'Tgt'],
+  K: ['fga', 'FGA'],
+  DL: ['idp_tkl', 'Tkl'],
+  LB: ['idp_tkl', 'Tkl'],
+  DB: ['idp_tkl', 'Tkl'],
+};
+
 const FUTURE_STAT_AVERAGE_LABELS = {
   pass_sack: 'Sacks/G',
   pass_int: 'INT/G',
@@ -1549,7 +1560,6 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         playerId, player, weeklyStats, scheduleMap, scoringSettings: activeScoringSettings, throughWeek: maxFantasyWeek,
       }).filter(game => isFinalScheduleGame(scheduleMap?.[game.week]?.[game.team])).map(game => ({
         ...game,
-        targets: entries.get(game.week)?.rec_tgt ?? null,
         entry: entries.get(game.week),
       }));
       const row = { position, team, games, completed, rank: null };
@@ -1596,14 +1606,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         }
         return defenseMetric?.statKey ? getModeStatValue(entry, defenseMetric) : calcPoints(entry, activeScoringSettings, player.position);
       }).filter(value => value != null && Number.isFinite(Number(value))).map(Number);
-      const targets = played.filter(game => game.targets != null);
       const total = values.length ? values.reduce((sum, value) => sum + value, 0) : null;
       const value = total == null ? null : total / values.length;
       const name = player.full_name || [player.first_name, player.last_name].filter(Boolean).join(' ') || playerId;
       results.push({
-        playerId, name, position: player.position, team: scoringTeam, rostered, total, value,
-        games: played, weeks, latestGame: games.find(game => game.week === completed.at(-1)),
-        targets: targets.length ? targets.reduce((sum, game) => sum + Number(game.targets), 0) / targets.length : null,
+        playerId, name, position: player.position, team: scoringTeam, rostered, value,
+        games: played, weeks,
       });
     }
     return results.sort((left, right) => left.name.localeCompare(right.name));
@@ -1628,29 +1636,30 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       opponent: event?.opp,
       isHome: event?.home == null ? null : Boolean(event.home),
       points: pointsDisplay ? row.val : calcPoints(row.entry, activeScoringSettings, row.position),
-      targets: row.entry?.rec_tgt ?? null,
+      entry: row.entry,
     } : null;
+    const [usageKey, activityLabel] = PLAYER_USAGE_STATS[seasonForm?.position ?? row.position] ?? [];
+    const games = (row.games ?? (pastGame ? [pastGame] : [])).map(game => {
+      const raw = game.entry?.[usageKey];
+      const activity = raw == null || raw === '' ? null : Number(raw);
+      return { ...game, activity: Number.isFinite(activity) ? activity : null };
+    });
+    const activityValues = games.map(game => game.activity).filter(value => value != null);
+    const activity = activityValues.length
+      ? activityValues.reduce((sum, value) => sum + value, 0) / activityValues.length
+      : null;
     return {
       ...row,
       team,
       player: { ...rawPlayer, id: row.playerId, name: row.name, team, position: row.position },
       espnId: row.position === 'DEF' ? null : rawPlayer?.espn_id ?? espnIdOverrides?.[row.playerId] ?? rawPlayer?.sourceIds?.espn,
-      games: row.games ?? (pastGame ? [pastGame] : []),
+      games, activity, activityLabel,
       weeks: row.weeks ?? (pastGame ? [pastGame.week] : []),
       rank: seasonForm?.rank != null
-        ? formatOrdinalRank(seasonForm.rank) + ' ' + getPositionFilterLabel(seasonForm.position) + ' overall'
+        ? getPositionFilterLabel(seasonForm.position) + ' #' + seasonForm.rank + ' overall'
         : null,
-      totalLabel: pointsDisplay ? 'Total pts' : 'Total',
       value: upcomingPlayers ? row.value : row.val,
       estimated: row.teamSource === 'fallback',
-      boxMetrics: row.entry && pointsDisplay && ['RB', 'WR', 'TE'].includes(row.position)
-        ? [
-          { key: 'snaps', value: row.entry.off_snp, label: 'Snaps' },
-          { key: 'targets', value: row.entry.rec_tgt, label: 'Tgt' },
-          { key: 'receptions', value: row.entry.rec, label: 'Rec' },
-          { key: 'yards', value: row.entry.rec_yd, label: 'Rec yds' },
-          { key: 'td', value: row.entry.rec_td, label: 'Rec TD' },
-        ] : [],
     };
   });
 
@@ -2504,15 +2513,16 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                                     </li>
                                   );
                                 }
-                                const t = game.rank != null && game.rankCount > 1
-                                  ? 1 - (game.rank - 1) / (game.rankCount - 1)
+                                const percentile = game.rank != null && game.rankCount > 1
+                                  ? (game.rank - 1) / (game.rankCount - 1)
                                   : null;
+                                const tone = percentile == null ? '' : percentile < 0.3 ? ' is-favorable'
+                                  : percentile < 0.7 ? ' is-mixed' : ' is-unfavorable';
                                 const location = game.home === false ? '@' : game.home === true ? 'vs' : '';
                                 return (
                                   <li
                                     key={game.week}
-                                    className="companion-heatmap-drilldown-schedule-chip"
-                                    style={t == null ? undefined : { '--heatmap-matchup-rank': heatColor(t) }}
+                                    className={'companion-heatmap-drilldown-schedule-chip' + tone}
                                     title={game.rank != null
                                       ? `Week ${game.week} ${location} ${game.opponent}: ${formatOrdinalRank(game.rank)} most favorable ${activePos} matchup`
                                       : `Week ${game.week} ${location} ${game.opponent}`}

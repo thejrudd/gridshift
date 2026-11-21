@@ -1305,36 +1305,42 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   const fixturePlayers = {
     ...players,
     900: { ...players[104], player_id: '900', espn_id: '1900', full_name: 'Waiver Receiver', first_name: 'Waiver', last_name: 'Receiver', injury_status: 'IR' },
+    901: { ...players[104], player_id: '901', team: 'PHI' },
+    902: { ...players[104], player_id: '902', team: 'NYG' },
   };
   await page.unroute('https://api.sleeper.app/v1/**');
   await installTradeFixtures(page, { ...base, players: fixturePlayers });
   await page.route('https://api.sleeper.com/stats/nfl/' + TEST_SEASON + '/*', async route => {
     const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
-    const playerRow = (player_id, stats) => ({
-      player_id, player: { position: 'WR' }, team: 'DAL', opponent: 'SF',
+    const playerRow = (player_id, stats, team = 'DAL', opponent = 'SF') => ({
+      player_id, player: { position: 'WR' }, team, opponent,
       stats: { ...stats, gp: 1 },
     });
     await route.fulfill({ json: week <= 6 ? [
       playerRow('104', { rec: 4, rec_tgt: 6, rec_yd: week === 1 ? 200 : 40 }),
       playerRow('900', { rec: 2, rec_tgt: 3, rec_yd: 30 }),
+      playerRow('901', { rec: 6, rec_yd: 200 }, 'PHI', 'NYG'),
+      playerRow('902', { rec: 2, rec_yd: 30 }, 'NYG', 'PHI'),
     ] : [] });
   });
 
   const scoreboard = (week) => {
     const completed = week <= 6;
-    return { events: week <= 7 ? [{
-      id: 'matchup-filter-' + week,
+    const matchups = week === 8 ? [['DAL', 'NYG'], ['SF', 'PHI']] : [['DAL', 'SF'], ['NYG', 'PHI']];
+    const teamIds = { DAL: '6', SF: '25', NYG: '19', PHI: '21' };
+    return { events: week <= 13 ? matchups.map(([away, home]) => ({
+      id: 'matchup-filter-' + week + '-' + away,
       date: new Date(Date.UTC(2026, 8, 13 + (week - 1) * 7, 18)).toISOString(),
       week: { number: week },
       status: { type: { state: completed ? 'post' : 'pre', completed } },
       competitions: [{
         status: { type: { completed } },
         competitors: [
-          { homeAway: 'away', team: { abbreviation: 'DAL', id: '6' }, score: completed ? '20' : '' },
-          { homeAway: 'home', team: { abbreviation: 'SF', id: '25' }, score: completed ? '17' : '' },
+          { homeAway: 'away', team: { abbreviation: away, id: teamIds[away] }, score: completed ? '20' : '' },
+          { homeAway: 'home', team: { abbreviation: home, id: teamIds[home] }, score: completed ? '17' : '' },
         ],
       }],
-    }] : [] };
+    })) : [] };
   };
   await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', route => {
     const week = Number(new URL(route.request().url()).searchParams.get('week'));
@@ -1378,9 +1384,40 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   const waiver = dialog.getByRole('button', { name: /^Waiver Receiver details/ });
   await expect(waiver).toHaveAttribute('aria-expanded', 'false');
   await expect(waiver).toContainText('67.5%');
+  const schedule = dialog.getByRole('list', { name: 'DAL WR matchup rank by week' });
+  await expect(schedule.getByRole('listitem')).toHaveCount(7);
+  const amber = schedule.getByRole('listitem').nth(0);
+  const green = schedule.getByRole('listitem').nth(1);
+  await expect(amber).toHaveClass(/is-mixed/);
+  await expect(green).toHaveClass(/is-favorable/);
+  expect(await amber.evaluate(chip => getComputedStyle(chip).borderBottomColor))
+    .not.toEqual(await green.evaluate(chip => getComputedStyle(chip).borderBottomColor));
+  expect(await schedule.evaluate(strip => {
+    const bounds = strip.getBoundingClientRect();
+    const first = strip.firstElementChild.getBoundingClientRect();
+    const last = strip.lastElementChild.getBoundingClientRect();
+    return Math.abs(first.left + last.right - bounds.left - bounds.right);
+  })).toBeLessThan(2);
+  expect(await waiver.evaluate(playerRow => {
+    const name = playerRow.querySelector('.companion-player-row__identity-label');
+    const badge = playerRow.querySelector('.player-status-badge').getBoundingClientRect();
+    const rank = playerRow.querySelector('.companion-player-row__meta');
+    const nameBox = name.getBoundingClientRect();
+    return badge.left >= nameBox.right && badge.top < nameBox.bottom && badge.bottom > nameBox.top
+      && parseFloat(getComputedStyle(name).fontSize) > parseFloat(getComputedStyle(rank).fontSize);
+  })).toBe(true);
+  const headings = dialog.getByRole('group', { name: 'Sort player results' });
+  await expect(headings.getByRole('button')).toHaveText(['Player', 'Snap %', 'Tgt/G', 'PPG ↓']);
+  const targetsHeading = headings.getByRole('button', { name: 'Tgt/G', exact: true });
+  const firstPlayer = dialog.locator('.companion-heatmap-player-row').first();
+  await targetsHeading.click();
+  await expect(firstPlayer).toContainText('Target Magnet');
+  await headings.getByRole('button', { name: 'Tgt/G, sorted descending' }).click();
+  await expect(firstPlayer).toContainText('Waiver Receiver');
+  await expect(headings.getByRole('button', { name: 'Tgt/G, sorted ascending' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Last 4', exact: true }).click();
   await expect(waiver).toContainText('75%');
-  await expect(waiver).toContainText('2nd WR overall');
+  await expect(waiver.getByText('WR #3 overall', { exact: true })).toBeVisible();
   await waiver.click();
   await expect(waiver).toHaveAttribute('aria-expanded', 'true');
   const log = dialog.getByRole('table', { name: 'Waiver Receiver game log' });
@@ -1390,6 +1427,8 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   const opponentLogo = log.locator('tbody tr').first().locator('img');
   await expect(opponentLogo).toHaveAttribute('src', '/logos/PHI.png');
   await expect.poll(() => opponentLogo.evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await opponentLogo.evaluate(img => img.previousElementSibling.getBoundingClientRect().right
+    <= img.getBoundingClientRect().left)).toBe(true);
   expect(await dialog.evaluate(node => node.getBoundingClientRect().width)).toBeCloseTo(upcomingWidth);
   expect(await log.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   const drawer = await waiver.getAttribute('aria-controls');
