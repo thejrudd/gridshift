@@ -1472,9 +1472,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
         const val = getHeatmapOffenseStatValue(wEntry, activeScoringSettings, player.position, resolveHeatmapOffenseStatMode(offenseStatMode, activePos));
         if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
-        const breakdown = statMode === 'pts' || statMode === 'pts_allowed'
-          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position, val)
-          : null;
+        const breakdown = getScoreBreakdown(wEntry, activeScoringSettings, player.position,
+          offenseStatMode === 'pts' ? val : undefined);
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
         results.push({
@@ -1512,9 +1511,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
 
         const val = getDefVal(wEntry, player.position);
         if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
-        const breakdown = effectiveDefStatMode === 'pts'
-          ? getScoreBreakdown(wEntry, activeScoringSettings, player.position, val)
-          : null;
+        const breakdown = getScoreBreakdown(wEntry, activeScoringSettings, player.position,
+          effectiveDefStatMode === 'pts' ? val : undefined);
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
         const teamSource = wEntry._teamSource ?? 'fallback';
         results.push({
@@ -1621,39 +1619,30 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     const rawPlayer = players?.[row.playerId];
     const team = row.team ?? row.game?.team;
     const seasonForm = seasonPlayerForm[row.playerId];
-    const event = row.game && scheduleMap?.[row.game.week]?.[team];
-    const pastGame = row.game ? {
-      ...row.game,
-      opponent: event?.opp,
-      isHome: event?.home == null ? null : Boolean(event.home),
-      points: pointsDisplay ? row.val : calcPoints(row.entry, activeScoringSettings, row.position),
-      entry: row.entry,
-    } : null;
     const activityColumns = getHeatmapPlayerActivityColumns(row.position);
-    const games = row.games ?? (pastGame ? [pastGame] : []);
+    const games = row.games ?? [{ ...row.game, entry: row.entry }];
     const averages = activityColumns.map(column => {
       const values = games.map(game => getHeatmapPlayerActivity(column, game.entry)).filter(value => value != null);
       return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     });
-    const throughWeek = upcomingPlayers ? maxFantasyWeek : pastGame?.week;
-    const completed = pastGame && matchupWindow === 'recent'
-      ? getHeatmapCompletedGameWeeks(scheduleMap, pastGame.team, Array.from({ length: throughWeek }, (_, index) => index + 1))
-      : row.weeks ?? [];
-    const firstWeek = matchupWindow === 'recent' ? completed.slice(-4)[0] ?? throughWeek : 1;
-    const inWindow = week => week >= firstWeek && week <= throughWeek;
-    const logGames = new Map((seasonForm?.games ?? []).filter(game => inWindow(game.week)).map(game => [game.week, game]));
-    const playerWeeks = weeklyStats?.[row.playerId] ?? [];
-    for (const entry of playerWeeks) {
-      const week = Number(entry.week);
-      if (!inWindow(week) || !isHeatmapInactiveWeek(entry)) continue;
-      const gameTeam = getHeatmapPlayerGameTeam(entry, rawPlayer, playerWeeks);
-      const scheduled = scheduleMap?.[week]?.[gameTeam];
-      if (!isFinalScheduleGame(scheduled)) continue;
-      logGames.set(week, {
-        week, team: gameTeam, opponent: scheduled.opp, isHome: scheduled.home, inactive: true,
-      });
+    const throughWeek = maxFantasyWeek;
+    const firstWeek = matchupWindow === 'recent' ? row.weeks?.[0] ?? throughWeek : 1;
+    const logGames = [];
+    if (upcomingPlayers) {
+      const inWindow = week => week >= firstWeek && week <= throughWeek;
+      logGames.push(...seasonForm.games.filter(game => inWindow(game.week)));
+      const playerWeeks = weeklyStats?.[row.playerId] ?? [];
+      for (const entry of playerWeeks) {
+        const week = Number(entry.week);
+        if (!inWindow(week) || !isHeatmapInactiveWeek(entry)) continue;
+        const gameTeam = getHeatmapPlayerGameTeam(entry, rawPlayer, playerWeeks);
+        const scheduled = scheduleMap?.[week]?.[gameTeam];
+        if (!isFinalScheduleGame(scheduled)) continue;
+        logGames.push({
+          week, team: gameTeam, opponent: scheduled.opp, isHome: scheduled.home, inactive: true,
+        });
+      }
     }
-    if (pastGame && !logGames.get(pastGame.week)?.inactive) logGames.set(pastGame.week, pastGame);
     return {
       ...row,
       team,
@@ -1661,7 +1650,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       espnId: row.position === 'DEF' ? null : rawPlayer?.espn_id ?? espnIdOverrides?.[row.playerId] ?? rawPlayer?.sourceIds?.espn,
       games, activityColumns, activity: averages[0] ?? null, tackles: averages[1] ?? null,
       seasonPoints: seasonForm?.seasonPoints ?? null,
-      logGames: [...logGames.values()], firstWeek, throughWeek,
+      logGames, firstWeek, throughWeek,
       rank: seasonForm?.rank != null
         ? getPositionFilterLabel(seasonForm.position) + ' #' + seasonForm.rank + ' overall'
         : null,

@@ -17846,10 +17846,9 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   --heatmap-player-row-grid: 34px minmax(0, 1fr) auto 16px;
   --heatmap-player-metric-width: 64px;
   --heatmap-player-priority-count: 2;
-  --heatmap-player-total-count: 1;
   --heatmap-player-tackles-count: 0;
   --heatmap-player-metric-grid: repeat(
-    calc(var(--heatmap-player-priority-count) + var(--heatmap-player-total-count) + var(--heatmap-player-tackles-count)),
+    calc(var(--heatmap-player-priority-count) + var(--heatmap-player-tackles-count)),
     var(--heatmap-player-metric-width)
   );
 }
@@ -17862,9 +17861,16 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   --heatmap-player-tackles-count: 1;
 }
 
-@container heatmap-drilldown (width < 610px) {
-  .companion-heatmap-player-results { --heatmap-player-total-count: 0; }
+@container heatmap-drilldown (min-width: 610px) {
+  .companion-heatmap-player-results {
+    --heatmap-player-metric-grid: repeat(
+      calc(var(--heatmap-player-priority-count) + var(--heatmap-player-tackles-count) - 1),
+      var(--heatmap-player-metric-width)
+    ) max(var(--heatmap-player-metric-width), 5.5rem) var(--heatmap-player-metric-width);
+  }
+}
 
+@container heatmap-drilldown (width < 610px) {
   .companion-heatmap-extra-total,
   .companion-heatmap-player-row .companion-player-row__column:has(> .companion-heatmap-extra-total) {
     display: none;
@@ -17907,7 +17913,19 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   color: var(--color-label);
 }
 
-.companion-heatmap-player-column-heading[data-direction] span {
+.companion-heatmap-player-heading-content {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+  max-inline-size: 100%;
+}
+
+.companion-heatmap-extra-total .companion-heatmap-player-heading-content {
+  white-space: nowrap;
+}
+
+.companion-heatmap-player-sort-arrow {
+  flex: none;
   color: color-mix(in srgb, var(--color-label) 65%, var(--color-signature));
 }
 

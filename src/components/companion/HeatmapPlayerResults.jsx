@@ -210,7 +210,10 @@ export default function HeatmapPlayerResults({
         title={title}
         onClick={() => setSort({ key, direction: requestDirection })}
       >
-        {label}{active && <span aria-hidden="true">{sort.direction === 'desc' ? ' ↓' : ' ↑'}</span>}
+        <span className="companion-heatmap-player-heading-content">
+          <span>{label}</span>
+          {active && <span aria-hidden="true" className="companion-heatmap-player-sort-arrow">{sort.direction === 'desc' ? ' ↓' : ' ↑'}</span>}
+        </span>
       </button>
     );
   };
@@ -279,16 +282,20 @@ export default function HeatmapPlayerResults({
                 trailing={<CaretDownIcon size={16} aria-hidden="true" className="companion-heatmap-player-chevron" />}
               />
               <div id={panelId} className="companion-heatmap-player-detail" hidden={!expanded}>
-                {expanded && <GameLog key={season + ':' + row.playerId} row={row} season={season} counts={row.counts} />}
-                {expanded && !upcoming && row.breakdown?.length > 0 && (
-                  <dl className="companion-heatmap-score-breakdown" aria-label={row.name + ' scoring breakdown'}>
-                    {row.breakdown.map(({ label, statVal, pts }, index) => (
-                      <div key={index}>
-                        <dt>{label}{statVal != null && ' · ' + formatValue(statVal)}</dt>
-                        <dd>{pts > 0 && '+'}{pts.toFixed(1)}</dd>
-                      </div>
-                    ))}
-                  </dl>
+                {expanded && upcoming && (
+                  <GameLog key={season + ':' + row.playerId} row={row} season={season} counts={row.counts} />
+                )}
+                {expanded && !upcoming && (
+                  row.breakdown?.length ? (
+                    <dl className="companion-heatmap-score-breakdown" aria-label={row.name + ' scoring breakdown'}>
+                      {row.breakdown.map(({ label, statVal, pts }, index) => (
+                        <div key={index}>
+                          <dt>{label}{statVal != null && ' · ' + formatValue(statVal)}</dt>
+                          <dd>{pts > 0 && '+'}{pts.toFixed(1)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : <p className="companion-heatmap-score-breakdown">No scoring breakdown available.</p>
                 )}
                 {expanded && canNavigate && (
                   <button type="button" className="companion-heatmap-player-stats gs-focusable"
