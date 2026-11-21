@@ -187,6 +187,8 @@ export default function CompanionPlayerRow({
   identityAccessory = null,
   title = null,
   ariaLabel = null,
+  ariaExpanded = undefined,
+  ariaControls = undefined,
   onClick = null,
   onMouseEnter = undefined,
   onMouseLeave = undefined,
@@ -339,6 +341,8 @@ export default function CompanionPlayerRow({
       title={rowTitle || undefined}
       aria-label={hasSeparateAction ? `Matchup player: ${label}` : ariaLabel ?? (isInteractive ? `Open ${label}` : undefined)}
       aria-disabled={disabled || undefined}
+      aria-expanded={ariaExpanded}
+      aria-controls={ariaControls}
     >
       {borderOverlay}
       {hasTeamGradient && (

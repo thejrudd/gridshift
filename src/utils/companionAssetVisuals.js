@@ -1,3 +1,4 @@
+import { getTeamColorKey, getTeamPalette } from '../data/teamColors.js';
 import { normalizeIDPPos } from './idpEngine.js';
 import { hexLuminance } from './teamVisualTheme.js';
 
@@ -49,6 +50,13 @@ export function getSleeperAvatarUrl(avatarHash) {
 
 export function getNflTeamLogoUrl(logoKey) {
   return logoKey ? `https://a.espncdn.com/i/teamlogos/nfl/500/${logoKey}.png` : null;
+}
+
+export function getBundledNflTeamLogoUrl(team) {
+  if (!getTeamPalette(team)) return null;
+  const key = getTeamColorKey(team);
+  const assetId = key === 'la' ? 'LAR' : key.toUpperCase();
+  return '/logos/' + assetId + '.png';
 }
 
 function pushUniqueUrl(urls, url) {
