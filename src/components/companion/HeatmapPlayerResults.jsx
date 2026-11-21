@@ -1,14 +1,19 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CaretDownIcon } from '@phosphor-icons/react/CaretDown';
+import { getPlayerDesignations } from '../../api/playerDesignationsApi.js';
 import { fetchGameLog, fetchPlayerSnapCounts, fetchTeamDefenseGameLog } from '../../utils/playerApi.js';
 import { getPlayerAvailabilityContext } from '../../utils/playerAvailabilityStatus.js';
 import { getBundledNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
+import { getHeatmapInactiveDescription, getHeatmapPlayerActivity } from '../../utils/fantasyHeatmapData.js';
+import { buildStatMap } from '../../utils/playerMetrics.js';
+import { createRequestCache } from '../../utils/requestCache.js';
 import { selectGameSnapPercentage } from '../../utils/snapCounts.js';
 import CompanionPlayerRow, { CompanionPlayerMetric } from './CompanionPlayerRow.jsx';
 import PlayerStatusBadge from './PlayerStatusBadge.jsx';
 
 const EMPTY = [];
 const MISSING = '—';
+const designationCache = createRequestCache();
 
 const formatValue = (value) => value == null ? MISSING : Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 });
 const formatSnap = (value) => value == null ? MISSING : formatValue(value) + '%';
@@ -45,8 +50,36 @@ function usePlayerSnaps(rows, season) {
   return result?.season === season ? result.counts : null;
 }
 
+function useInactiveReasons(games, { name, position }, season) {
+  const inactiveWeeks = games.filter(game => game.inactive && game.team)
+    .map(game => game.week + ':' + game.team).join(',');
+  const [reasons, setReasons] = useState({});
+  useEffect(() => {
+    if (!inactiveWeeks || !season) return undefined;
+    let active = true;
+    const load = async () => {
+      for (const item of inactiveWeeks.split(',')) {
+        if (!active) return;
+        const [week, team] = item.split(':');
+        try {
+          const payload = await designationCache.load(season + ':' + item,
+            () => getPlayerDesignations({ season, week, teams: [team] }));
+          const reason = getHeatmapInactiveDescription(payload?.data, { name, position, team }, season, week);
+          if (active && reason) setReasons(previous => ({ ...previous, [item]: reason }));
+        } catch (error) {
+          // The optional source may be unavailable for this installation.
+          if ([401, 403, 503].includes(error.status)) return;
+        }
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [inactiveWeeks, name, position, season]);
+  return reasons;
+}
+
 function GameLog({ row, season, counts }) {
-  const { playerId, espnId, team, position, games, weeks } = row;
+  const { espnId, team, position, logGames, activityColumns } = row;
   const [officialLog, setOfficialLog] = useState(EMPTY);
 
   useEffect(() => {
@@ -61,45 +94,74 @@ function GameLog({ row, season, counts }) {
     return () => { active = false; };
   }, [espnId, position, season, team]);
 
-  const officialWeeks = new Map(officialLog
-    .filter(({ meta }) => meta?.completed !== false && !meta?.isBye && !meta?.isInactive && !meta?.isPostseason)
-    .map(game => [Number(game.meta?.week), game]));
-  const played = new Map(games.map(game => [game.week, game]));
-  for (const [week, game] of officialWeeks) {
-    if (!played.has(week) && weeks.includes(week) && game.statsJson) {
-      played.set(week, { week, team: game.meta.myTeam });
-    }
+  const gamesByWeek = new Map(logGames.map(game => [game.week, game]));
+  for (const { meta, statsJson } of officialLog) {
+    const week = Number(meta?.week);
+    if (!(week >= row.firstWeek && week <= row.throughWeek)
+      || meta.isBye || meta.isPostseason || meta.completed === false) continue;
+    const game = gamesByWeek.get(week);
+    if (!game && !statsJson && !meta.isInactive) continue;
+    gamesByWeek.set(week, {
+      ...game,
+      week,
+      team: meta.myTeam ?? game?.team,
+      inactive: meta.isInactive === true || (!statsJson && game?.inactive),
+      officialOpponent: meta.opponent,
+      statsJson,
+    });
   }
-  const showActivity = row.activityLabel && [...played.values()].some(game => game.activity != null);
-  if (!played.size) return <p className="companion-heatmap-game-log-empty">No completed games in this window.</p>;
+  const games = [...gamesByWeek.values()].sort((left, right) => right.week - left.week);
+  const inactiveReasons = useInactiveReasons(games, row, season);
+  if (!games.length) return <p className="companion-heatmap-game-log-empty">No completed games in this window.</p>;
 
   return (
     <table className="companion-heatmap-game-log" aria-label={row.name + ' game log'}>
       <thead>
-        <tr><th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Snap %</th>{showActivity && <th scope="col">{row.activityLabel}</th>}<th scope="col">Pts</th></tr>
+        <tr>
+          <th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Snap %</th>
+          {activityColumns.map(column => <th key={column.label} scope="col" title={column.title}>{column.label}</th>)}
+          <th scope="col">Pts</th>
+        </tr>
       </thead>
       <tbody>
-        {[...played.values()].sort((left, right) => right.week - left.week).map(game => {
-          const official = officialWeeks.get(game.week);
-          const officialOpp = official?.meta?.opponent?.match(/^(@|vs?)\s*([a-z]+)$/i);
+        {games.map(game => {
+          const officialOpp = game.officialOpponent?.match(/^(@|vs?)\s*([a-z]+)$/i);
           const opponent = officialOpp?.[2]?.toUpperCase() ?? game.opponent;
           const site = officialOpp ? (officialOpp[1] === '@' ? '@' : 'v ') : game.isHome === true ? 'v ' : game.isHome === false ? '@' : '';
           const url = getBundledNflTeamLogoUrl(opponent);
-          const snap = snapForGame(game, counts, position, season);
+          const officialStats = game.statsJson && buildStatMap(game.statsJson);
+          const snap = game.inactive ? null : snapForGame(game, counts, position, season);
           return (
-            <tr key={playerId + ':' + game.week}>
+            <tr key={game.week}>
               <th scope="row">{game.week}</th>
-              <td><span className="companion-heatmap-game-opponent">
-                <span>{opponent ? site + opponent : MISSING}</span>
-                {url && <img src={url} width="18" height="18" alt="" loading="lazy" />}
-              </span></td>
+              <td>
+                <span className="companion-heatmap-game-opponent">
+                  <span>{opponent ? site + opponent : MISSING}</span>
+                  {url && <img src={url} width="18" height="18" alt="" loading="lazy" />}
+                </span>
+                {game.inactive && (
+                  <div className="companion-heatmap-game-absence">
+                    {inactiveReasons[game.week + ':' + game.team] ?? 'DNP'}
+                  </div>
+                )}
+              </td>
               <td>{formatSnap(snap)}</td>
-              {showActivity && <td>{formatValue(game.activity)}</td>}
-              <td>{formatValue(game.points)}</td>
+              {activityColumns.map(column => (
+                <td key={column.label}>{formatValue(game.inactive ? null : getHeatmapPlayerActivity(column, game.entry, officialStats))}</td>
+              ))}
+              <td>{formatValue(game.inactive ? null : game.points)}</td>
             </tr>
           );
         })}
       </tbody>
+      {row.seasonPoints != null && (
+        <tfoot className="companion-heatmap-game-season-total">
+          <tr>
+            <th scope="row" colSpan={3 + activityColumns.length}>Season Pts</th>
+            <td>{formatValue(row.seasonPoints)}</td>
+          </tr>
+        </tfoot>
+      )}
     </table>
   );
 }
@@ -126,11 +188,14 @@ export default function HeatmapPlayerResults({
     return sort.direction === 'desc' ? -order : order;
   }), [rows, season, snapsById, sort]);
 
-  const activityLabels = new Set(entries.filter(row => row.activity != null).map(row => row.activityLabel));
-  const hasActivity = activityLabels.size > 0;
-  const mixedActivity = activityLabels.size > 1;
-  const activityHeader = mixedActivity ? 'Usage' : [...activityLabels][0] + (upcoming ? '/G' : '');
-  const sortable = (key, label, className) => {
+  const activityColumns = new Set(entries.map(row => row.activityColumns[0]).filter(Boolean));
+  const hasActivity = activityColumns.size > 0;
+  const hasTackles = entries.some(row => row.activityColumns.length > 1);
+  const mixedActivity = new Set([...activityColumns].map(column => column.label)).size > 1;
+  const rateSuffix = upcoming ? '/G' : '';
+  const primaryActivity = [...activityColumns][0];
+  const activityHeader = mixedActivity ? 'Usage' : primaryActivity?.label + rateSuffix;
+  const sortable = (key, label, className, title) => {
     const active = sort.key === key;
     const requestDirection = active
       ? (sort.direction === 'desc' ? 'asc' : 'desc')
@@ -142,6 +207,7 @@ export default function HeatmapPlayerResults({
         className={'companion-heatmap-player-column-heading gs-focusable' + (className ? ' ' + className : '')}
         data-direction={active ? sort.direction : undefined}
         aria-label={label + current}
+        title={title}
         onClick={() => setSort({ key, direction: requestDirection })}
       >
         {label}{active && <span aria-hidden="true">{sort.direction === 'desc' ? ' ↓' : ' ↑'}</span>}
@@ -150,13 +216,15 @@ export default function HeatmapPlayerResults({
   };
 
   return (
-    <section className={'companion-heatmap-player-results' + (hasActivity ? ' has-activity' : '')}
+    <section className={'companion-heatmap-player-results' + (hasActivity ? ' has-activity' : '') + (hasTackles ? ' has-tackles' : '')}
       aria-label={upcoming ? 'Players' : 'Game leaders'}>
       <div className="companion-heatmap-player-headings" role="group" aria-label="Sort player results">
         {sortable('name', 'Player', 'companion-heatmap-player-name-heading')}
         <div className="companion-heatmap-player-metric-headings">
           {sortable('snap', 'Snap %')}
-          {hasActivity && sortable('activity', activityHeader)}
+          {hasActivity && sortable('activity', activityHeader, undefined, mixedActivity ? undefined : primaryActivity?.title)}
+          {hasTackles && sortable('tackles', 'Tkl' + rateSuffix, 'companion-heatmap-extra-tackles')}
+          {sortable('seasonPoints', 'Season Pts', 'companion-heatmap-extra-total', 'Total fantasy points for the season')}
           {sortable('value', valueLabel)}
         </div>
       </div>
@@ -198,10 +266,14 @@ export default function HeatmapPlayerResults({
                   <CompanionPlayerMetric key="snap" compact value={formatSnap(row.snap)}
                     className={row.snap != null ? 'companion-heatmap-snap-value' : ''}
                     title={upcoming ? 'Average of reported game snap percentages' : undefined} />,
-                  hasActivity && (row.activity == null ? <span key="activity" aria-hidden="true" /> : (
+                  hasActivity && (
                     <CompanionPlayerMetric key="activity" compact value={formatValue(row.activity)}
-                      label={mixedActivity ? row.activityLabel + (upcoming ? '/G' : '') : undefined} />
-                  )),
+                      label={mixedActivity && row.activityColumns[0] ? row.activityColumns[0].label + rateSuffix : undefined} />
+                  ),
+                  hasTackles && <CompanionPlayerMetric key="tackles" compact className="companion-heatmap-extra-tackles"
+                    value={formatValue(row.tackles)} />,
+                  <CompanionPlayerMetric key="seasonPoints" compact className="companion-heatmap-extra-total"
+                    value={formatValue(row.seasonPoints)} />,
                   <CompanionPlayerMetric key="value" compact value={formatValue(row.value)} />,
                 ]}
                 trailing={<CaretDownIcon size={16} aria-hidden="true" className="companion-heatmap-player-chevron" />}

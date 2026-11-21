@@ -17845,11 +17845,39 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 .companion-heatmap-player-results {
   --heatmap-player-row-grid: 34px minmax(0, 1fr) auto 16px;
   --heatmap-player-metric-width: 64px;
-  --heatmap-player-metric-grid: repeat(2, var(--heatmap-player-metric-width));
+  --heatmap-player-priority-count: 2;
+  --heatmap-player-total-count: 1;
+  --heatmap-player-tackles-count: 0;
+  --heatmap-player-metric-grid: repeat(
+    calc(var(--heatmap-player-priority-count) + var(--heatmap-player-total-count) + var(--heatmap-player-tackles-count)),
+    var(--heatmap-player-metric-width)
+  );
 }
 
 .companion-heatmap-player-results.has-activity {
-  --heatmap-player-metric-grid: repeat(3, var(--heatmap-player-metric-width));
+  --heatmap-player-priority-count: 3;
+}
+
+.companion-heatmap-player-results.has-tackles {
+  --heatmap-player-tackles-count: 1;
+}
+
+@container heatmap-drilldown (width < 610px) {
+  .companion-heatmap-player-results { --heatmap-player-total-count: 0; }
+
+  .companion-heatmap-extra-total,
+  .companion-heatmap-player-row .companion-player-row__column:has(> .companion-heatmap-extra-total) {
+    display: none;
+  }
+}
+
+@container heatmap-drilldown (width < 760px) {
+  .companion-heatmap-player-results.has-tackles { --heatmap-player-tackles-count: 0; }
+
+  .companion-heatmap-extra-tackles,
+  .companion-heatmap-player-row .companion-player-row__column:has(> .companion-heatmap-extra-tackles) {
+    display: none;
+  }
 }
 
 .companion-heatmap-player-headings {
@@ -17872,6 +17900,7 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   text-align: end;
   font-size: var(--type-label);
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .companion-heatmap-player-column-heading[data-direction] {
@@ -17904,6 +17933,13 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
 
 .companion-heatmap-player-row .companion-player-row__trailing {
   color: var(--companion-player-value-fg);
+}
+
+.companion-heatmap-player-row .companion-player-row__metric-label {
+  display: block;
+  letter-spacing: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .companion-heatmap-player-row[aria-expanded="true"] .companion-heatmap-player-chevron {
@@ -17987,6 +18023,20 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   align-items: center;
   gap: 5px;
   white-space: nowrap;
+}
+
+.companion-heatmap-game-season-total { display: none; }
+
+.companion-heatmap-game-log .companion-heatmap-game-season-total td { text-align: end; }
+
+@container heatmap-drilldown (width < 610px) {
+  .companion-heatmap-game-season-total { display: table-footer-group; }
+}
+
+.companion-heatmap-game-absence {
+  max-inline-size: 11em;
+  color: var(--color-label-secondary);
+  overflow-wrap: anywhere;
 }
 
 .companion-heatmap-score-breakdown {

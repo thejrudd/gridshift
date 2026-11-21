@@ -1,3 +1,6 @@
+import { getAvailabilityStatusLabel, canonicalizeAvailabilityStatus } from './playerAvailabilityStatus.js';
+import { getProviderIdentityKey, getProviderPlayerIdentity } from './providerPlayerIdentity.js';
+import { positionGroup } from './playerMetrics.js';
 import { calcPoints } from './scoringEngine.js';
 import { isFinalScheduleGame } from './statisticsSchedule.js';
 
@@ -8,6 +11,74 @@ import { isFinalScheduleGame } from './statisticsSchedule.js';
 const OFFENSE_POS_SET = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
 const DIRECT_OFFENSE_STAT_KEYS = new Set(['rec_yd', 'rush_yd', 'pass_td', 'rec_td', 'rush_td', 'pass_sack', 'pass_int']);
 const HEATMAP_OFFENSE_TABLE_CACHE = new WeakMap();
+
+const TACKLES = { label: 'Tkl', keys: ['idp_tkl'], official: ['totalTackles', 'tackles'], combinedTackles: true };
+const PLAYER_ACTIVITY = {
+  QB: [{ label: 'Att', keys: ['pass_att'], official: ['passingAttempts'] }],
+  RB: [{ label: 'Car', keys: ['rush_att'], official: ['rushingAttempts'] }],
+  WR: [{ label: 'Tgt', keys: ['rec_tgt'], official: ['receivingTargets'] }],
+  TE: [{ label: 'Tgt', keys: ['rec_tgt'], official: ['receivingTargets'] }],
+  K: [{ label: 'FGA', keys: ['fga'], official: ['fieldGoalAttempts'] }],
+  DL: [{ label: 'Sacks', keys: ['idp_sack'], official: ['sacks'], sparse: true }, TACKLES],
+  LB: [TACKLES],
+  DB: [{ label: 'PD', title: 'Passes defended', keys: ['idp_pd', 'idp_pass_def'], official: ['passesDefended'], sparse: true }, TACKLES],
+};
+
+export function getHeatmapPlayerActivityColumns(position) {
+  return PLAYER_ACTIVITY[positionGroup(position)] ?? [];
+}
+
+function readStat(stats, keys) {
+  for (const key of keys) {
+    const raw = stats?.[key];
+    if (raw != null && raw !== '' && Number.isFinite(Number(raw))) return Number(raw);
+  }
+  return null;
+}
+
+export function getHeatmapPlayerActivity(column, entry, officialStats) {
+  const recorded = readStat(entry, column.keys);
+  if (recorded != null) return recorded;
+  if (column.combinedTackles) {
+    const solo = readStat(entry, ['idp_tkl_solo']);
+    const assists = readStat(entry, ['idp_tkl_ast']);
+    if (solo != null || assists != null) return (solo ?? 0) + (assists ?? 0);
+  }
+  return readStat(officialStats, column.official)
+    // Individual defense lines omit zero sacks and passes defended.
+    ?? (column.sparse && entry && Object.keys(entry).some(key => key.startsWith('idp_')) ? 0 : null);
+}
+
+export function isHeatmapInactiveWeek(entry) {
+  const gamesPlayed = entry?.gp ?? entry?.games_played ?? entry?.gamesPlayed;
+  return entry?._isInactive === true || entry?.isInactive === true
+    || (gamesPlayed != null && gamesPlayed !== '' && Number(gamesPlayed) === 0);
+}
+
+/** Designations are keyed to the game week. Current roster injuries cannot explain past absences. */
+export function getHeatmapInactiveDescription(designations, player, season, week) {
+  const identity = getProviderIdentityKey(getProviderPlayerIdentity(player));
+  if (!identity) return null;
+  const matches = (designations ?? []).filter(record => (
+    Number(record.season) === Number(season)
+    && Number(record.week) === Number(week)
+    && identity === getProviderIdentityKey(getProviderPlayerIdentity({
+      name: [record.player?.first_name, record.player?.last_name].filter(Boolean).join(' '),
+      team: record.team?.abbreviation,
+      position: record.player?.position_abbreviation,
+    }))
+  ));
+  if (matches.length !== 1) return null;
+  const { game_status: status, injury, active, did_not_play: didNotPlay } = matches[0];
+  const designation = canonicalizeAvailabilityStatus(status);
+  const reserve = ['Injured Reserve', 'PUP', 'NFI', 'Suspended', 'Exempt', 'Reserve', 'COVID-19'].includes(designation);
+  if (!reserve && active !== false && didNotPlay !== true && !['Out', 'DNP', 'Inactive'].includes(designation)) return null;
+  const label = reserve ? getAvailabilityStatusLabel(designation, true) : 'DNP';
+  const reason = typeof injury === 'string' ? injury.trim() : '';
+  return reason && !/^(?:none|unknown|undisclosed|not specified)$/i.test(reason)
+    ? label + ' - ' + reason
+    : label;
+}
 
 /**
  * List games that belong in a Heatmap per-game average. The season schedule
