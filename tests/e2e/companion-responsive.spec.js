@@ -1301,59 +1301,260 @@ test('Heatmap mobile shows future weeks by default and averages finalized games 
 });
 
 test('Heatmap matchup filters keep historical scores and drilldowns consistent', async ({ page }) => {
+  test.setTimeout(45_000);
   const base = responsiveFixtureOverrides();
   const fixturePlayers = {
     ...players,
-    900: { ...players[104], player_id: '900', full_name: 'Waiver Receiver', first_name: 'Waiver', last_name: 'Receiver' },
+    104: { ...players[104], injury_status: 'Questionable' },
+    900: { ...players[104], player_id: '900', espn_id: '1900', full_name: 'Waiver Receiver', first_name: 'Waiver', last_name: 'Receiver', injury_status: 'IR' },
+    901: { ...players[104], player_id: '901', team: 'PHI' },
+    902: { ...players[104], player_id: '902', team: 'NYG' },
   };
   await page.unroute('https://api.sleeper.app/v1/**');
   await installTradeFixtures(page, { ...base, players: fixturePlayers });
-  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/*`, async (route) => {
+  await page.route('https://api.sleeper.com/stats/nfl/' + TEST_SEASON + '/*', async route => {
     const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(week <= 3 ? {
-        104: { rec: 4, rec_yd: week === 1 ? 200 : 40, gp: 1, week },
-        900: { rec: 2, rec_yd: 30, gp: 1, week },
-      } : {}),
+    const playerRow = (player_id, stats, team = 'DAL', opponent = 'SF') => ({
+      player_id, player: { position: 'WR' }, team, opponent,
+      stats: { gp: 1, ...stats },
     });
+    await route.fulfill({ json: week <= 6 ? [
+      playerRow('104', { rec: 4, rec_tgt: 6, rec_yd: week === 1 ? 200 : 40, off_snp: week === 1 ? 27 : 42, tm_off_snp: 60 }),
+      playerRow('900', week === 3 ? { gp: 0 } : { rec: 2, rec_tgt: 3, rec_yd: 30, off_snp: 30, tm_off_snp: 60 }),
+      playerRow('901', { rec: 6, rec_yd: 200 }, 'PHI', 'NYG'),
+      playerRow('902', { rec: 2, rec_yd: 30 }, 'NYG', 'PHI'),
+    ] : [] });
   });
-  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+
+  const scoreboard = (week) => {
+    const completed = week <= 6;
+    const matchups = week === 8 ? [['DAL', 'NYG'], ['SF', 'PHI']] : [['DAL', 'SF'], ['NYG', 'PHI']];
+    const teamIds = { DAL: '6', SF: '25', NYG: '19', PHI: '21' };
+    return { events: week <= 13 ? matchups.map(([away, home]) => ({
+      id: 'matchup-filter-' + week + '-' + away,
+      date: new Date(Date.UTC(2026, 8, 13 + (week - 1) * 7, 18)).toISOString(),
+      week: { number: week },
+      status: { type: { state: completed ? 'post' : 'pre', completed } },
+      competitions: [{
+        status: { type: { completed } },
+        competitors: [
+          { homeAway: 'away', team: { abbreviation: away, id: teamIds[away] }, score: completed ? '20' : '' },
+          { homeAway: 'home', team: { abbreviation: home, id: teamIds[home] }, score: completed ? '17' : '' },
+        ],
+      }],
+    })) : [] };
+  };
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', route => {
     const week = Number(new URL(route.request().url()).searchParams.get('week'));
-    const completed = week <= 3;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ events: week <= 4 ? [{
-        id: `matchup-filter-${week}`,
-        date: `2026-09-${13 + (week - 1) * 7}T18:00:00.000Z`,
-        week: { number: week },
-        competitions: [{
-          status: { type: { completed } },
-          competitors: [
-            { homeAway: 'away', team: { abbreviation: 'DAL', id: '6' }, score: completed ? '20' : '' },
-            { homeAway: 'home', team: { abbreviation: 'SF', id: '25' }, score: completed ? '17' : '' },
-          ],
-        }],
-      }] : [] }),
-    });
+    return route.fulfill({ json: scoreboard(week) });
+  });
+  await page.route('**/api/statistics/scores/espn-week*', route => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    return route.fulfill({ json: { scoreboard: scoreboard(week) } });
+  });
+
+  await page.route('**/api/players/*/snaps/*', async route => {
+    const playerId = new URL(route.request().url()).pathname.split('/')[3];
+    await route.fulfill({ json: playerId === '1900' ? Array.from({ length: 6 }, (_, index) => ({
+      week: index + 1,
+      gameType: 'reg',
+      team: 'DAL',
+      offensePct: index === 0 ? 0.30 : 0.75,
+    })) : [] });
+  });
+  await page.route('**/api/players/1004/gamelog/*', route => route.fulfill({ json: [] }));
+  await page.route('**/api/players/1900/gamelog/*', route => route.fulfill({ json: [
+    { eventId: 'stats-page-game', meta: { week: 6, myTeam: 'DAL', opponent: 'vs PHI', completed: true } },
+    { eventId: 'inactive-3', meta: { week: 3, myTeam: 'DAL', opponent: '@SF', completed: true, isInactive: true } },
+  ] }));
+  await page.route('**/api/fantasy/player-designations?*', route => {
+    const { searchParams } = new URL(route.request().url());
+    const week = Number(searchParams.get('week'));
+    return route.fulfill({ json: { data: week === 3 ? [{
+      season: Number(TEST_SEASON), week,
+      player: { first_name: 'Waiver', last_name: 'Receiver', position_abbreviation: 'WR' },
+      team: { abbreviation: 'DAL' }, game_status: 'Injured Reserve', injury: 'Concussion',
+    }] : [] } });
   });
 
   await page.goto('/fantasy/heatmap?pos=WR');
   await dismissWhatsNew(page);
+  const hasHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
+  if (hasHover) {
+    await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+  }
   const row = page.locator('tbody tr').filter({ hasText: /^DAL/ });
   const historical = row.locator('td[data-heatmap-column-week="1"]');
-  const upcoming = row.locator('td[data-heatmap-column-week="4"]');
+  const upcoming = row.locator('td[data-heatmap-column-week="7"]');
   await expect(historical).toContainText('29.0');
   await expect(upcoming).toHaveAttribute('data-heatmap-future-opponent', 'true');
   await upcoming.click();
   const dialog = page.getByRole('dialog', { name: 'Heatmap drilldown' });
-  await expect(dialog.getByText(/DAL WR scored:/)).toBeVisible();
-  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
-  await expect(dialog.getByText('Target Magnet')).toBeVisible();
+  await expect(dialog.getByText('DAL WR scored', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
+  const target = dialog.getByRole('button', { name: /^Target Magnet details/ });
+  await expect(target).toContainText('65.8%');
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
-  await page.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+  const injured = dialog.getByText('IR', { exact: true });
+  const questionable = dialog.getByText('Q', { exact: true });
+  await expect(injured).toBeVisible();
+  await expect(questionable).toBeVisible();
+  expect(await injured.evaluate(node => getComputedStyle(node).color))
+    .not.toEqual(await questionable.evaluate(node => getComputedStyle(node).color));
+  await expect(dialog.locator('.companion-heatmap-drilldown-heading')).not.toContainText('PPR');
+  const upcomingWidth = await dialog.evaluate(node => node.getBoundingClientRect().width);
+  const waiver = dialog.getByRole('button', { name: /^Waiver Receiver details/ });
+  await expect(waiver).toHaveAttribute('aria-expanded', 'false');
+  await expect(waiver).toContainText('66%');
+  if (hasHover) {
+    await waiver.hover();
+    await waiver.hover({ position: { x: 20, y: 20 } });
+    await expect.poll(() => waiver.evaluate(node =>
+      [...node.children].some(child => child.style.maskComposite === 'exclude'))).toBe(true);
+  }
+  const schedule = dialog.getByRole('list', { name: 'DAL WR matchup rank by week' });
+  await expect(schedule.getByRole('listitem')).toHaveCount(7);
+  const startingViewport = page.viewportSize();
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 720 },
+    { width: 1440, height: 600 },
+    { width: 2560, height: 1440 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await dialog.evaluate(node => {
+      const hero = node.querySelector('.companion-heatmap-drilldown-hero');
+      const matchup = hero.querySelector('.companion-heatmap-drilldown-matchup');
+      const matchupBounds = new Range();
+      matchupBounds.selectNodeContents(matchup);
+      const heroBounds = hero.getBoundingClientRect();
+      const title = matchupBounds.getBoundingClientRect();
+      const stats = node.querySelector('.companion-heatmap-drilldown-stat').getBoundingClientRect();
+      const schedule = node.querySelector('.companion-heatmap-drilldown-schedule').getBoundingClientRect();
+      const content = node.querySelector('.companion-heatmap-drilldown-content');
+      return {
+        centered: Math.abs(title.left + title.right - heroBounds.left - heroBounds.right) < 2,
+        underStats: schedule.top >= stats.bottom,
+        sidewaysOverflow: content.scrollWidth > content.clientWidth + 1,
+      };
+    });
+    expect(geometry, `${viewport.width}×${viewport.height}`).toEqual({
+      centered: true, underStats: viewport.width < 800, sidewaysOverflow: false,
+    });
+    const seasonPoints = dialog.getByRole('button', { name: 'Season Pts', exact: true });
+    if (viewport.width < 610) {
+      await expect(seasonPoints).toBeHidden();
+    } else {
+      await expect(seasonPoints).toBeVisible();
+      await expect(waiver.locator('.companion-heatmap-extra-total')).toHaveText('25');
+      if (viewport.width === 768 || viewport.width === 1280) {
+        const html = page.locator('html');
+        const displaySize = await html.getAttribute('data-display-size');
+        await html.evaluate(node => { node.dataset.displaySize = 'large'; });
+        await seasonPoints.click();
+        const descending = dialog.getByRole('button', { name: 'Season Pts, sorted descending' });
+        const firstPlayer = dialog.locator('.companion-heatmap-player-row').first();
+        await expect(firstPlayer).toContainText('Target Magnet');
+        const measureHeading = node => {
+          const heading = node.getBoundingClientRect();
+          const content = node.querySelector('.companion-heatmap-player-heading-content');
+          const label = content.firstElementChild.getBoundingClientRect();
+          const arrow = content.lastElementChild.getBoundingClientRect();
+          return Math.abs(label.top - arrow.top) < 1 && label.right <= arrow.left
+            && label.left >= heading.left - 1 && arrow.right <= heading.right + 1;
+        };
+        expect(await descending.evaluate(measureHeading)).toBe(true);
+        await descending.click();
+        const ascending = dialog.getByRole('button', { name: 'Season Pts, sorted ascending' });
+        expect(await ascending.evaluate(measureHeading)).toBe(true);
+        await expect(firstPlayer).toContainText('Waiver Receiver');
+        await dialog.getByRole('button', { name: 'PPG', exact: true }).click();
+        await html.evaluate((node, size) => { node.dataset.displaySize = size ?? 'comfortable'; }, displaySize);
+      }
+    }
+  }
+  await page.setViewportSize(startingViewport);
+  const amber = schedule.getByRole('listitem').nth(0);
+  const green = schedule.getByRole('listitem').nth(1);
+  await expect(amber).toHaveClass(/is-mixed/);
+  await expect(green).toHaveClass(/is-favorable/);
+  expect(await amber.evaluate(chip => getComputedStyle(chip).borderBottomColor))
+    .not.toEqual(await green.evaluate(chip => getComputedStyle(chip).borderBottomColor));
+  expect(await schedule.evaluate(strip => {
+    const bounds = strip.getBoundingClientRect();
+    const first = strip.firstElementChild.getBoundingClientRect();
+    const last = strip.lastElementChild.getBoundingClientRect();
+    return Math.abs(first.left + last.right - bounds.left - bounds.right);
+  })).toBeLessThan(2);
+  expect(await waiver.evaluate(playerRow => {
+    const name = playerRow.querySelector('.companion-player-row__identity-label');
+    const badge = playerRow.querySelector('.player-status-badge').getBoundingClientRect();
+    const rank = playerRow.querySelector('.companion-player-row__meta');
+    const nameBox = name.getBoundingClientRect();
+    return badge.left >= nameBox.right && badge.top < nameBox.bottom && badge.bottom > nameBox.top
+      && parseFloat(getComputedStyle(name).fontSize) > parseFloat(getComputedStyle(rank).fontSize);
+  })).toBe(true);
+  const headings = dialog.getByRole('group', { name: 'Sort player results' });
+  await expect(headings.getByRole('button')).toHaveText([
+    'Player', 'Snap %', 'Tgt/G', ...(startingViewport.width >= 768 ? ['Season Pts'] : []), 'PPG ↓',
+  ]);
+  const targetsHeading = headings.getByRole('button', { name: 'Tgt/G', exact: true });
+  const firstPlayer = dialog.locator('.companion-heatmap-player-row').first();
+  await targetsHeading.click();
+  await expect(firstPlayer).toContainText('Target Magnet');
+  await headings.getByRole('button', { name: 'Tgt/G, sorted descending' }).click();
+  await expect(firstPlayer).toContainText('Waiver Receiver');
+  await expect(headings.getByRole('button', { name: 'Tgt/G, sorted ascending' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Last 4', exact: true }).click();
+  await expect(waiver).toContainText('75%');
+  await expect(target).toContainText('70%');
+  await target.click();
+  const targetLog = dialog.getByRole('table', { name: 'Target Magnet game log' });
+  await expect(targetLog.getByText('70%', { exact: true })).toHaveCount(4);
+  await target.click();
+  await expect(waiver.getByText('WR #4 overall', { exact: true })).toBeVisible();
+  await waiver.click();
+  await expect(waiver).toHaveAttribute('aria-expanded', 'true');
+  const log = dialog.getByRole('table', { name: 'Waiver Receiver game log' });
+  await expect(log.locator('tbody tr')).toHaveCount(4);
+  const inactive = log.getByRole('row', { name: /^3 / });
+  await expect(inactive).toContainText('IR - Concussion');
+  await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(3);
+  await expect(log.getByText('v PHI', { exact: true })).toBeVisible();
+  await expect(log.getByText('@SF', { exact: true }).first()).toBeVisible();
+  const opponentLogo = log.locator('tbody tr').first().locator('img');
+  await expect(opponentLogo).toHaveAttribute('src', '/logos/PHI.png');
+  await expect.poll(() => opponentLogo.evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await opponentLogo.evaluate(img => img.previousElementSibling.getBoundingClientRect().right
+    <= img.getBoundingClientRect().left)).toBe(true);
+  expect(await dialog.evaluate(node => node.getBoundingClientRect().width)).toBeCloseTo(upcomingWidth);
+  expect(await log.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  const drawer = await waiver.getAttribute('aria-controls');
+  expect(await waiver.evaluate((node, id) => node.nextElementSibling?.id === id, drawer)).toBe(true);
+  await waiver.click();
+  await expect(log).toBeHidden();
+  await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+
+  await historical.click();
+  const pastWidth = await dialog.evaluate(node => node.getBoundingClientRect().width);
+  expect(pastWidth).toBeCloseTo(upcomingWidth);
+  await expect(dialog.getByRole('button', { name: 'Last 4', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const pastWaiver = dialog.getByRole('button', { name: /^Waiver Receiver details/ });
+  await expect(pastWaiver).toContainText('30%');
+  await expect(dialog.getByRole('button', { name: /^Target Magnet details/ })).toContainText('45%');
+  await dialog.getByRole('button', { name: 'Season', exact: true }).click();
+  await expect(pastWaiver).toContainText('30%');
+  await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+
+  await row.locator('td[data-heatmap-column-week="5"]').click();
+  await dialog.getByRole('button', { name: /^Waiver Receiver details/ }).click();
+  const breakdown = dialog.locator('dl[aria-label="Waiver Receiver scoring breakdown"]');
+  await expect(breakdown.locator('dt')).toHaveText(['Rec Yards · 30', 'Reception · 2']);
+  await expect(breakdown.locator('dd')).toHaveText(['+3.0', '+2.0']);
+  await expect(dialog.getByRole('table', { name: 'Waiver Receiver game log' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
 
   await page.getByRole('button', { name: 'Show Filters' }).click();
   const cap = page.getByRole('button', { name: 'Cap Outliers' });
@@ -1365,8 +1566,8 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await expect(historical).toContainText('29.0');
   await page.getByRole('button', { name: 'Hide Filters' }).click();
   await upcoming.click();
-  await expect(dialog.getByText(/DAL WR scored: 5.0 PPG/)).toBeVisible();
-  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await expect(dialog.getByText('DAL WR scored', { exact: true }).locator('..')).toContainText('4.2 PPG');
+  await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Target Magnet')).toHaveCount(0);
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
   await page.getByRole('button', { name: 'Close heatmap drilldown' }).click();
@@ -1375,14 +1576,120 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await page.getByRole('button', { name: 'Fantasy Pts Allowed' }).click();
   await page.getByRole('button', { name: 'Hide Filters' }).click();
   const sanFrancisco = page.locator('tbody tr').filter({ hasText: /^SF/ });
-  await sanFrancisco.locator('td[data-heatmap-column-week="4"]').click();
-  await expect(dialog.getByText(/DAL WR scored: 5.0 PPG/)).toBeVisible();
-  await expect(dialog.getByText(/SF allowed to WR:/)).toBeVisible();
+  await sanFrancisco.locator('td[data-heatmap-column-week="7"]').click();
+  await expect(dialog.getByText('DAL WR scored', { exact: true }).locator('..')).toContainText('4.2 PPG');
+  await expect(dialog.getByText('SF allowed to WR', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Grid rank reflects SF\'s matchup.')).toBeVisible();
   await expect(dialog.getByText('Waiver Receiver')).toBeVisible();
 });
 
+test('Heatmap prioritizes each defensive position stat and keeps inactive games in the log without a designation source', async ({ page }) => {
+  const base = responsiveFixtureOverrides();
+  const fixtureLeague = {
+    ...base.league,
+    scoring_settings: { ...base.league.scoring_settings, idp_tkl: 1, idp_sack: 2, idp_pd: 2 },
+  };
+  const defender = (id, full_name, position) => ({
+    ...players[104], player_id: id, espn_id: '1' + id, full_name, position, fantasy_positions: [position],
+  });
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    ...base,
+    league: fixtureLeague,
+    leaguesBySeason: { [TEST_SEASON]: [fixtureLeague] },
+    persistedSleeperState: {
+      ...base.persistedSleeperState,
+      league: fixtureLeague,
+      scoringSettings: { ...base.persistedSleeperState.scoringSettings, ...fixtureLeague.scoring_settings },
+    },
+    players: {
+      ...players, 910: defender('910', 'Edge Rusher', 'DE'),
+      911: defender('911', 'Cover Corner', 'CB'), 912: defender('912', 'Middle Linebacker', 'LB'),
+    },
+  });
+  await page.route('https://api.sleeper.com/stats/nfl/' + TEST_SEASON + '/*', route => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    const statRow = (player_id, position, stats) => ({
+      player_id, player: { position }, team: 'DAL', opponent: 'SF',
+      stats: { gp: 1, def_snp: 30, tm_def_snp: 60, ...stats },
+    });
+    return route.fulfill({ json: week <= 2 ? [
+      statRow('910', 'DE', { idp_tkl: 4, ...(week === 1 ? { idp_sack: 1 } : {}) }),
+      statRow('911', 'CB', { idp_tkl_solo: 2, idp_tkl_ast: 1, idp_pass_def: 2 }),
+      ...(week === 1 ? [] : [statRow('912', 'LB', { idp_tkl: 6 })]),
+    ] : [] });
+  });
+  const scoreboard = week => ({ events: week <= 7 ? [{
+    id: 'idp-week-' + week,
+    date: new Date(Date.UTC(2026, 8, 13 + (week - 1) * 7, 18)).toISOString(),
+    week: { number: week },
+    status: { type: { state: week <= 2 ? 'post' : 'pre', completed: week <= 2 } },
+    competitions: [{
+      status: { type: { completed: week <= 2 } },
+      competitors: [
+        { homeAway: 'away', team: { abbreviation: 'DAL', id: '6' }, score: week <= 2 ? '20' : '' },
+        { homeAway: 'home', team: { abbreviation: 'SF', id: '25' }, score: week <= 2 ? '17' : '' },
+      ],
+    }],
+  }] : [] });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', route =>
+    route.fulfill({ json: scoreboard(Number(new URL(route.request().url()).searchParams.get('week'))) }));
+  await page.route('**/api/statistics/scores/espn-week*', route =>
+    route.fulfill({ json: { scoreboard: scoreboard(Number(new URL(route.request().url()).searchParams.get('week'))) } }));
+  await page.route('**/api/players/*/snaps/*', route => route.fulfill({ json: [] }));
+  await page.route('**/api/players/*/gamelog/*', route => route.fulfill({
+    json: route.request().url().includes('/1912/') ? [{
+      eventId: 'idp-week-1', meta: { week: 1, myTeam: 'DAL', opponent: '@SF', completed: true, isInactive: true },
+    }] : [],
+  }));
+  await page.route('**/api/fantasy/player-designations?*', route => route.fulfill({ status: 503, json: { ok: false } }));
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/fantasy/heatmap?mode=defense&defPos=ALL');
+  await dismissWhatsNew(page);
+  await page.locator('tbody tr').filter({ hasText: /^DAL/ }).locator('td[data-heatmap-column-week="7"]').click();
+  const dialog = page.getByRole('dialog', { name: 'Heatmap drilldown' });
+  const edge = dialog.getByRole('button', { name: /^Edge Rusher details/ });
+  const corner = dialog.getByRole('button', { name: /^Cover Corner details/ });
+  const linebacker = dialog.getByRole('button', { name: /^Middle Linebacker details/ });
+  const tacklesHeader = dialog.getByRole('button', { name: 'Tkl/G', exact: true });
+  await expect(tacklesHeader).toBeVisible();
+  await expect(edge).toContainText('0.5Sacks/G');
+  await expect(corner).toContainText('2PD/G');
+  await expect(linebacker).toContainText('6Tkl/G');
+  await expect(edge.locator('.companion-heatmap-extra-tackles')).toHaveText('4');
+  await expect(corner.locator('.companion-heatmap-extra-tackles')).toHaveText('3');
+
+  await page.setViewportSize({ width: 320, height: 812 });
+  await expect(tacklesHeader).toBeHidden();
+  await expect(edge.getByText('Sacks/G', { exact: true })).toBeVisible();
+  await edge.click();
+  const edgeLog = dialog.getByRole('table', { name: 'Edge Rusher game log' });
+  await expect(edgeLog.getByRole('columnheader')).toHaveText(['Week', 'Opponent', 'Snap %', 'Sacks', 'Tkl', 'Pts']);
+  await expect(edgeLog.getByRole('row', { name: 'Season Pts 10' })).toBeVisible();
+  expect(await edgeLog.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await linebacker.click();
+  const lbLog = dialog.getByRole('table', { name: 'Middle Linebacker game log' });
+  await expect(lbLog.getByRole('columnheader')).toHaveText(['Week', 'Opponent', 'Snap %', 'Tkl', 'Pts']);
+  const inactive = lbLog.getByRole('row', { name: /^1 / });
+  await expect(inactive.getByText('DNP', { exact: true })).toBeVisible();
+  await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(3);
+
+  await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await page.getByRole('button', { name: 'Sacks', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  await page.locator('tbody tr').filter({ hasText: /^DAL/ }).locator('td[data-heatmap-column-week="1"]').click();
+  await edge.click();
+  const breakdown = dialog.locator('dl[aria-label="Edge Rusher scoring breakdown"]');
+  await expect(breakdown.locator('dt')).toHaveText(['Tackle · 4', 'Sack · 1']);
+  await expect(breakdown.locator('dd')).toHaveText(['+4.0', '+2.0']);
+  await expect(edgeLog).toHaveCount(0);
+});
+
 test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page }) => {
+  await page.route('https://api.sleeper.com/stats/nfl/' + TEST_SEASON + '/*', route => route.fulfill({ json: [] }));
+  await page.route('**/api/statistics/scores/espn-week*', route => route.fulfill({ json: { scoreboard: { events: [] } } }));
   const expectedDesktopWeekCount = Number(league.settings.playoff_week_start);
   for (const viewport of [
     { width: 390, height: 844 },

@@ -1,5 +1,5 @@
 import { FantasyTabActivationContext } from '../../context/FantasyTabVisibility.js';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSleeperBase, useSleeperStatsEnhancing, useSleeperStatsProgress } from '../../context/SleeperContext';
 import { useTheme } from '../../context/ThemeContext';
 import { calcPoints } from '../../utils/scoringEngine';
@@ -76,6 +76,7 @@ import { getLeagueHistorySnapshot, buildLeagueHistoryModel } from '../../utils/l
 import { isFullGameWeekComplete } from '../../utils/matchupTaleOfTape.js';
 import PlayerMatchupCompare from './PlayerMatchupCompare.jsx';
 import useMatchupLiveFeed from '../../hooks/useMatchupLiveFeed.js';
+import useLiveGameClock from '../../hooks/useLiveGameClock.js';
 import MatchupReplayBar from './matchup/MatchupReplayBar.jsx';
 import MatchupLiveChart from './matchup/MatchupLiveChart.jsx';
 import { traceLiveMilestone } from '../../utils/liveLoadTrace.js';
@@ -2116,22 +2117,28 @@ function CompanionMatchupView({
       ? liveGameStateFor(player.id)
       : { state: isPlayerGameFinal(player) ? 'final' : player.gameStarted ? 'live' : 'pre', progress: 0 };
     let clock = null;
+    // The shared ticking clock's game (live, not replaying, BALLDONTLIE);
+    // the row's LiveGameClock leaf is then the only part that ticks.
+    let clockGame = null;
     if (state === 'live' && !tracked && effectiveReplayAt == null && liveLayerActive) {
       // Bench players are not tracked per player; find their game by team.
       const team = getTeamAbbr(player.team);
       const game = (live.games ?? []).find((entry) => getTeamAbbr(entry?.home_team) === team || getTeamAbbr(entry?.visitor_team) === team);
       clock = game ? getLiveGameClockLabel(game) ?? null : null;
+      clockGame = game ? live.clockGamesById.get(String(game.id)) ?? null : null;
     } else if (state === 'live' && tracked) {
       if (effectiveReplayAt == null) {
-        clock = getLiveGameClockLabel(live.starterGameStateById.get(String(player.id))?.game) ?? null;
+        const game = live.starterGameStateById.get(String(player.id))?.game;
+        clock = getLiveGameClockLabel(game) ?? null;
+        clockGame = game ? live.clockGamesById.get(String(game.id)) ?? null : null;
       } else {
         const quarter = Math.min(4, Math.floor(progress * 4) + 1);
         const seconds = Math.floor((1 - ((progress * 4) % 1)) * 900);
         clock = `Q${quarter} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
       }
     }
-    return { state, clock };
-  }, [effectiveReplayAt, live.games, live.starterGameStateById, liveGameStateFor, liveLayerActive]);
+    return { state, clock, clockGame };
+  }, [effectiveReplayAt, live.clockGamesById, live.games, live.starterGameStateById, liveGameStateFor, liveLayerActive]);
 
   const cardStatLineFor = useCallback((player) => {
     const status = cardGameStatusFor(player);
@@ -2348,8 +2355,12 @@ function CompanionMatchupView({
     const kickoffWindow = liveGame ? live.axis.windowByGameId.get(String(liveGame.id)) : null;
     const kickoffLabel = kickoffWindow ? `Kicks off ${kickoffWindow.longLabel}` : gameLabel;
     const clockLabel = state === 'live' ? quarterClock() : state === 'final' ? gameLabel : kickoffLabel;
-    return { player, side, state, progress, plays, points, clockLabel };
-  }, [effectiveReplayAt, hoverTarget, live.axis, live.starterGameStateById, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive, livePlaysFor, starterById]);
+    // Live now (never a replay moment): the shared ticking clock's game.
+    const clockGame = state === 'live' && effectiveReplayAt == null && liveGame
+      ? live.clockGamesById.get(String(liveGame.id)) ?? null
+      : null;
+    return { player, side, state, progress, plays, points, clockLabel, clockGame };
+  }, [effectiveReplayAt, hoverTarget, live.axis, live.clockGamesById, live.starterGameStateById, liveDisplayedPoints, liveFrame, liveGameStateFor, liveLayerActive, livePlaysFor, starterById]);
 
   useEffect(() => {
     const requestedPlayerId = initialWeekRequest?.playerId;
@@ -2934,6 +2945,7 @@ function CompanionMatchupView({
           state={hoverCardData.state}
           gameProgress={hoverCardData.progress}
           clockLabel={hoverCardData.clockLabel}
+          clockGame={hoverCardData.clockGame}
           points={hoverCardData.points}
           plays={hoverCardData.plays}
           weeklyRows={hoverCardData.player.weekly ?? weeklyStats?.[hoverCardData.player.id] ?? []}
@@ -3679,6 +3691,19 @@ function getPlayerPerformanceTarget(player, actualScore, projectedPts) {
   return Number.isFinite(outlook.expectedAtNow) ? outlook.expectedAtNow : null;
 }
 
+// The row's live clock ("Q2 4:12"): the shared ticking clock (LiveGameClock's
+// markup, with the row's own separator) and, while it is held for a known
+// reason, that reason. Only this leaf re-renders each second.
+const MatchupRowLiveClock = memo(function MatchupRowLiveClock({ game, fallbackLabel }) {
+  const { label, stopReason } = useLiveGameClock(game, { fallbackLabel });
+  return (
+    <span className="live-game-clock">
+      <span className="live-game-clock__time">{String(label ?? fallbackLabel ?? 'Live').replace(' · ', ' ')}</span>
+      {stopReason && <span className="live-game-clock__reason">{stopReason}</span>}
+    </span>
+  );
+});
+
 function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact = false, align = 'left', onSelect, onOpenInjuries = null, nameFontSize = 13, statLine = null, gameStatus = null }) {
   const isRight = align === 'right';
   if (lineupUnavailable) {
@@ -3843,7 +3868,9 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       metaPrefix={gameStatus?.state === 'live' ? (
         <span className="companion-matchup-live-status">
           <i className="matchup-live-dot" aria-hidden="true" />
-          {(gameStatus.clock ?? 'Live').replace(' · ', ' ')}
+          {gameStatus.clockGame
+            ? <MatchupRowLiveClock game={gameStatus.clockGame} fallbackLabel={gameStatus.clock ?? 'Live'} />
+            : (gameStatus.clock ?? 'Live').replace(' · ', ' ')}
         </span>
       ) : undefined}
       detail={statLine ? statLine.map((segment, index) => (

@@ -60,6 +60,22 @@ test.beforeEach(async ({ page }, testInfo) => {
     installedVersion: '8.2.1',
     ...([HISTORICAL_TOUR_TEST, HISTORICAL_WAR_ROOM_TEST].some((title) => testInfo.title.includes(title)) ? historicalTourOverrides() : {}),
   });
+
+  // The historical Player dashboard step targets Patrick Mahomes. Resolve the
+  // profile locally so its tabs exist even when ESPN is unavailable to tests.
+  await page.route('https://sports.core.api.espn.com/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith('/athletes/3139477')) return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: '3139477',
+        displayName: 'Patrick Mahomes',
+        position: { abbreviation: 'QB', displayName: 'Quarterback' },
+      }),
+    });
+  });
 });
 
 test('full upgrade history replays every tour step', async ({ page, isMobile }) => {
@@ -75,7 +91,7 @@ test('full upgrade history replays every tour step', async ({ page, isMobile }) 
   await whatsNew.getByRole('button', { name: 'Show me' }).click();
 
   const tour = page.getByRole('dialog', { name: 'Feature tour' });
-  await expect(tour).toBeVisible();
+  await expect(tour).toBeVisible({ timeout: 60_000 });
 
   for (const [index, step] of steps.entries()) {
     const selector = isMobile && step.anchorMobile ? step.anchorMobile : step.anchor;

@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { usePointerFollow } from './usePointerFollow.js';
+import LiveGameClock from '../../shared/LiveGameClock.jsx';
 import { calcPoints } from '../../../utils/scoringEngine';
 import { getHoverCardMode } from '../../../utils/matchupReplay.js';
 import { buildStatChips, getGameStatLine, sumStats } from '../../../utils/matchupStatChips.js';
@@ -23,6 +24,9 @@ export default function MatchupPlayerHoverCard({
   state,
   gameProgress = 0,
   clockLabel = '',
+  // The shared ticking clock's game while live and not replaying; the header
+  // then ticks through the LiveGameClock leaf, otherwise it shows clockLabel.
+  clockGame = null,
   points = 0,
   plays = [],
   weeklyRows = [],
@@ -96,7 +100,9 @@ export default function MatchupPlayerHoverCard({
         <span className="matchup-hover-card__name">{player?.name}</span>
         <span className={`matchup-hover-card__state${mode === 'live' ? ' is-live' : ''}`}>
           {mode === 'live' && <i className="matchup-live-dot" aria-hidden="true" />}
-          {mode === 'live' ? `Live · ${clockLabel}` : mode === 'final' ? `Final · ${clockLabel}` : `Season · ${clockLabel}`}
+          {mode === 'live'
+            ? <>Live · {clockGame && !replaying ? <LiveGameClock game={clockGame} fallbackLabel={clockLabel} /> : clockLabel}</>
+            : mode === 'final' ? `Final · ${clockLabel}` : `Season · ${clockLabel}`}
         </span>
       </div>
 

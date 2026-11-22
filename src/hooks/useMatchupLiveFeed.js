@@ -86,6 +86,13 @@ import { LIVE_SANDBOX_ENABLED, subscribeToRewind, useLiveSandbox } from '../dev/
 import { traceLiveMilestone, traceLiveWork } from '../utils/liveLoadTrace.js';
 import { getMatchupLiveCadence, isDeepEqual } from '../utils/liveRefreshCadence.js';
 import { createVisiblePoller, isPageActive } from '../utils/visiblePolling.js';
+import { getLatestBdlScorePlay } from '../utils/balldontlieNflScoreboard.js';
+import {
+  EMPTY_CLOCK_STATE,
+  NO_CLOCK_GAMES,
+  advanceLiveClockState,
+  getClockSampleTiming,
+} from '../utils/matchupLiveClockState.js';
 
 const LIVE_REFRESH_MS = 5000;
 const FREE_TIER_REFRESH_MS = 60000;
@@ -398,6 +405,9 @@ export default function useMatchupLiveFeed({
   const [feedEvents, setFeedEvents] = useState([]);
   const [weatherMap, setWeatherMap] = useState({});
   const [playsState, setPlaysState] = useState({ key: null, byGame: NO_PLAYS });
+  // The shared game clock's samples for this feed (see advanceLiveClockState).
+  // Updated only when a games or plays response lands, never per second.
+  const [liveClockState, setLiveClockState] = useState(EMPTY_CLOCK_STATE);
   const playsByGame = playsState.key === feedKey ? playsState.byGame : NO_PLAYS;
   const storeGamePlays = useCallback((requestFeedKey, gameId, plays) => {
     setPlaysState((prev) => ({
@@ -447,6 +457,7 @@ export default function useMatchupLiveFeed({
       setFinalReconciliation(current => ({ ...current, status: 'idle', requestedAt: null, completedAt: null, attempts: 0 }));
       setFeedEvents([]);
       setPlaysState({ key: null, byGame: NO_PLAYS });
+      setLiveClockState(EMPTY_CLOCK_STATE);
       setWinProbHistory([]);
     });
   }, [resetReconciliation]);
@@ -553,6 +564,7 @@ export default function useMatchupLiveFeed({
     setFeedEvents([]);
     setPlaysState({ key: null, byGame: NO_PLAYS });
     setLiveGamesState({ key: null, games: NO_GAMES });
+    setLiveClockState(EMPTY_CLOCK_STATE);
     setStatsByGame({});
   }, [selectedLeagueId, season, week, matchupId, sandboxMode, resetReconciliation]);
 
@@ -632,11 +644,18 @@ export default function useMatchupLiveFeed({
       const gamesPayload = await liveSource.getLiveGames({ season, week });
       if (!isCurrentRequest()) return;
       const games = Array.isArray(gamesPayload?.data) ? gamesPayload.data : [];
+      const gamesSample = getClockSampleTiming(gamesPayload, Date.now());
       // Unchanged payloads keep their identity, so a quiet tick does not
       // rebuild the axis, play events or anything else keyed on them.
       setLiveGamesState((prev) => (
         prev.key === requestFeedKey && isDeepEqual(prev.games, games) ? prev : { key: requestFeedKey, games }
       ));
+      // The ticking clock's own copy (presentation only; the dev sandbox never
+      // ticks). A sample that moves no clock keeps the previous state.
+      setLiveClockState((prev) => advanceLiveClockState(prev, requestFeedKey, () => ({
+        rawGames: games,
+        gamesSample,
+      }), { enabled: !sandboxActive }));
       if (!quiet) traceLiveMilestone('games loaded', { detail: `${games.length} games` });
       setGamesLoadedContext(requestContext);
 
@@ -1283,6 +1302,18 @@ export default function useMatchupLiveFeed({
             const fetchedPlays = Array.isArray(payload?.data) ? payload.data : [];
             if (sessionCacheable && fetchedPlays.length) rememberFinalGamePlays(gameId, fetchedPlays);
             storeGamePlays(requestFeedKey, gameId, fetchedPlays);
+            // The game's latest provider play explains a held clock. Mock and
+            // sandbox plays never reach the clock.
+            if (!final && !mockPlays && !sandbox) {
+              const latestPlay = getLatestBdlScorePlay(fetchedPlays);
+              const timing = getClockSampleTiming(payload, Date.now());
+              setLiveClockState((prev) => advanceLiveClockState(prev, requestFeedKey, (base) => ({
+                latestPlays: {
+                  ...base.latestPlays,
+                  [gameId]: latestPlay ? { play: latestPlay, ...timing, stale: timing.feedStale } : null,
+                },
+              })));
+            }
             traceLiveMilestone(`plays in: game ${gameId}`, { detail: `${fetchedPlays.length} plays` });
           } catch {
             // Leave the marker unset so a later tick can retry.
@@ -1341,6 +1372,11 @@ export default function useMatchupLiveFeed({
     liveGames.forEach((game) => map.set(String(game.id), game));
     return map;
   }, [liveGames]);
+
+  // Provider game id -> the shared ticking clock's game. Read only by the
+  // LiveGameClock leaf; never by win probability, pace, progress, replay,
+  // reconciliation or charts, which read `liveGames`.
+  const clockGamesById = liveClockState.key === feedKey ? liveClockState.clockGames : NO_CLOCK_GAMES;
 
   // The week's kickoff-window axis: the chart, the replay bar and the feed all
   // place events on it.
@@ -1700,6 +1736,7 @@ export default function useMatchupLiveFeed({
     enableLive,
     games: liveGames,
     gamesById,
+    clockGamesById,
     axis,
     nowProgress: slateProgress,
     matchupLiveGameCount,
