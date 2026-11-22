@@ -8,7 +8,6 @@ import {
   DEFENSE_RANKING_POSITIONS,
   buildDefenseRankingRows,
   buildOffenseStrengthRanking,
-  filterDefenseRankingRows,
   formatDefenseRankingValue,
   getDefaultDefenseRankingStat,
   getDefenseRankingStatOption,
@@ -75,6 +74,29 @@ function getTeamLogoUrl(team) {
 
 function getTeamDisplayName(team) {
   return TEAM_DISPLAY_NAMES[team] ?? team;
+}
+
+function normalizeDefenseSearchText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/\b(?:d\s*\/\s*st|d\s+st|dst|team|defenses?|def)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function matchesDefenseTeamSearch(team, query) {
+  const terms = normalizeDefenseSearchText(query).split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+
+  const aliases = [team, getTeamDisplayName(team)];
+  if (team === 'NYG' || team === 'NYJ') aliases.push('NY');
+  const searchable = normalizeDefenseSearchText(aliases.join(' ')).split(/\s+/).filter(Boolean);
+  const code = normalizeDefenseSearchText(team);
+  return terms.every((term) => (
+    code === term
+    || (term.length >= 2 && code.startsWith(term))
+    || searchable.some((word) => word === term || (term.length >= 3 && word.includes(term)))
+  ));
 }
 
 function DefenseContributionAvatar({ player }) {
@@ -322,10 +344,8 @@ export default function CompanionDefense({
   ), [activeScoringSettings, players, scheduleMap, seasonStarted, state.dir, state.mode, state.position, state.sort, state.stat, weeklyStats]);
 
   const filteredRows = useMemo(() => {
-    const query = state.query.trim().toUpperCase();
-    if (!query) return rows;
-    const abbreviationMatches = new Set(filterDefenseRankingRows(rows, state.query).map(row => row.team));
-    return rows.filter(row => abbreviationMatches.has(row.team) || getTeamDisplayName(row.team).toUpperCase().includes(query));
+    if (!state.query.trim()) return rows;
+    return rows.filter((row) => matchesDefenseTeamSearch(row.team, state.query));
   }, [rows, state.query]);
   const hasDefenseData = rows.some((row) => row.contributions.length > 0);
   // Defenses opened from a Schedule matchup pin both teams above the list.

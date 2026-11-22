@@ -44,6 +44,10 @@ BALLDONTLIE is optional. Core predictions and many Sleeper league tools work wit
   - **More Global Search answers** — Show the connected league's live matchup and a player's live stat line, and find Scout and draft prospects.
 - Bug fixes continue alongside every release.
 
+## What's New
+
+- **v9.4.6 — Heatmap D/ST and defense search fixes.** See the [changelog](CHANGELOG.md) for details and history.
+
 ## Privacy, license, and more
 
 GridShift is available under the [MIT License](LICENSE). See the [Privacy Policy](PRIVACY.md) for browser storage, connected services, and optional hosted features.

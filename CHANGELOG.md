@@ -1603,3 +1603,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Defenses** - The Total and Per Game headings line up with their columns at every width.
 - **Rosters** - The draft-pick scroll arrow is a tappable button without the fade, and player rows drop the repeated position and rank from season points.
 - **Scores** - The season picker is hidden when only one season is available.
+
+## v9.4.6 - Heatmap D/ST & Defense Search Fixes
+*2026-11-22*
+
+- **Heatmap D/ST player filter** - The D/ST filter recognizes `DEF`, `DST`, and `D/ST` position labels, so team defenses are included regardless of which Sleeper label the league data uses.
+- **Defense team search** - Fantasy Defenses search accepts team abbreviations, city and mascot names, and common D/ST or defense wording.

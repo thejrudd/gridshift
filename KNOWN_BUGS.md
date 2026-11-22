@@ -546,3 +546,5 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | A game shown as "Final/OT" was treated as still live by the Scores live refresh. | v9.4.4 |
 | Fantasy and Statistics stopped picking up official stat corrections shortly after a game finished. | v9.4.4 |
 | Fantasy's first load fired one team lookup per player, over a thousand requests at once, and repeated it every hour. | v9.4.4 |
+| Fantasy Heatmap left team defenses out of the D/ST position filter when Sleeper labeled them `DST` or `D/ST`. | v9.4.6 |
+| Fantasy Defenses search missed teams when a query included D/ST wording or the `NY` abbreviation for New York teams. | v9.4.6 |

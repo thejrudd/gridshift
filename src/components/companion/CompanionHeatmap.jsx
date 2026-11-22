@@ -17,7 +17,7 @@ import { STADIUMS } from '../../data/stadiums';
 import { TEAM_COLORS } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
 import useMediaQuery from '../../hooks/useMediaQuery';
-import { getLeaguePositionFilters, getPositionFilterLabel } from '../../utils/leaguePositions';
+import { getLeaguePositionFilters, getPositionFilterLabel, normalizeLeaguePlayerPosition } from '../../utils/leaguePositions';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerLocalContrastText, CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
@@ -71,11 +71,10 @@ function getHeatmapMetricColWidth() {
   return Math.max(HEATMAP_CELL_HEIGHT, Math.ceil(max + HEATMAP_METRIC_PAD_X * 2));
 }
 
-const DEF_POS_GROUPS = { DL: ['DL','DE','DT'], LB: ['LB','ILB','OLB'], DB: ['DB','CB','S','SS','FS'] };
 const normDefPos = (pos) => {
-  if (pos === 'DEF') return 'DEF';
-  for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n;
-  return null;
+  const normalized = normalizeLeaguePlayerPosition(pos);
+  if (normalized === 'DEF') return 'DEF';
+  return ['DL', 'LB', 'DB'].includes(normalized) ? normalized : null;
 };
 
 function filterHeatmapPositions(positionOrder, leaguePositions) {
