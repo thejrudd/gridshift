@@ -38,6 +38,11 @@ fallback looks them up by name through ESPN's public player search
 there, so only a unique exact name is accepted: two players sharing a name open
 nothing rather than the wrong page.
 
+Team defenses use their NFL team ID to open the Statistics D/ST profile.
+`Ravens Defense` and `Ravens D/ST` both select the Baltimore unit. The index
+fills any missing D/ST entries from the static NFL team records, so these
+queries work before the player directory loads.
+
 ## Measurements
 
 Re-measure and update these whenever the index shape changes.
@@ -382,8 +387,8 @@ Two further rules follow from that:
 
 - **A defensive stat means the players who recorded it.** The team unit is held
   out of the leaderboard, because its team total would sit above every
-  individual on it. Naming `team defense` / `dst` asks for the team total
-  instead, and is the only way to get it.
+  individual on it. Name the unit explicitly with `team defense`, `dst`, `d/st`,
+  or a team name followed by `defense` to ask for the team total.
 - **"Interceptions" stays open to both readings.** One a quarterback threw and
   one a defender caught are the same word, and the position already resolves it
   per player, so the field is not narrowed — only the team unit is held out.

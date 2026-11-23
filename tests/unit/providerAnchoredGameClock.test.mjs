@@ -290,12 +290,16 @@ test('classifies clock-stopping play types with short broadcast reasons', () => 
     [play('kickoff', 'kicks 65 yards'), 'Kickoff'],
     [play('field-goal-missed', '52 yard field goal is No Good'), 'No good'],
     [play('pass-interception-return', 'INTERCEPTED'), 'Turnover'],
+    [play('rush', 'Fumble lost to the defense.', { narrative: { turnover: true } }), 'Turnover'],
     [play('fumble-recovery-opponent', 'FUMBLES, recovered by'), 'Turnover'],
     [play('sack-opp-fumble-recovery', 'sacked, FUMBLES'), 'Turnover'],
     [play('penalty', 'PENALTY on SF, Defensive Holding'), 'Flag'],
     [play('rush', 'run for 4 yards. PENALTY on KC, Holding, 10 yards'), 'Flag'],
     [play('rush', 'The Replay Official reviewed the runner was down. The ruling was upheld.'), 'Review'],
+    [play('rush', 'The Replay Official reviewed the play (J.Jeudy).'), 'Review'],
+    [play('rush', 'The ruling on the field stands.'), 'Review'],
     [play('pass-reception', 'Pass complete. DAL challenged the pass completion ruling'), 'Review'],
+    [play('rush', 'Walk-off touchdown.', { narrative: { playKind: 'touchdown' } }), 'Touchdown'],
   ];
   cases.forEach(([input, reason]) => {
     assert.deepEqual(classifyClockStoppage(input), { stopped: true, reason }, input.typeSlug);
@@ -318,14 +322,10 @@ test('ordinary in-bounds plays keep the clock running', () => {
   assert.deepEqual(classifyClockStoppage(null), { stopped: false, reason: null });
 });
 
-test('out of bounds stops the clock only late in the first half and late in the game', () => {
-  const oob = (period, time) => play('rush', 'runs to the 30, ran ob at DAL 30 for 6 yards', { period, time });
-  assert.equal(classifyClockStoppage(oob(1, '1:30')).stopped, false);
-  assert.equal(classifyClockStoppage(oob(2, '2:30')).stopped, false);
-  assert.deepEqual(classifyClockStoppage(oob(2, '1:59')), { stopped: true, reason: 'Out of bounds' });
-  assert.equal(classifyClockStoppage(oob(3, '1:00')).stopped, false);
-  assert.equal(classifyClockStoppage(oob(4, '5:30')).stopped, false);
-  assert.deepEqual(classifyClockStoppage(oob(4, '4:59')), { stopped: true, reason: 'Out of bounds' });
+test('out of bounds holds the clock in any quarter until the feed advances', () => {
+  const oob = play('rush', 'runs to the 30, ran ob at DAL 30 for 6 yards', { period: 1, time: '1:30' });
+  assert.deepEqual(resolveSampleStoppage(oob, { period: 1, clock: '1:28' }), { stopped: true, reason: 'Out of bounds' });
+  assert.deepEqual(resolveSampleStoppage(oob, { period: 1, clock: '1:20' }), { stopped: false, reason: null });
   assert.deepEqual(classifyClockStoppage(play('rush', 'pushed out of bounds', { period: 4, time: '3:00' })), {
     stopped: true,
     reason: 'Out of bounds',
@@ -339,7 +339,15 @@ test('a stopping play explains the sample only from its period and near its cloc
   assert.equal(latestPlayExplainsSample(flag, { period: '1', clockSeconds: 224 }), true);
   // The game clock has run on since the flag.
   assert.equal(latestPlayExplainsSample(flag, { period: '1', clockSeconds: 223 }), false);
+  assert.equal(latestPlayExplainsSample(flag, { period: '1', clockSeconds: 240 }), false);
   assert.equal(latestPlayExplainsSample(flag, { period: '2', clockSeconds: 232 }), false);
   assert.deepEqual(resolveSampleStoppage(flag, { period: '1', clock: '3:52' }), { stopped: true, reason: 'Flag' });
   assert.deepEqual(resolveSampleStoppage(flag, { period: '1', clock: '3:42' }), { stopped: false, reason: null });
+});
+
+test('a timeout is cleared by a more recent game-clock reading or quarter', () => {
+  const timeout = play('timeout', 'Timeout #1 by DAL', { period: 3, time: '9:34' });
+  assert.deepEqual(resolveSampleStoppage(timeout, { period: 3, clock: '9:34' }), { stopped: true, reason: 'Timeout' });
+  assert.deepEqual(resolveSampleStoppage(timeout, { period: 3, clock: '9:33' }), { stopped: false, reason: null });
+  assert.deepEqual(resolveSampleStoppage(timeout, { period: 4, clock: '15:00' }), { stopped: false, reason: null });
 });

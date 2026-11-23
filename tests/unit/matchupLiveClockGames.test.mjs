@@ -161,7 +161,10 @@ test('an older ordinary play never rolls the clock up, a timeout does and holds 
   state = pollPlays(state, '7001', [rawPlay({ clock_display: '9:41', type_slug: 'pass-incompletion', text: 'Pass incomplete.' })], T0 + 1000);
   assert.equal(state.clockGames.get('7001').live.clock, '9:30');
 
-  state = pollPlays(state, '7001', [rawPlay({ id: 't1', clock_display: '9:34', type_slug: 'timeout', type_text: 'Timeout', text: 'Timeout #1 by BAL.' })], T0 + 2000);
+  state = pollPlays(state, '7001', [rawPlay({
+    id: 't1', clock_display: '9:34', wallclock: new Date(T0 + 1000).toISOString(),
+    type_slug: 'timeout', type_text: 'Timeout', text: 'Timeout #1 by BAL.',
+  })], T0 + 2000);
   const held = state.clockGames.get('7001');
   assert.equal(held.live.clock, '9:34');
   assert.equal(held.live.providerClockAnchor.providerClockFrozen, true);

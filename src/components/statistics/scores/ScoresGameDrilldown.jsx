@@ -18,6 +18,8 @@ import { getScoreNetworkLabel } from '../../../utils/statisticsBroadcasts';
 import { formatPlayerMeasurements } from '../../../utils/playerMeasurements.js';
 import { deriveEspnEventId, fetchGameParticipants } from '../../../utils/nflPlays/participants.js';
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
+import { getLatestPlayPresentation } from '../../../utils/nflPlays/latestPlayPresentation.js';
+import { sortPlaysChronologically } from '../../../utils/playByPlay/playOrder.js';
 import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
 import { LivePosChip } from '../../companion/live/LiveAtoms.jsx';
 import { getDriveNetYards, isFieldFlipped, isNonSnapPlay, teamLogo } from '../../../utils/nflPlays/fieldGeometry.js';
@@ -30,8 +32,9 @@ import { getTeamSeason } from '../../../api/teamSeasonApi.js';
 import { fetchRoster } from '../../../utils/playerApi.js';
 import { nameKey } from '../../../utils/teamSeason/teamDashboardModel.js';
 import { buildMatchupRanks, buildPlayerSeasonCard, buildRecentForm, buildSeasonLeaders, buildSeasonStatGroups, buildSeasonStatLookup, seasonRecord } from '../../../utils/statisticsScoresSeasonContext.js';
-import { detailCoverageMessage, driveMeta, playClockLabel, playSentence, quarterLabel } from './scoresDetailFormat.js';
+import { detailCoverageMessage, driveMeta, playClockLabel, quarterLabel } from './scoresDetailFormat.js';
 import LiveGameClock from '../../shared/LiveGameClock.jsx';
+import { PossessionGlyph, TimeoutMarkers } from './GameScorebug.jsx';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -120,7 +123,7 @@ function teamNickname(name) {
   return words.length > 1 ? words.at(-1) : name;
 }
 
-function DetailTeam({ team, score, side, record, loser, possession, timeouts = null, onOpenTeam = null }) {
+function DetailTeam({ team, score, side, record, loser, possession, timeouts, timeoutSlots, onOpenTeam = null }) {
   const hasBall = possession === team.id;
   // With a team route available the whole side opens that team's stats page.
   const Root = onOpenTeam ? 'button' : 'div';
@@ -136,12 +139,8 @@ function DetailTeam({ team, score, side, record, loser, possession, timeouts = n
         <b>{team.id}{record ? ` · ${record}` : ''}</b>
         {(hasBall || Number.isFinite(timeouts)) && (
           <span className="scores-detail-team-state">
-            {Number.isFinite(timeouts) && (
-              <span className="scores-detail-timeouts" role="img" aria-label={`${timeouts} timeouts left`}>
-                {[0, 1, 2].map((index) => <i key={index} className={index < timeouts ? '' : 'is-used'} />)}
-              </span>
-            )}
-            {hasBall && <span className="scores-detail-ball" role="img" aria-label={`${team.name} have the ball`} />}
+            <TimeoutMarkers count={timeouts} teamName={team.name} slots={timeoutSlots} />
+            {hasBall && <PossessionGlyph teamName={team.name} />}
           </span>
         )}
       </div>
@@ -154,7 +153,10 @@ function ScoreHero({ game, detail, awayTheme, homeTheme, records = null, onOpenT
   const final = detail.status === 'final';
   const awayLoser = final && detail.score.away < detail.score.home;
   const homeLoser = final && detail.score.home < detail.score.away;
-  const possession = detail.status === 'live' ? detail.possession : null;
+  const live = detail.status === 'live' ? game.live : null;
+  const timeoutSlots = Number(live?.period) > 4 && game.phase !== 'postseason' ? 2 : 3;
+  const possession = live ? detail.possession : null;
+  const situation = live?.next ?? live;
   const centerForeground = pickReadableForeground([awayTheme?.gradientEnd, homeTheme?.gradientStart].filter(Boolean));
   const network = getScoreNetworkLabel({ ...game, network: detail.network }, { fallback: true });
 
@@ -181,18 +183,19 @@ function ScoreHero({ game, detail, awayTheme, homeTheme, records = null, onOpenT
           record={game.records?.away ?? records?.away}
           loser={awayLoser}
           possession={possession}
-          timeouts={detail.status === 'live' ? game.live?.awayTimeouts : null}
+          timeouts={live?.awayTimeouts}
+          timeoutSlots={timeoutSlots}
           onOpenTeam={onOpenTeam}
         />
         <div className="scores-detail-status">
           {detail.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
           <strong>
             {detail.status === 'live'
-              ? <LiveGameClock game={game} fallbackLabel={detail.statusLabel} />
+              ? <LiveGameClock game={game} fallbackLabel={detail.statusLabel} className="scores-detail-clock" hideRoutineStoppages />
               : detail.statusLabel}
           </strong>
-          {game.live?.downDistance && <span>{game.live.downDistance} · {game.live.fieldPosition}</span>}
-          {game.live?.redZone && <b>Red Zone</b>}
+          {situation?.downDistance && <span>{[situation.downDistance, situation.fieldPosition].filter(Boolean).join(' · ')}</span>}
+          {situation?.redZone && <b>Red Zone</b>}
         </div>
         <DetailTeam
           team={detail.home}
@@ -201,7 +204,8 @@ function ScoreHero({ game, detail, awayTheme, homeTheme, records = null, onOpenT
           record={game.records?.home ?? records?.home}
           loser={homeLoser}
           possession={possession}
-          timeouts={detail.status === 'live' ? game.live?.homeTimeouts : null}
+          timeouts={live?.homeTimeouts}
+          timeoutSlots={timeoutSlots}
           onOpenTeam={onOpenTeam}
         />
       </div>
@@ -381,18 +385,28 @@ function TeamStats({ detail, awayTheme, homeTheme, participants = null, onOpenPl
 }
 
 // The newest play, directly under the hero, while the game is on or just ended.
-function LatestPlay({ detail, onSelectPlay }) {
+function LatestPlay({ game, detail, onSelectPlay }) {
   if (detail.status === 'scheduled') return null;
-  const play = detail.drives.flatMap((drive) => drive.plays).filter((entry) => entry.id && !isNonSnapPlay(entry)).at(-1);
+  const latestDetailPlay = detail.drives.flatMap((drive) => drive.plays).findLast((entry) => entry.id && !isNonSnapPlay(entry));
+  const liveSample = game.latestPlay;
+  const livePlay = detail.status === 'live' && !liveSample?.stale && !isNonSnapPlay(liveSample?.play)
+    ? liveSample?.play
+    : null;
+  const play = livePlay && livePlay.id !== latestDetailPlay?.id
+    ? sortPlaysChronologically([latestDetailPlay, livePlay].filter(Boolean)).at(-1)
+    : latestDetailPlay;
   if (!play) return null;
+  const canSelect = play === latestDetailPlay;
+  const Content = canSelect ? 'button' : 'div';
+  const { sentence } = getLatestPlayPresentation(play, game);
   return (
     <div className="scores-detail-latest">
       <span>{detail.status === 'final' ? 'Final play' : 'Latest play'}</span>
-      <button type="button" onClick={() => onSelectPlay(play.id)}>
+      <Content className="scores-detail-latest-play" {...(canSelect ? { type: 'button', onClick: () => onSelectPlay(play.id) } : {})}>
         <time>{playClockLabel(play)}</time>
         <img src={teamLogo(play.team)} alt="" />
-        <span>{playSentence(play)}</span>
-      </button>
+        <span>{play.startDown > 0 && play.down ? `${play.down} · ` : ''}{sentence}</span>
+      </Content>
     </div>
   );
 }
@@ -1160,7 +1174,7 @@ export default function ScoresGameDrilldown({
       </div>
 
       <ScoreHero game={game} detail={detail} awayTheme={awayTheme} homeTheme={homeTheme} records={seasonContext?.records ?? null} onOpenTeam={fixtureData ? null : onOpenStatisticsTeam} />
-      <LatestPlay detail={detail} onSelectPlay={(playId) => { changeSection('overview'); selectPlay(playId); }} />
+      <LatestPlay game={game} detail={detail} onSelectPlay={(playId) => { changeSection('overview'); selectPlay(playId); }} />
 
       <div className="scores-detail-tabs-shell">
         <nav className="scores-detail-tabs" role="tablist" aria-label="Game detail sections">

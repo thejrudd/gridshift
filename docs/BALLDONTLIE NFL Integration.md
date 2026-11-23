@@ -133,7 +133,7 @@ Starting policy is tier-sensitive: Free cannot power provider-backed fantasy sco
 
 The provider says in-progress Games data is updated in real time, but the published NFL Game schema does not guarantee a dedicated current clock or clock-running flag. Play rows include `clock_display` and `wallclock`, which describe an event rather than a continuously running clock.
 
-Live preseason verification found the current game clock encoded in the Games `status` text, while multiple one-second responses could repeat the same value. GridShift combines that Games value with the newest canonical Play `clock_display` and rejects older progress. Between samples the browser ticks one shared clock for BALLDONTLIE-sourced live games (the Clock Contract in `docs/Live Data Server Architecture.md`): it never counts upward second by second, holds at 2:00 in Q2/Q4/overtime, at 0:00, and once a sample is older than the age cap, and stops on a clock-stopping latest play (`type_slug` and text), with a short reason beside the clock when the play says why. Because the provider repeats values across responses, the age cap follows the provider's sample interval (10s by default, at most 15s), not the one-second poll.
+Live preseason verification found the current game clock encoded in the Games `status` text. Multiple one-second responses can repeat the same value. GridShift combines the Games value with the newest canonical Play `clock_display`. The shared browser clock continues through fresh repeated values and holds when the feed goes stale, the latest play reports a stoppage, or the clock reaches a period boundary. See the Clock Contract in `docs/Live Data Server Architecture.md`.
 
 ## Play Row Fields
 

@@ -708,4 +708,31 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.4.6',
+    title: 'Heatmap Player Details',
+    features: [
+      {
+        id: 'heatmap-player-details',
+        name: 'Heatmap player details',
+        description: 'Open a Heatmap matchup to see season game logs or how a player scored in a completed game.',
+        steps: [
+          {
+            route: { activeTab: 'fantasy', companionView: 'heatmap', heatmapFutureOpponents: '1' },
+            anchor: '[data-tour="heatmap-weekly-grid"]',
+            title: 'Scout an upcoming matchup',
+            body: 'Select an upcoming opponent and expand a player to see season points, snap percentages, weekly stats, and inactive weeks.',
+            placement: 'auto',
+          },
+          {
+            route: { activeTab: 'fantasy', companionView: 'heatmap', heatmapFutureOpponents: '0' },
+            anchor: '[data-tour="heatmap-weekly-grid"]',
+            title: 'Review a completed matchup',
+            body: 'Select a completed week and expand a player to see which stats earned their fantasy points in that game.',
+            placement: 'auto',
+          },
+        ],
+      },
+    ],
+  },
 ];

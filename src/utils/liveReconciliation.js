@@ -422,13 +422,14 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     // how long Sleeper has had this play in front of it, and a backfilled play
     // can carry a kickoff-era timestamp.
     firstSeen.set(event.id, now);
-    // Sleeper often credits a play before the feed delivers it, and the
-    // positive residual that then sat on the previous play stood in for this
-    // one. Carried whole, it would leave nothing to confirm the play against,
-    // so the play would count again on top of Sleeper until the game ends.
+    // Sleeper can credit a gain or deduction before the feed delivers the
+    // play. Release the portion of the same-sign residual that stood in for
+    // it so the play can confirm against points Sleeper already counted.
     const carried = num(carriedAdjustments.get(event.playerId));
-    if (carried > 0 && num(event.pts) > 0) {
-      carriedAdjustments.set(event.playerId, round2(Math.max(0, carried - num(event.pts))));
+    const points = num(event.pts);
+    if (carried * points > 0) {
+      const remaining = Math.abs(points) >= Math.abs(carried) ? 0 : round2(carried - points);
+      carriedAdjustments.set(event.playerId, remaining);
     }
     // Plays that finally arrive for a stat line already explained by a
     // fallback row retire it (spec rule 6).

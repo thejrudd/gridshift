@@ -788,8 +788,8 @@ test('a turnover ends the drive that lost the ball', () => {
   assert.equal(drives[1].team, 'KC');
 });
 
-test('a summary-only pick-six inherits its passer from the same Statistics drive', () => {
-  const drives = groupBdlPlaysIntoDrives([
+test('a summary-only pick-six counts in the inferred passer’s quarter split', () => {
+  const plays = [
     {
       id: '401873286469', period: 1, clock_display: '8:18', type_slug: 'interception-return-touchdown',
       type_text: 'Interception Return Touchdown', team: { abbreviation: 'HOU' },
@@ -808,8 +808,25 @@ test('a summary-only pick-six inherits its passer from the same Statistics drive
       team: { abbreviation: 'LV' }, short_text: 'Fernando Mendoza Pass Complete for 22 Yds to Jalen Nailor',
       text: '(Shotgun) F.Mendoza pass short right to J.Nailor to LV 43 for 22 yards (J.Reed).', stat_yardage: 22,
     },
-  ], { away: { id: 'LV' }, home: { id: 'HOU' } });
-  const pickSix = drives.flatMap((drive) => drive.plays)
+  ];
+  const detail = buildScoreDetailFromGame({
+    provider: 'balldontlie', away: { id: 'LV' }, home: { id: 'HOU' },
+  }, {
+    providerDetail: {
+      plays,
+      playerStats: [{
+        player: { first_name: 'Fernando', last_name: 'Mendoza' },
+        team: { abbreviation: 'LV' },
+        passing_completions: 1,
+        passing_attempts: 2,
+        passing_yards: 22,
+        passing_touchdowns: 0,
+        passing_interceptions: 1,
+      }],
+    },
+    detailStatus: 'ready',
+  });
+  const pickSix = detail.drives.flatMap((drive) => drive.plays)
     .find((play) => play.id === '401873286469');
 
   assert.equal(pickSix.inferredPasserName, 'Fernando Mendoza');
@@ -817,6 +834,11 @@ test('a summary-only pick-six inherits its passer from the same Statistics drive
   // A summary has no formation note, so the snap stays neutral (no drop back).
   assert.match(timeline.beats.find((beat) => beat.role === 'passer')?.text ?? '', /^Fernando Mendoza takes the snap\.$/);
   assert.match(timeline.beats.find((beat) => beat.kind === 'release')?.text ?? '', /^Fernando Mendoza throws/);
+
+  const passer = detail.playerGroups.find((group) => group.id === 'passing').rows[0];
+  const q1 = passer.quarterValues.periods.find((period) => period.label === 'Q1');
+  assert.deepEqual(q1.values.slice(0, 4), ['1/2', '22', '0', '1']);
+  assert.equal(q1.values[3], passer.values[3]);
 });
 
 test('a missed field goal ends the kicking team’s drive and is not called a make', () => {

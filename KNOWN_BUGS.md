@@ -546,3 +546,9 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | A game shown as "Final/OT" was treated as still live by the Scores live refresh. | v9.4.4 |
 | Fantasy and Statistics stopped picking up official stat corrections shortly after a game finished. | v9.4.4 |
 | Fantasy's first load fired one team lookup per player, over a thousand requests at once, and repeated it every hour. | v9.4.4 |
+| Fantasy Heatmap left team defenses out of the D/ST position filter when Sleeper labeled them `DST` or `D/ST`. | v9.4.6 |
+| Fantasy Defenses search missed teams when a query included D/ST wording or the `NY` abbreviation for New York teams. | v9.4.6 |
+| Heatmap could omit team defenses from matchup details when the player directory lacked their metadata or the Unrostered filter was on. | v9.4.6 |
+| Matchups could count a live deduction twice if the play feed delivered it after Sleeper included it in the player's total. | v9.4.6 |
+| Statistics quarter splits could omit an interception returned for a touchdown from the passer's stats. | v9.4.6 |
+| Global Search could not open a team D/ST profile for team names followed by Defense or D/ST. | v9.4.6 |

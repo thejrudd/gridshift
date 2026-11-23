@@ -10,18 +10,19 @@ import LiveGameClock from '../../shared/LiveGameClock.jsx';
 
 const teamLogo = (teamId) => `https://a.espncdn.com/i/teamlogos/nfl/500/${String(teamId).toLowerCase()}.png`;
 
-function TimeoutMarkers({ count, teamName }) {
-  if (!Number.isFinite(count)) return null;
+export function TimeoutMarkers({ count, teamName, slots = 3 }) {
+  if (!Number.isInteger(count) || count < 0 || count > 3) return null;
+  const label = `${teamName} ${count} ${count === 1 ? 'timeout' : 'timeouts'} remaining`;
   return (
-    <span className="scores-timeouts" aria-label={`${teamName} ${count} timeouts remaining`}>
-      {[0, 1, 2].map((index) => (
+    <span className="scores-timeouts" role="img" aria-label={label}>
+      {Array.from({ length: Math.max(slots, count) }, (_, index) => (
         <span key={index} className={index < count ? 'is-available' : ''} aria-hidden="true" />
       ))}
     </span>
   );
 }
 
-function PossessionGlyph({ teamName }) {
+export function PossessionGlyph({ teamName }) {
   return (
     <span
       className="scores-possession is-active"
@@ -81,7 +82,7 @@ function statusLabel(game) {
       : (game.statusLabel ?? 'Scheduled');
   }
   return game.status === 'live'
-    ? <>● <LiveGameClock game={game} /></>
+    ? <>● <LiveGameClock game={game} hideRoutineStoppages /></>
     : game.statusLabel;
 }
 
@@ -204,7 +205,7 @@ export default function GameScorebug({ game, onOpen }) {
         <span className="scores-scorebug-topline">
           <span className={`scores-status is-${statusTone(game.status)}`}>
             {game.status === 'live' && <span className="scores-live-dot" aria-hidden="true" />}
-            {game.status === 'live' ? <>Live · <LiveGameClock game={game} /></> : statusLabel(game)}
+            {game.status === 'live' ? <>Live · <LiveGameClock game={game} hideRoutineStoppages /></> : statusLabel(game)}
           </span>
           {statusMeta(game) && <span>{statusMeta(game)}</span>}
         </span>

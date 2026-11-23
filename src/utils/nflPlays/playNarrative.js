@@ -317,6 +317,19 @@ export function authoritativeText(rawText) {
   return after || text;
 }
 
+export function replayReviewLabel(play) {
+  const text = String(play?.rawText ?? play?.description ?? play?.shortText ?? '');
+  const ruling = /\b(?:play|ruling)(?: on the field)? (?:(?:is|was) )?(reversed|overturned|confirmed|upheld|stands)\b/i.exec(text);
+  if (ruling) return `Ruling ${ruling[1].toLowerCase()}`;
+  if (/\bunder review\b/i.test(text)) return 'Under review';
+  const type = `${play?.typeSlug ?? ''} ${play?.type ?? ''}`;
+  if (/review|challenge/i.test(type)
+    || /\b(?:challenged|challenge|replay review|replay (?:official|assistant) reviewed|(?:play|ruling) (?:is |was )?reviewed)\b/i.test(text)) {
+    return 'Replay review';
+  }
+  return null;
+}
+
 /**
  * The penalty clause from the official description, or null.
  *

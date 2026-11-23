@@ -66,6 +66,8 @@ const CASES = [
   ['eagles sacks',       { teams: ['phi'], stats: ['sack'] }],
   ['seahawks tackles',   { teams: ['sea'], stats: ['tkl'] }],
   // The team unit, as distinct from the defenders on it.
+  ['Ravens Defense', { teams: ['bal'], positions: ['DEF'], intents: [], nameTerms: [] }],
+  ['Ravens D/ST', { teams: ['bal'], positions: ['DEF'], intents: [], nameTerms: [] }],
   ['seahawks team defense sacks', { teams: ['sea'], positions: ['DEF'], stats: ['sack'] }],
   ['sea dst sacks',      { teams: ['sea'], positions: ['DEF'], stats: ['sack'] }],
   // The longer phrases still win the longest-first match.

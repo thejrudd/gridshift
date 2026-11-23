@@ -243,6 +243,16 @@ export function parseGlobalQuery(query, { splitCompare = true } = {}) {
 
   if (splitCompare && slots.operator === 'compare') slots.compare = splitComparison(words);
 
+  // After a team name, plain "defense" can identify its D/ST. Keep the
+  // destination reading for defense rankings and defense-vs-position queries.
+  if (splitCompare && slots.teams.length && !slots.operator && !slots.positions.length
+    && slots.intents.length === 1 && slots.intents[0] === 'defenseVs'
+    && slots.softTerms.includes('defense')) {
+    slots.positions.push('DEF');
+    slots.intents = [];
+    slots.softTerms = slots.softTerms.filter((term) => term !== 'defense');
+  }
+
   return slots;
 }
 

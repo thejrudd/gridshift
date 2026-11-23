@@ -79,7 +79,7 @@ function useInactiveReasons(games, { name, position }, season) {
 }
 
 function GameLog({ row, season, counts }) {
-  const { espnId, team, position, logGames, activityColumns } = row;
+  const { espnId, team, position, isTeamDefense, logGames, activityColumns } = row;
   const [officialLog, setOfficialLog] = useState(EMPTY);
 
   useEffect(() => {
@@ -118,7 +118,8 @@ function GameLog({ row, season, counts }) {
     <table className="companion-heatmap-game-log" aria-label={row.name + ' game log'}>
       <thead>
         <tr>
-          <th scope="col">Week</th><th scope="col">Opponent</th><th scope="col">Snap %</th>
+          <th scope="col">Week</th><th scope="col">Opponent</th>
+          {!isTeamDefense && <th scope="col">Snap %</th>}
           {activityColumns.map(column => <th key={column.label} scope="col" title={column.title}>{column.label}</th>)}
           <th scope="col">Pts</th>
         </tr>
@@ -145,7 +146,7 @@ function GameLog({ row, season, counts }) {
                   </div>
                 )}
               </td>
-              <td>{formatSnap(snap)}</td>
+              {!isTeamDefense && <td>{formatSnap(snap)}</td>}
               {activityColumns.map(column => (
                 <td key={column.label}>{formatValue(game.inactive ? null : getHeatmapPlayerActivity(column, game.entry, officialStats))}</td>
               ))}
@@ -157,7 +158,7 @@ function GameLog({ row, season, counts }) {
       {row.seasonPoints != null && (
         <tfoot className="companion-heatmap-game-season-total">
           <tr>
-            <th scope="row" colSpan={3 + activityColumns.length}>Season Pts</th>
+            <th scope="row" colSpan={(isTeamDefense ? 2 : 3) + activityColumns.length}>Season Pts</th>
             <td>{formatValue(row.seasonPoints)}</td>
           </tr>
         </tfoot>
@@ -167,7 +168,7 @@ function GameLog({ row, season, counts }) {
 }
 
 export default function HeatmapPlayerResults({
-  rows, season, upcoming, valueLabel, darkMode, rosterReady, canOpenStats, onOpenStats, openingId,
+  rows, season, upcoming, valueLabel, darkMode, canOpenStats, onOpenStats, openingId,
 }) {
   const [expandedId, setExpandedId] = useState(null);
   const [sort, setSort] = useState({ key: 'value', direction: 'desc' });
@@ -189,6 +190,7 @@ export default function HeatmapPlayerResults({
   }), [rows, season, snapsById, sort]);
 
   const activityColumns = new Set(entries.map(row => row.activityColumns[0]).filter(Boolean));
+  const defenseOnly = entries.every(row => row.isTeamDefense);
   const hasActivity = activityColumns.size > 0;
   const hasTackles = entries.some(row => row.activityColumns.length > 1);
   const mixedActivity = new Set([...activityColumns].map(column => column.label)).size > 1;
@@ -219,12 +221,12 @@ export default function HeatmapPlayerResults({
   };
 
   return (
-    <section className={'companion-heatmap-player-results' + (hasActivity ? ' has-activity' : '') + (hasTackles ? ' has-tackles' : '')}
-      aria-label={upcoming ? 'Players' : 'Game leaders'}>
+    <section className={'companion-heatmap-player-results' + (hasActivity ? ' has-activity' : '') + (hasTackles ? ' has-tackles' : '') + (defenseOnly ? ' is-team-defense' : '')}
+      aria-label={defenseOnly ? 'Team defense' : upcoming ? 'Players' : 'Game leaders'}>
       <div className="companion-heatmap-player-headings" role="group" aria-label="Sort player results">
-        {sortable('name', 'Player', 'companion-heatmap-player-name-heading')}
+        {sortable('name', defenseOnly ? 'D/ST' : 'Player', 'companion-heatmap-player-name-heading')}
         <div className="companion-heatmap-player-metric-headings">
-          {sortable('snap', 'Snap %')}
+          {!defenseOnly && sortable('snap', 'Snap %')}
           {hasActivity && sortable('activity', activityHeader, undefined, mixedActivity ? undefined : primaryActivity?.title)}
           {hasTackles && sortable('tackles', 'Tkl' + rateSuffix, 'companion-heatmap-extra-tackles')}
           {sortable('seasonPoints', 'Season Pts', 'companion-heatmap-extra-total', 'Total fantasy points for the season')}
@@ -234,13 +236,17 @@ export default function HeatmapPlayerResults({
       <div className="companion-heatmap-drilldown-player-list">
         {entries.map(row => {
           const expanded = expandedId === row.playerId;
-          const status = getPlayerAvailabilityContext(row.player);
+          const status = row.isTeamDefense ? null : getPlayerAvailabilityContext(row.player).status;
+          const rosterStatus = row.rostered == null
+            ? (row.isTeamDefense ? 'Roster status unavailable' : null)
+            : (row.rostered ? 'Rostered' : 'Unrostered');
           const meta = [
+            row.isTeamDefense ? rosterStatus : null,
             row.rank,
-            upcoming && rosterReady ? (row.rostered ? 'Rostered' : 'Unrostered') : null,
+            upcoming && !row.isTeamDefense ? rosterStatus : null,
             row.estimated ? 'Team est.' : null,
           ];
-          const canNavigate = canOpenStats && (upcoming || Boolean(row.espnId));
+          const canNavigate = canOpenStats && (upcoming || row.isTeamDefense || Boolean(row.espnId));
           const panelId = detailId + '-' + row.playerId;
           return (
             <div key={row.playerId} className="companion-heatmap-player-entry">
@@ -252,21 +258,22 @@ export default function HeatmapPlayerResults({
                 showAccentRail={false}
                 subtleTeamGradient
                 showTeamLogo={false}
+                useTeamLogoAsAvatar={row.isTeamDefense}
                 showPosition={false}
                 interactive
                 selected={expanded}
                 onClick={() => setExpandedId(expanded ? null : row.playerId)}
-                ariaLabel={[row.name + ' details', status.status, ...meta].filter(Boolean).join(', ')}
+                ariaLabel={[row.name + ' details', status, ...meta].filter(Boolean).join(', ')}
                 ariaExpanded={expanded}
                 ariaControls={panelId}
                 metaSegments={meta}
-                identityAccessory={status.status
-                  ? <PlayerStatusBadge status={status.status} detail={upcoming ? null : 'Current status'} compact variant="text" />
+                identityAccessory={status
+                  ? <PlayerStatusBadge status={status} detail={upcoming ? null : 'Current status'} compact variant="text" />
                   : null}
                 gridTemplate="var(--heatmap-player-row-grid)"
                 columnGridTemplate="var(--heatmap-player-metric-grid)"
                 columns={[
-                  <CompanionPlayerMetric key="snap" compact value={formatSnap(row.snap)}
+                  !defenseOnly && <CompanionPlayerMetric key="snap" compact value={formatSnap(row.snap)}
                     className={row.snap != null ? 'companion-heatmap-snap-value' : ''}
                     title={upcoming ? 'Average of reported game snap percentages' : undefined} />,
                   hasActivity && (
@@ -300,7 +307,7 @@ export default function HeatmapPlayerResults({
                 {expanded && canNavigate && (
                   <button type="button" className="companion-heatmap-player-stats gs-focusable"
                     onClick={() => onOpenStats(row)} disabled={openingId != null}>
-                    {openingId === row.playerId ? 'Opening statistics…' : 'View player statistics'}
+                    {openingId === row.playerId ? 'Opening statistics…' : row.isTeamDefense ? 'View D/ST statistics' : 'View player statistics'}
                   </button>
                 )}
               </div>

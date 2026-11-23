@@ -1611,3 +1611,17 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Spring drawers** - Mobile drawers release into a spring that keeps the speed of your swipe: a quick flick closes at that speed, and a short pull springs back to rest. Swiping a drawer down and then back up before lifting your finger keeps it open.
 - **Mobile drawers** - On iPhone, a short drag on a drawer no longer closes it when you let go, and holding the drag handle no longer selects text.
 - **Heatmap player details** - Player drilldowns show season points, snap percentages, weekly stats, and inactive-week details; historical Heatmap game sheets include the selected game's scoring.
+
+## v9.4.6 - Live Scores & Defense Fixes
+*2026-11-22*
+
+- **Heatmap D/ST player filter** - The D/ST filter recognizes `DEF`, `DST`, and `D/ST` position labels, so team defenses are included regardless of which Sleeper label the league data uses.
+- **Defense team search** - Fantasy Defenses search accepts team abbreviations, city and mascot names, and common D/ST or defense wording.
+- **Live game clock** - Fresh play-by-play keeps the countdown moving even when successive updates repeat the same time. Stoppages hold the display, and a newer clock reading clears an old timeout.
+- **Scores game header** - Team records, possession and timeout bars appear beside the scores. FLAG and TIMEOUT sit below the clock, with the next down and distance shown when available.
+- **Play reviews** - Latest Play and Play-by-Play show reviews and rulings when the feed reports them.
+- **Heatmap D/ST cards** - Expand team defenses to see roster status, game logs, and a link to team statistics. The Unrostered filter still excludes rostered defenses from scoring totals.
+- **Live fantasy deductions** - Late play data no longer repeats a deduction that Sleeper has already counted.
+- **Quarter stats** - Pick-sixes count as a pass attempt and interception in the quarter they occurred.
+- **What's New tour** - See how to open season game logs and individual game scoring from the Heatmap details introduced in 9.4.5.
+- **Global Search** - Searches like `Ravens Defense` and `Ravens D/ST` open the team’s defense statistics, including after a reload.

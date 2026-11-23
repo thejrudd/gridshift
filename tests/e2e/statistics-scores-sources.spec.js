@@ -532,6 +532,8 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
   let providerAnchorTime = now.toISOString();
   let liveWeekRequests = 0;
   let serveUpdatedPlay = false;
+  let laterPlay = null;
+  let awayTimeouts = 1;
   let drilldownOpened = false;
   let updatedProviderAnchorTime = null;
   await page.clock.install({ time: now });
@@ -569,6 +571,21 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
       });
       return;
     }
+    if (url.pathname.endsWith('/espn-week')) {
+      await route.fulfill({ json: { ok: true, phase: url.searchParams.get('phase'), scoreboard: { events: [{
+        id: '401772002',
+        date: liveGame.date,
+        status: { period: 1, displayClock: '4:12', type: { state: 'in' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'away', team: { id: '10', abbreviation: 'TEN' }, records: [{ type: 'total', summary: '2-1' }] },
+            { homeAway: 'home', team: { id: '25', abbreviation: 'SF' }, records: [{ type: 'total', summary: '1-2' }] },
+          ],
+          situation: { possession: '10', awayTimeouts, homeTimeouts: 2 },
+        }],
+      }] } } });
+      return;
+    }
     const isLiveWeek = url.pathname.endsWith('/live-week');
     if (isLiveWeek) liveWeekRequests += 1;
     const playUpdated = isLiveWeek && serveUpdatedPlay;
@@ -590,12 +607,12 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
         games: [playUpdated && !drilldownOpened
           ? { ...currentGame, status: '3:52 - 1st', visitor_team_score: 10 }
           : currentGame],
+        ...(url.pathname.endsWith('/detail') && laterPlay?.id === 'latest-review' ? { plays: [laterPlay] } : {}),
         liveGameSnapshots: isLiveWeek ? [{
           gameId: String(liveGame.id),
           latestPlay: {
             id: playUpdated ? 'latest-penalty' : 'latest-completion',
             text: playUpdated ? 'PENALTY on SF, Defensive Holding' : 'Pass complete to TEN 18 for 12 yards',
-            short_text: playUpdated ? 'PENALTY on SF, Defensive Holding' : 'Pass complete to TEN 18 for 12 yards',
             type_slug: playUpdated ? 'penalty' : 'pass-complete',
             period: 1,
             clock_display: playUpdated ? '03:52' : '04:12',
@@ -603,9 +620,11 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
             start_distance: 10,
             start_yard_line: 42,
             end_yard_line: playUpdated ? 42 : 30,
+            end_down_distance_text: '2nd & 4 at TEN 42',
             team: { abbreviation: 'TEN' },
             scoring_play: false,
             ...(playUpdated ? { away_score: 10, home_score: 7 } : {}),
+            ...laterPlay,
           },
           freshness: {
             providerFetchedAt,
@@ -653,6 +672,11 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
   await page.clock.fastForward(3_000);
   await expect(status).toContainText('Q1 · 4:09');
   await expect(status.locator('.live-game-clock__reason')).toHaveCount(0);
+  const liveWeekRequestsBeforeRepeat = liveWeekRequests;
+  await page.clock.fastForward(5_000);
+  await expect.poll(() => liveWeekRequests).toBeGreaterThan(liveWeekRequestsBeforeRepeat);
+  await page.clock.fastForward(4_000);
+  await expect(status).toContainText('Q1 · 4:00');
   const liveWeekRequestsBeforePlay = liveWeekRequests;
   serveUpdatedPlay = true;
   await page.clock.fastForward(8_000);
@@ -673,8 +697,32 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
     name: 'Open Tennessee Titans at San Francisco 49ers game details',
   }).click();
   // The drilldown hero reads the same shared clock as the scorecard.
-  await expect(page.locator('.scores-detail-status > strong')).toContainText('3:52');
-  await expect(page.locator('.scores-detail-status > strong .live-game-clock__reason')).toHaveText('Flag');
+  const hero = page.locator('.scores-detail-hero');
+  const heroClock = hero.locator('.scores-detail-status > strong');
+  const heroTime = heroClock.locator('.live-game-clock__time');
+  const heroReason = heroClock.locator('.live-game-clock__reason');
+  const expectCenteredUnderClock = async () => {
+    const clock = await heroTime.boundingBox();
+    const reason = await heroReason.boundingBox();
+    expect(reason.y).toBeGreaterThanOrEqual(clock.y + clock.height);
+    expect(Math.abs(reason.x + reason.width / 2 - (clock.x + clock.width / 2))).toBeLessThan(1);
+  };
+  await expect(heroClock).toContainText('3:52');
+  await expect(heroReason).toHaveText('Flag');
+  await expect(heroReason).toHaveCSS('background-color', 'rgb(245, 183, 0)');
+  await expectCenteredUnderClock();
+  await expect(hero.locator('.scores-detail-team.is-away b')).toHaveText('TEN · 2-1');
+  await expect(hero.locator('.scores-detail-team.is-home b')).toHaveText('SF · 1-2');
+  const awayTimeoutMarkers = hero.locator('.scores-detail-team.is-away .scores-timeouts');
+  const homeTimeoutMarkers = hero.getByRole('img', { name: 'San Francisco 49ers 2 timeouts remaining' });
+  await expect(awayTimeoutMarkers).toHaveAccessibleName('Tennessee Titans 1 timeout remaining');
+  await expect(awayTimeoutMarkers.locator('span')).toHaveCount(3);
+  await expect(awayTimeoutMarkers.locator('.is-available')).toHaveCount(1);
+  await expect(homeTimeoutMarkers).toBeVisible();
+  await expect(homeTimeoutMarkers.locator('.is-available')).toHaveCount(2);
+  await expect(hero.getByRole('img', { name: 'Tennessee Titans possession' })).toBeVisible();
+  await expect(hero.getByText('2nd & 4 · TEN 42')).toBeVisible();
+  await expect(page.locator('.scores-detail-latest')).toContainText('1st & 10');
   await expect(page.locator('.scores-detail-team.is-away > em')).toHaveText('10');
   await expect(page.locator('.scores-detail-team.is-home > em')).toHaveText('7');
 
@@ -684,13 +732,56 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
   // The new sample sits ten seconds below the held 3:52, so the display eases
   // down to it (never upward) and then runs: the game clock has moved past the
   // flag, so the flag no longer explains a held clock and no reason shows.
-  const heroClock = page.locator('.scores-detail-status > strong');
   await expect(heroClock).toContainText('Q1 · 3:47');
   await page.clock.fastForward(1_000);
   await expect(heroClock).toContainText(/Q1 · 3:4[12]/);
-  await expect(page.locator('.scores-detail-status > strong .live-game-clock__reason')).toHaveCount(0);
+  await expect(heroReason).toHaveCount(0);
   await expect(page.locator('.scores-detail-team.is-away > em')).toHaveText('10');
   await expect(page.locator('.scores-detail-team.is-home > em')).toHaveText('7');
+
+  awayTimeouts = 0;
+  laterPlay = { id: 'latest-timeout', text: 'Timeout #3 by TEN', type_slug: 'timeout', clock_display: '3:40' };
+  await page.clock.fastForward(8_000);
+  await expect(heroReason).toHaveText('Timeout');
+  await expect(heroTime).toHaveText('Q1 · 3:40');
+  await expectCenteredUnderClock();
+  await expect(awayTimeoutMarkers).toHaveAccessibleName('Tennessee Titans 0 timeouts remaining');
+  await expect(awayTimeoutMarkers.locator('span')).toHaveCount(3);
+  await expect(awayTimeoutMarkers.locator('.is-available')).toHaveCount(0);
+  await expect(hero.getByRole('img', { name: 'Tennessee Titans possession' })).toBeVisible();
+
+  const playByPlay = page.getByRole('tab', { name: 'Play-by-Play' });
+  await playByPlay.click();
+  await expect(playByPlay).toHaveAttribute('aria-selected', 'true');
+  for (const play of [
+    { id: 'incomplete', text: 'Pass incomplete.', type_slug: 'pass-incompletion', clock_display: '3:36' },
+    { id: 'bounds', text: 'Runner pushed out of bounds.', type_slug: 'rush', clock_display: '3:30' },
+  ]) {
+    laterPlay = play;
+    await page.clock.fastForward(8_000);
+    await expect(heroTime).toHaveText(`Q1 · ${play.clock_display}`);
+    await expect(heroReason).toHaveCount(0);
+    await expect(page.locator('.scores-detail-latest')).toContainText(play.text);
+    await page.clock.fastForward(3_000);
+    await expect(heroTime).toHaveText(`Q1 · ${play.clock_display}`);
+  }
+
+  laterPlay = {
+    id: 'latest-review',
+    text: 'T.Spears right end to TEN 48 for 6 yards (F.Warner). The Replay Official reviewed the play. The ruling on the field stands.',
+    short_text: 'Tyjae Spears 6 Yd Rush',
+    type_slug: 'rush',
+    clock_display: '3:25',
+    period: 1,
+    start_down: 1,
+    start_distance: 10,
+    team: { abbreviation: 'TEN' },
+  };
+  await page.clock.fastForward(8_000);
+  await expect(heroReason).toHaveText('Review');
+  await expect(page.locator('.scores-detail-latest')).toContainText('Ruling stands.');
+  await page.locator('.scores-drive-header').click();
+  await expect(page.locator('.scores-play__text')).toContainText('Ruling stands.');
 });
 
 test('forced local BALLDONTLIE loads preseason rows and refreshes the narrow live-week route', async ({ page }) => {

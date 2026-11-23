@@ -1,6 +1,7 @@
 import { formatFieldSpot, getOffenseTeam, getPlayTrajectory, isTurnoverOnDowns } from './fieldGeometry.js';
 import { readPlayNarrative } from '../playByPlay/normalizePlay.js';
-import { getPlayTag, isPossessionChange } from './playPresentation.js';
+import { classifyClockStoppage } from '../providerAnchoredGameClock.js';
+import { getPlayTag, isPossessionChange, withReplayReview } from './playPresentation.js';
 
 function teamLabel(teamId, game) {
   if (!teamId) return null;
@@ -22,11 +23,14 @@ export function getLatestPlayPresentation(play, game) {
     'offenseTeam' in play ? play.offenseTeam : getOffenseTeam(play, { homeTeam, awayTeam }),
     game,
   );
-  const sentence = narrative.sentence || play.description || play.rawText || 'Play unavailable';
+  let sentence = narrative.sentence || play.description || play.rawText || 'Play unavailable';
+  if (!/out of bounds/i.test(sentence) && classifyClockStoppage(play).reason === 'Out of bounds') {
+    sentence = `${sentence.replace(/[.]$/, '')}. Out of bounds.`;
+  }
   const spot = (geometry.drawable && formatFieldSpot(geometry.start, { homeTeam, awayTeam })) || play.spot || null;
 
   return {
-    sentence,
+    sentence: withReplayReview(play, sentence),
     administrative: narrative.administrative === true,
     down: play.down || null,
     spot,

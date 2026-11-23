@@ -25,6 +25,32 @@ async function openWithShortcut(page) {
   await expect(searchInput(page)).toBeFocused();
 }
 
+for (const query of ['Ravens Defense', 'Ravens D/ST']) {
+  test(`${query} opens the Ravens defense profile`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop sidebar search.');
+    await installTradeFixtures(page);
+    await page.route('**/api/statistics/scores/espn-week?*', (route) => route.fulfill({ status: 503 }));
+    await page.goto('/statistics');
+    await page.getByRole('button', { name: 'Search GridShift' }).click();
+    await searchInput(page).fill(query);
+    await expect(palette(page).getByRole('option').first()).toContainText('Baltimore Ravens');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/statistics\/player\/BAL\/baltimore-ravens$/);
+    const ravens = page.getByRole('heading', { name: 'Baltimore Ravens', exact: true });
+    await expect(ravens).toBeVisible();
+    await page.reload();
+    await expect(ravens).toBeVisible();
+  });
+}
+
+test('a Washington D/ST deep link accepts the Heatmap team alias', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'Direct Statistics route.');
+  await installTradeFixtures(page);
+  await page.route('**/api/statistics/scores/espn-week?*', (route) => route.fulfill({ status: 503 }));
+  await page.goto('/statistics/player/WAS/washington-commanders');
+  await expect(page.getByRole('heading', { name: 'Washington Commanders', exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
 test.describe('desktop', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-desktop', 'Desktop shell entry points.');

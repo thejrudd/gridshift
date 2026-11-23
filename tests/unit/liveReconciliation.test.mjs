@@ -114,6 +114,43 @@ test('plays Sleeper credited before the feed delivered them confirm instead of c
   assert.equal(player.displayedPoints, 10.1);
 });
 
+test('late deductions already in Sleeper points confirm without lowering the live score again', () => {
+  const completion = makePlay({
+    playerId: 'qb1', position: 'QB', stats: { pass_cmp: 1, pass_yd: 10 }, pts: 0.4, order: 10,
+  });
+  const deduction = (stats, order) => makePlay({ playerId: 'qb1', position: 'QB', stats, pts: -2, order });
+  const latePlays = [
+    deduction({ pass_int: 1 }, 20),
+    deduction({ fum_lost: 1 }, 30),
+    deduction({ pass_int: 1 }, 40),
+  ];
+  // The matchup total already includes the turnovers, but the weekly stat line and
+  // the play feed are behind. The completion is confirmed by that older stat line.
+  const snapshot = {
+    sleeperPointsById: { qb1: -5.6 },
+    sleeperStatsById: { qb1: { pass_cmp: 1, pass_yd: 10 } },
+    sleeperStatsFetchedAt: 100,
+  };
+  let state = step(createReconciliationState(), { ...snapshot, playEvents: [completion], now: 100 });
+  assert.equal(state.players.get('qb1').adjustment, -6);
+
+  // The plays can arrive one at a time or together on the same poll.
+  for (const [playEvents, now] of [[[latePlays[0]], 5100], [latePlays.slice(1), 10100]]) {
+    state = step(state, { ...snapshot, playEvents, now });
+    const player = state.players.get('qb1');
+    assert.equal(player.displayedPoints, -5.6);
+    assert.ok(player.plays.every((play) => play.status === 'confirmed'));
+    assert.equal(player.pendingPoints, 0);
+    assert.equal(player.displayedEventPoints, -5.6);
+  }
+
+  // A new turnover that Sleeper hasn't included still counts as pending.
+  state = step(state, { ...snapshot, playEvents: [deduction({ pass_int: 1 }, 50)], now: 15100 });
+  const player = state.players.get('qb1');
+  assert.equal(player.plays.at(-1).status, 'pending');
+  assert.equal(player.displayedPoints, -7.6);
+});
+
 test('a play Sleeper has not credited stays pending past a small carried residual', () => {
   const first = makePlay({ stats: { rec: 1, rec_yd: 8 }, pts: 1.8, order: 10 });
   const next = makePlay({ stats: { rec: 1, rec_yd: 50, rec_td: 1 }, pts: 12, order: 20 });

@@ -14,12 +14,13 @@ import { buildPlayerFormRows } from '../../utils/playerDefensePerformance.js';
 import { resolveStatisticsPlayerMetaFromSleeperId } from '../../utils/playerDrilldown.js';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { isWaiverEligiblePlayerRecord } from '../../utils/playerEligibility.js';
+import { getEspnTeamDefensePlayerId } from '../../utils/espnFantasyAdapter.js';
 import { STADIUMS } from '../../data/stadiums';
 import { getBundledNflTeamLogoUrl } from '../../utils/companionAssetVisuals.js';
-import { TEAM_COLORS, getTeamPalette } from '../../data/teamColors';
+import { TEAM_COLORS, TEAM_NAMES, getTeamPalette } from '../../data/teamColors';
 import { NFL_ODDS } from '../../data/odds';
 import useMediaQuery from '../../hooks/useMediaQuery';
-import { getLeaguePositionFilters, getPositionFilterLabel } from '../../utils/leaguePositions';
+import { getLeaguePositionFilters, getPositionFilterLabel, normalizeLeaguePlayerPosition } from '../../utils/leaguePositions';
 import CompanionPlayerPreviewSheet from './CompanionPlayerPreviewSheet';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow from './CompanionPlayerRow.jsx';
@@ -81,11 +82,10 @@ function getHeatmapMetricColWidth() {
   return Math.max(HEATMAP_CELL_HEIGHT, Math.ceil(max + HEATMAP_METRIC_PAD_X * 2));
 }
 
-const DEF_POS_GROUPS = { DL: ['DL','DE','DT'], LB: ['LB','ILB','OLB'], DB: ['DB','CB','S','SS','FS'] };
 const normDefPos = (pos) => {
-  if (pos === 'DEF') return 'DEF';
-  for (const [n, s] of Object.entries(DEF_POS_GROUPS)) if (s.includes(pos)) return n;
-  return null;
+  const normalized = normalizeLeaguePlayerPosition(pos);
+  if (normalized === 'DEF') return 'DEF';
+  return ['DL', 'LB', 'DB'].includes(normalized) ? normalized : null;
 };
 
 function filterHeatmapPositions(positionOrder, leaguePositions) {
@@ -703,7 +703,7 @@ const HeatmapTable = memo(function HeatmapTable({
 export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRouteStateChange = null }) {
   const {
     weeklyStats,
-    players,
+    players: providerPlayers,
     rosters,
     scheduleMap,
     activeScoringSettings,
@@ -719,6 +719,18 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     selectedLeagueId,
   } = useSleeperBase();
   const statsEnhancing = useSleeperStatsEnhancing();
+  const players = useMemo(() => {
+    if (!providerPlayers) return null;
+    const defenses = {};
+    for (const team of ALL_TEAMS) {
+      const playerId = platform === 'espn' ? getEspnTeamDefensePlayerId(team) : team;
+      if (!playerId || providerPlayers[playerId]) continue;
+      // League rosters and weekly stat feeds can contain D/ST without player metadata.
+      const name = TEAM_NAMES[TEAM_COLOR_KEY[team] ?? team.toLowerCase()] ?? team;
+      defenses[playerId] = { team, position: 'DEF', full_name: name };
+    }
+    return Object.keys(defenses).length ? { ...providerPlayers, ...defenses } : providerPlayers;
+  }, [platform, providerPlayers]);
   const rosteredPlayerIds = useMemo(() => {
     const ids = new Set();
     for (const roster of rosters ?? []) {
@@ -1510,7 +1522,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         if (playerTeam !== scoringTeam) continue;
 
         const val = getDefVal(wEntry, player.position);
-        if (val <= 0 && !(val < 0 && allowNegativePlayerValues)) continue;
+        if (val <= 0 && !(val < 0 && allowNegativePlayerValues) && !(val === 0 && activePos === 'DEF')) continue;
         const breakdown = getScoreBreakdown(wEntry, activeScoringSettings, player.position,
           effectiveDefStatMode === 'pts' ? val : undefined);
         const name = player.full_name || `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim() || playerId;
@@ -1533,10 +1545,10 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     const form = {};
     const byPosition = new Map();
     for (const [playerId, player] of Object.entries(players)) {
-      if (!player.team || (!isWaiverEligiblePlayerRecord(player)
-        && !UNAVAILABLE_ROSTER_STATUSES.has(getPlayerAvailabilityStatus(player)))) continue;
-      const position = viewMode === 'offense' ? player.position : normDefPos(player.position);
+      const position = viewMode === 'offense' ? player?.position : normDefPos(player?.position);
       if (!activePositionSet.has(position)) continue;
+      if (!player.team || (position !== 'DEF' && !isWaiverEligiblePlayerRecord(player)
+        && !UNAVAILABLE_ROSTER_STATUSES.has(getPlayerAvailabilityStatus(player)))) continue;
       const team = player.team.toUpperCase();
       if (!completedByTeam.has(team)) {
         completedByTeam.set(team, getHeatmapCompletedGameWeeks(scheduleMap, team, seasonWeeks));
@@ -1576,15 +1588,15 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     const pointsAllowed = (viewMode === 'offense' ? statMode : defStatMode) === 'pts_allowed';
     const scoringTeam = pointsAllowed ? scheduleMap?.[week]?.[team]?.opp?.toUpperCase() : team;
     if (!scoringTeam) return [];
-    if (matchupFiltersApply && unrosteredMatchupOnly && !rosterDataReady) return [];
     const effectiveOffense = resolveHeatmapOffenseStatMode(offenseMode, activePos);
     const defenseMetric = DEF_STAT_MODES.find(mode => mode.id === defenseMode);
     const fantasyPoints = (viewMode === 'offense' ? offenseMode : defenseMode) === 'pts';
     const results = [];
     for (const [playerId, { position, team: playerTeam, games, completed }] of Object.entries(seasonPlayerForm)) {
       if (playerTeam !== scoringTeam || (activePos !== 'ALL' && position !== activePos)) continue;
-      const rostered = rosteredPlayerIds.has(playerId);
-      if (matchupFiltersApply && unrosteredMatchupOnly && rostered) continue;
+      // Keep the defense card visible when the Unrostered scoring filter excludes the unit.
+      if (position !== 'DEF' && matchupFiltersApply && unrosteredMatchupOnly
+        && (!rosterDataReady || rosteredPlayerIds.has(playerId))) continue;
       const player = players[playerId];
       const weeks = matchupWindow === 'recent' ? completed.slice(-4) : completed;
       const played = matchupWindow === 'recent' ? games.filter(game => weeks.includes(game.week)) : games;
@@ -1599,7 +1611,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
       const value = total == null ? null : total / values.length;
       const name = player.full_name || [player.first_name, player.last_name].filter(Boolean).join(' ') || playerId;
       results.push({
-        playerId, name, position: player.position, team: scoringTeam, rostered, value,
+        playerId, name, position: player.position, team: scoringTeam, value,
         games: played, weeks,
       });
     }
@@ -1618,6 +1630,8 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
   const drilldownRows = (upcomingPlayers ? futureOpponentPlayers : drilldownPlayers).map(row => {
     const rawPlayer = players?.[row.playerId];
     const team = row.team ?? row.game?.team;
+    const isTeamDefense = normDefPos(row.position) === 'DEF';
+    const position = isTeamDefense ? 'DEF' : row.position;
     const seasonForm = seasonPlayerForm[row.playerId];
     const activityColumns = getHeatmapPlayerActivityColumns(row.position);
     const games = row.games ?? [{ ...row.game, entry: row.entry }];
@@ -1646,8 +1660,14 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
     return {
       ...row,
       team,
-      player: { ...rawPlayer, id: row.playerId, name: row.name, team, position: row.position },
-      espnId: row.position === 'DEF' ? null : rawPlayer?.espn_id ?? espnIdOverrides?.[row.playerId] ?? rawPlayer?.sourceIds?.espn,
+      position,
+      isTeamDefense,
+      rostered: rosterDataReady ? rosteredPlayerIds.has(row.playerId) : null,
+      player: {
+        ...rawPlayer, id: row.playerId, name: row.name, team, position,
+        ...(isTeamDefense ? { teamLogoUrl: getBundledNflTeamLogoUrl(team) } : {}),
+      },
+      espnId: isTeamDefense ? null : rawPlayer?.espn_id ?? espnIdOverrides?.[row.playerId] ?? rawPlayer?.sourceIds?.espn,
       games, activityColumns, activity: averages[0] ?? null, tackles: averages[1] ?? null,
       seasonPoints: seasonForm?.seasonPoints ?? null,
       logGames, firstWeek, throughWeek,
@@ -1655,9 +1675,19 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
         ? getPositionFilterLabel(seasonForm.position) + ' #' + seasonForm.rank + ' overall'
         : null,
       value: upcomingPlayers ? row.value : row.val,
-      estimated: row.teamSource === 'fallback',
+      estimated: !isTeamDefense && row.teamSource === 'fallback',
     };
   });
+
+  const openTeamDefenseStats = row => {
+    handleDrilldownClose();
+    onViewPlayer(row.team, {
+      displayName: row.name,
+      position: row.position,
+      teamId: row.team,
+      ...(platform === 'sleeper' ? { sleeperId: row.playerId } : {}),
+    });
+  };
 
   const handleFuturePlayerStatsClick = useCallback(async (playerId) => {
     if (!onViewPlayer) return;
@@ -2305,6 +2335,7 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
           <div
             ref={setTableContainerRef}
             className="companion-heatmap-table-scroller"
+            data-tour="heatmap-weekly-grid"
             style={{
               overflowX: 'auto',
               overflowY: 'auto',
@@ -2565,10 +2596,12 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                     upcoming
                     valueLabel={resultValueLabel}
                     darkMode={darkMode}
-                    rosterReady={rosterDataReady}
                     canOpenStats={Boolean(onViewPlayer)}
                     openingId={futurePlayerNavigationId}
-                    onOpenStats={row => void handleFuturePlayerStatsClick(row.playerId)}
+                    onOpenStats={row => {
+                      if (row.isTeamDefense) openTeamDefenseStats(row);
+                      else void handleFuturePlayerStatsClick(row.playerId);
+                    }}
                   />
                 )}
               </>
@@ -2702,6 +2735,10 @@ export default function CompanionHeatmap({ onViewPlayer, routeState = null, onRo
                 darkMode={darkMode}
                 canOpenStats={Boolean(onViewPlayer)}
                 onOpenStats={row => {
+                  if (row.isTeamDefense) {
+                    openTeamDefenseStats(row);
+                    return;
+                  }
                   handleDrilldownClose();
                   if (useMobilePreviewSheet) {
                     setPreviewPlayerId(row.playerId);

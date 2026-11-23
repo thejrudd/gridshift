@@ -15,7 +15,7 @@ import {
   fetchEspnPreseason,
   fetchEspnRegularSeason,
   normalizeCrosswalkTeamId,
-  overlayEspnBroadcastsWeek,
+  overlayEspnGameMetadataWeek,
   overlayEspnScoreboardWeek,
   readStoredNflSeasonPhase,
   writeStoredNflSeasonPhase,
@@ -29,6 +29,7 @@ import {
   STATISTICS_SCORES_PROVIDERS,
 } from '../../../utils/statisticsScoresProvider';
 import { isStatisticsScoresDrilldownStatus } from '../../../utils/statisticsScoresDrilldown';
+import { createVisiblePoller, isPageActive } from '../../../utils/visiblePolling.js';
 import {
   resolveStatisticsScoresCurrentWeekId,
   resolveStatisticsScoresWeekId,
@@ -303,7 +304,7 @@ export default function StatisticsScores({
     provider: DEVELOPER_SOURCE_ENABLED ? STATISTICS_SCORES_PROVIDERS.FIXTURE : null,
     notice: null,
   });
-  const espnBroadcastRequests = useRef(new Map());
+  const [espnMetadata, setEspnMetadata] = useState(null);
 
   useEffect(() => {
     if (!showTourPreview) {
@@ -324,12 +325,17 @@ export default function StatisticsScores({
   const activeProvider = DEVELOPER_SOURCE_ENABLED
     ? developerSource
     : sourceState.provider ?? STATISTICS_SCORES_PROVIDERS.ESPN;
+  const activeState = seasonPhase === NFL_SEASON_PHASES.PRESEASON ? preseasonState : regularState;
   const weeks = useMemo(
     () => {
-      if (seasonPhase === NFL_SEASON_PHASES.PRESEASON) return preseasonState.data?.weeks ?? [];
-      return regularState.data?.weeks ?? [];
+      const data = activeState.data;
+      if (activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
+        && espnMetadata?.season === season && espnMetadata.phase === seasonPhase) {
+        return overlayEspnGameMetadataWeek(data, espnMetadata.scoreboard, espnMetadata.week).weeks;
+      }
+      return data?.weeks ?? [];
     },
-    [preseasonState.data, regularState.data, seasonPhase],
+    [activeProvider, activeState.data, espnMetadata, season, seasonPhase],
   );
   const sharedFantasyCurrentWeekId = useMemo(() => {
     if (
@@ -381,7 +387,6 @@ export default function StatisticsScores({
   const liveCount = selectedWeek?.games.filter((game) => ['live', 'halftime', 'delayed'].includes(game.status)).length ?? 0;
   const selectedWeekNumber = Number.isInteger(selectedWeek?.week) ? selectedWeek.week : null;
   const selectedWeekHasLiveGames = selectedWeek?.games.some((game) => game.status === 'live') ?? false;
-  const activeState = seasonPhase === NFL_SEASON_PHASES.PRESEASON ? preseasonState : regularState;
   const canOpenGame = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
     || (activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
       && seasonPhase === NFL_SEASON_PHASES.REGULAR);
@@ -515,6 +520,39 @@ export default function StatisticsScores({
     }
   }, [activeState.status, onRouteChange, routeGameId, routePhase, routePlayerGroup, routeSeason, routeSection, routeWeek, season, seasonPhase, selectedGame, selectedGameRouteId, selectedWeek, sharedFantasyCurrentWeekPending, sourceState.status]);
 
+  const needsEspnMetadata = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
+    && activeState.liveEnvelope?.provider !== STATISTICS_SCORES_PROVIDERS.ESPN;
+  useEffect(() => {
+    if (!needsEspnMetadata || sourceState.status !== 'ready'
+      || activeState.status !== 'ready' || !selectedWeekNumber) return undefined;
+    const controller = new AbortController();
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const { scoreboard } = await getStatisticsScoresEspnWeek({
+          season, phase: seasonPhase, week: selectedWeekNumber, signal: controller.signal,
+        });
+        if (!controller.signal.aborted && scoreboard) {
+          setEspnMetadata({ season, phase: seasonPhase, week: selectedWeekNumber, scoreboard });
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+    const poller = createVisiblePoller({
+      run: refresh,
+      getDelay: () => selectedWeekHasLiveGames ? LIVE_REFRESH_INTERVAL_MS : null,
+    });
+    poller.start();
+    if (isPageActive()) void refresh().catch(() => {});
+    return () => {
+      poller.stop();
+      controller.abort();
+    };
+  }, [activeState.status, needsEspnMetadata, season, seasonPhase, selectedWeekHasLiveGames, selectedWeekNumber, sourceState.status]);
+
   useEffect(() => {
     if (activeProvider === STATISTICS_SCORES_PROVIDERS.FIXTURE
       || sourceState.status !== 'ready'
@@ -526,26 +564,6 @@ export default function StatisticsScores({
     let consecutiveFailures = 0;
     let stopped = false;
     let latestEnvelope = null;
-    const broadcastCacheKey = `${season}:${seasonPhase}:${selectedWeekNumber}`;
-    const getEspnBroadcastPayload = () => {
-      if (espnBroadcastRequests.current.has(broadcastCacheKey)) {
-        return Promise.resolve(espnBroadcastRequests.current.get(broadcastCacheKey));
-      }
-      const request = getStatisticsScoresEspnWeek({
-        season,
-        week: selectedWeekNumber,
-        phase: seasonPhase,
-        signal: controller.signal,
-      }).then((payload) => {
-        espnBroadcastRequests.current.set(broadcastCacheKey, payload);
-        return payload;
-      }).catch((error) => {
-        if (error.name === 'AbortError' || controller.signal.aborted) return null;
-        espnBroadcastRequests.current.set(broadcastCacheKey, null);
-        return null;
-      });
-      return request;
-    };
 
     const scheduleRefresh = () => {
       if (stopped || document.visibilityState === 'hidden' || !navigator.onLine) return;
@@ -565,8 +583,8 @@ export default function StatisticsScores({
       if (stopped || requestInFlight || document.visibilityState === 'hidden' || !navigator.onLine) return;
       requestInFlight = true;
       try {
-        const payloadPromise = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
-          ? getStatisticsScoresLiveWeek({
+        const payload = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
+          ? await getStatisticsScoresLiveWeek({
             season,
             week: selectedWeekNumber,
             phase: seasonPhase,
@@ -581,10 +599,6 @@ export default function StatisticsScores({
               signal: controller.signal,
             }),
           };
-        const espnBroadcastPayload = activeProvider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE
-          ? getEspnBroadcastPayload()
-          : Promise.resolve(null);
-        const [payload, resolvedEspnBroadcastPayload] = await Promise.all([payloadPromise, espnBroadcastPayload]);
         if (stopped || controller.signal.aborted) return;
         consecutiveFailures = 0;
         latestEnvelope = payload;
@@ -594,15 +608,7 @@ export default function StatisticsScores({
         const updateState = (current) => ({
           ...current,
           data: payload.provider === STATISTICS_SCORES_PROVIDERS.BALLDONTLIE && Array.isArray(payload.games)
-            ? (() => {
-              const withBdlLiveData = overlayBdlScoreboardWeek(current.data, payload, selectedWeekNumber, {
-                observedAt,
-                providerFetchedAt,
-              });
-              return resolvedEspnBroadcastPayload?.scoreboard
-                ? overlayEspnBroadcastsWeek(withBdlLiveData, resolvedEspnBroadcastPayload.scoreboard, selectedWeekNumber)
-                : withBdlLiveData;
-            })()
+            ? overlayBdlScoreboardWeek(current.data, payload, selectedWeekNumber, { observedAt, providerFetchedAt })
             : overlayEspnScoreboardWeek(current.data, payload.scoreboard, selectedWeekNumber, {
               observedAt,
               providerFetchedAt,

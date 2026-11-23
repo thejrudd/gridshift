@@ -5,6 +5,7 @@ import {
   resolveProviderAnchoredGameClock,
   resolveSampleStoppage,
 } from './providerAnchoredGameClock.js';
+import { QUARTER_SECONDS } from './playByPlay/gameClock.js';
 import { createVisiblePoller, isPageActive } from './visiblePolling.js';
 
 /**
@@ -63,7 +64,7 @@ export function createLiveClockTicker({
   navigatorTarget = typeof navigator === 'undefined' ? null : navigator,
 } = {}) {
   const listeners = new Set();
-  // gameKey -> { tick, base, value, inputKey, result, firstSeen: Map<anchorKey, ms>, seenAt }
+  // One entry per game keeps its display and device-local anchor for the current sample.
   const memory = new Map();
   let tick = 0;
   let tickAt = now();
@@ -136,11 +137,23 @@ export function createLiveClockTicker({
     if (!gameKey || !anchor) return null;
     const period = game.live.period ?? null;
     const clock = game.live.clock;
-    const stoppage = resolveSampleStoppage(game.latestPlay?.play ?? null, { period, clock });
+    const latestPlay = game.latestPlay;
+    const stoppage = resolveSampleStoppage(latestPlay?.play, { period, clock });
+    const clockSeconds = parseProviderGameClock(clock);
+    const playPeriod = Number(latestPlay?.play?.period);
+    const resumedAtWarning = !stoppage.stopped
+      && playPeriod === Number(period) && parseProviderGameClock(latestPlay?.play?.time) === clockSeconds;
+    // The scoreboard may set the next period at full time during the break.
+    const betweenPeriods = playPeriod > 0 && playPeriod < Number(period) && (
+      clockSeconds === QUARTER_SECONDS || (Number(period) > 4 && clockSeconds === 10 * 60)
+    );
     const active = isActive();
+    const feedStale = anchor.feedStale === true || latestPlay?.stale === true;
+    const ageCapMs = resolveClockAgeCapMs(sampleIntervalMs);
     const inputKey = [
-      game.status, anchor.key, period, clock, anchor.changedAt, anchor.feedStale,
-      anchor.providerClockFrozen, stoppage.stopped, stoppage.reason, active, sampleIntervalMs,
+      game.status, anchor.key, period, clock, anchor.changedAt, anchor.verifiedAt, anchor.feedStale,
+      anchor.providerClockFrozen, latestPlay?.verifiedAt, latestPlay?.stale,
+      stoppage.stopped, stoppage.reason, resumedAtWarning, betweenPeriods, active, sampleIntervalMs,
     ].join('|');
 
     let entry = memory.get(gameKey);
@@ -149,38 +162,50 @@ export function createLiveClockTicker({
       return entry.result;
     }
     if (!entry) {
-      entry = { tick: -1, base: null, value: null, inputKey: null, result: null, firstSeen: new Map(), seenAt: 0 };
+      entry = { tick: -1, base: null, value: null, inputKey: null, result: null, anchorKey: null, seenAt: 0 };
       memory.set(gameKey, entry);
     }
     // A later input in the same tick re-resolves from the value before this tick.
     const base = entry.tick === tick ? entry.base : entry.value;
-    if (!entry.firstSeen.has(anchor.key)) {
-      entry.firstSeen.clear();
-      entry.firstSeen.set(anchor.key, now());
+    if (entry.anchorKey !== anchor.key) {
+      // Bound device/server skew when this value first arrives. A later fetch
+      // can verify the same value without moving the origin of the estimate.
+      const sampleAgeMs = Number.isFinite(anchor.sampleAgeMs) ? anchor.sampleAgeMs : 0;
+      entry.anchorKey = anchor.key;
+      entry.firstSeenAt = now();
+      entry.changedAt = Math.max(Number(anchor.changedAt) || 0, entry.firstSeenAt - sampleAgeMs);
+      entry.lastVerifiedAt = null;
     }
-    // Device-local first sight of this sample bounds its age: provider-side
-    // timestamps can be skewed against this device, and an earlier anchor than
-    // the receipt (minus the server's sample age when known) only risks
-    // ticking below the real clock.
-    const firstSeenAt = entry.firstSeen.get(anchor.key);
-    const sampleAgeMs = Number.isFinite(anchor.sampleAgeMs) ? anchor.sampleAgeMs : 0;
-    const changedAt = Math.max(Number(anchor.changedAt) || 0, firstSeenAt - sampleAgeMs);
+    const verifiedAt = Math.min(
+      Math.max(entry.changedAt, anchor.verifiedAt ?? entry.changedAt),
+      latestPlay?.verifiedAt ?? Infinity,
+    );
+    if (!feedStale && (entry.lastVerifiedAt == null || verifiedAt > entry.lastVerifiedAt)) {
+      // Fresh data can resume the same reading after the countdown held.
+      // Skip the elapsed time we could not verify during that hold.
+      if (entry.lastVerifiedAt != null) {
+        entry.changedAt += Math.max(0, verifiedAt - entry.lastVerifiedAt - ageCapMs);
+      }
+      entry.lastVerifiedAt = verifiedAt;
+    }
 
     const resolved = resolveProviderAnchoredGameClock({
       status: game.status,
       period,
       providerClock: clock,
-      anchorChangedAt: changedAt,
+      anchorChangedAt: entry.changedAt,
+      verifiedAt,
       anchorKey: anchor.key,
-      now: Math.max(tickAt, firstSeenAt),
+      now: Math.max(tickAt, entry.firstSeenAt),
       previousDisplayClock: base?.seconds ?? null,
       previousPeriod: base?.period ?? null,
       previousAnchorKey: base?.anchorKey ?? null,
-      feedStale: anchor.feedStale === true,
+      feedStale,
       providerClockFrozen: anchor.providerClockFrozen === true,
       stopped: stoppage.stopped,
-      paused: !active,
-      ageCapMs: resolveClockAgeCapMs(sampleIntervalMs),
+      paused: !active || betweenPeriods,
+      resumedAtWarning,
+      ageCapMs,
     });
     if (!resolved) return null;
 

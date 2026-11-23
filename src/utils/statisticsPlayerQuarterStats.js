@@ -153,7 +153,7 @@ function isPass(play, narrative, actors) {
   return /pass/.test(String(play?.typeSlug ?? '').toLowerCase())
     || narrative.playKind === 'pass'
     || narrative.playKind === 'incompletion'
-    || narrative.playKind === 'interception'
+    || isInterception(play, narrative)
     || actors.some((actor) => actor.role === PLAY_ROLES.RECEIVER);
 }
 

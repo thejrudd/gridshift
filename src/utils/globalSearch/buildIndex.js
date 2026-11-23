@@ -10,12 +10,14 @@
 // without rebuilding the rest.
 
 import { createIndex } from './tokenIndex.js';
-import { KIND_APP_VIEW, KIND_COMMAND } from './entities/record.js';
+import { normalizeCrosswalkTeamId } from '../espnNflScoreboard.js';
+import { KIND_APP_VIEW, KIND_COMMAND, KIND_NFL_TEAM } from './entities/record.js';
 import { buildAppViewRecords } from './entities/appViews.js';
 import { buildCommandRecords } from './entities/commands.js';
 import { buildFantasyTeamRecords } from './entities/fantasyTeams.js';
 import { buildGameRecords, buildWeekRecords } from './entities/games.js';
 import { buildNflTeamRecords } from './entities/nflTeams.js';
+import { buildPlayerRecords } from './entities/players.js';
 
 export const SEARCH_INDEX_VERSION = 1;
 
@@ -72,5 +74,23 @@ export function filterStaticRecordsForLeague(records = [], hasLeague = false) {
  * player slice superseding the static one — without rebuilding the others.
  */
 export function composeIndex({ staticRecords = [], playerRecords = [], leagueRecords = [] } = {}) {
-  return createIndex([...staticRecords, ...playerRecords, ...leagueRecords]);
+  const teams = new Map(staticRecords.filter((record) => record.kind === KIND_NFL_TEAM)
+    .map((record) => [normalizeCrosswalkTeamId(record.meta.teamId), record]));
+  const players = playerRecords.map((record) => {
+    if (record.meta?.position !== 'DEF') return record;
+    const teamId = normalizeCrosswalkTeamId(record.meta.team);
+    const team = teams.get(teamId);
+    teams.delete(teamId);
+    if (!team || record.meta.team === team.meta.teamId) return record;
+    return { ...record, meta: { ...record.meta, team: team.meta.teamId } };
+  });
+  // A static-only build or a partial directory still has all NFL teams.
+  const missingDefenses = buildPlayerRecords(Object.fromEntries(
+    [...teams].map(([id, team]) => [id, {
+      full_name: team.label,
+      team: team.meta.teamId,
+      position: 'DEF',
+    }]),
+  ));
+  return createIndex([...staticRecords, ...players, ...missingDefenses, ...leagueRecords]);
 }

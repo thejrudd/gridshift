@@ -1067,20 +1067,30 @@ test('mobile Companion controls enforce prerequisites and keep compact interacti
 });
 
 test('Fantasy Defenses keeps filters and search behind the Filters chip at desktop widths', async ({ page }) => {
+  await page.route('**/api/statistics/scores/espn-week?**', async (route) => {
+    const phase = new URL(route.request().url()).searchParams.get('phase');
+    await route.fulfill({ json: { ok: true, phase, scoreboard: { events: [] } } });
+  });
   // Defense rankings attribute each stat line to the opponent. Sleeper rows
   // carry team and opponent; the base fixture omits them and stubs the ESPN
   // schedule, so supply them here.
   const fixturePlayers = responsiveFixtureOverrides().players;
-  await page.route(`https://api.sleeper.app/v1/stats/nfl/regular/${TEST_SEASON}/*`, async (route) => {
+  await page.route(`https://api.sleeper.com/stats/nfl/${TEST_SEASON}/*?season_type=regular`, async (route) => {
     const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
     const stats = week >= 1 && week <= 6 ? weeklyStatsForWeek(week) : {};
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(Object.fromEntries(Object.entries(stats).map(([id, values]) => {
-        const team = fixturePlayers[id]?.team ?? null;
-        return [id, { ...values, team, opp: team === 'NYJ' ? 'NE' : 'NYJ' }];
-      }))),
+      body: JSON.stringify(Object.entries(stats).map(([id, values]) => {
+        const player = fixturePlayers[id];
+        return {
+          player_id: id,
+          stats: values,
+          team: player?.team,
+          opponent: player?.team === 'NYJ' ? 'NE' : 'NYJ',
+          player: { position: player?.position },
+        };
+      })),
     });
   });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1094,7 +1104,14 @@ test('Fantasy Defenses keeps filters and search behind the Filters chip at deskt
 
   await filterToggle.click();
   await expect(filterStack).toBeVisible();
-  await expect(page.getByPlaceholder('Search team')).toBeVisible();
+  const search = page.getByPlaceholder('Search team');
+  await expect(search).toBeVisible();
+  const jets = page.getByRole('button', { name: 'Open New York Jets defense details' });
+  await search.fill('y');
+  await expect(jets).toBeVisible();
+  await search.fill('NY D/ST');
+  await expect(jets).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open New England Patriots defense details' })).toHaveCount(0);
 
   await filterToggle.click();
   await expect(filterStack).toBeHidden();
@@ -1685,6 +1702,98 @@ test('Heatmap prioritizes each defensive position stat and keeps inactive games 
   await expect(breakdown.locator('dt')).toHaveText(['Tackle · 4', 'Sack · 1']);
   await expect(breakdown.locator('dd')).toHaveText(['+4.0', '+2.0']);
   await expect(edgeLog).toHaveCount(0);
+});
+
+test('Heatmap shows D/ST roster status with the Unrostered filter enabled', async ({ page }) => {
+  const base = responsiveFixtureOverrides();
+  const defenseLeague = {
+    ...base.league,
+    roster_positions: [...base.league.roster_positions, 'DEF'],
+    scoring_settings: { ...base.league.scoring_settings, sack: 1 },
+  };
+  const defenseRosters = base.rosters.map((roster) => (
+    roster.roster_id === 1 ? { ...roster, players: [...roster.players, 'DAL'] } : roster
+  ));
+  const defenseLeaguesBySeason = { ...base.leaguesBySeason, [TEST_SEASON]: [defenseLeague] };
+  await page.unroute('https://api.sleeper.app/v1/**');
+  await installTradeFixtures(page, {
+    ...base,
+    league: defenseLeague,
+    leaguesBySeason: defenseLeaguesBySeason,
+    rosters: defenseRosters,
+    persistedSleeperState: {
+      ...base.persistedSleeperState,
+      league: defenseLeague,
+      leagues: [defenseLeague],
+      leaguesBySeason: defenseLeaguesBySeason,
+      rosters: defenseRosters,
+    },
+  });
+  // Neither defense is in the player fixture. The franchise IDs still own stats and roster spots.
+  await page.route('**/api/statistics/scores/espn-week*', route => route.fulfill({ json: { scoreboard: { events: [] } } }));
+  await page.route(`https://api.sleeper.com/stats/nfl/${TEST_SEASON}/*`, async (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    await route.fulfill({ json: week === 1 ? [
+      { player_id: 'DAL', stats: { sack: 4, gp: 1 } },
+      { player_id: 'SF', stats: { sack: 2, gp: 1 } },
+    ] : [] });
+  });
+  await page.route('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard*', async (route) => {
+    const week = Number(new URL(route.request().url()).searchParams.get('week'));
+    await route.fulfill({ json: { events: week <= 2 ? [{
+      id: `defense-heatmap-${week}`,
+      date: `2026-09-${week === 1 ? 13 : 20}T18:00:00.000Z`,
+      week: { number: week },
+      competitions: [{
+        status: { type: { completed: week === 1 } },
+        competitors: [
+          { homeAway: 'away', team: { abbreviation: 'DAL', id: '6' }, score: week === 1 ? '20' : '' },
+          { homeAway: 'home', team: { abbreviation: 'SF', id: '25' }, score: week === 1 ? '17' : '' },
+        ],
+      }],
+    }] : [] } });
+  });
+  await page.goto('/fantasy/heatmap?mode=defense&defPos=DEF');
+  await dismissWhatsNew(page);
+  await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+
+  const dal = page.locator('tbody tr').filter({ hasText: /^DAL/ });
+  const dialog = page.getByRole('dialog', { name: 'Heatmap drilldown' });
+  const close = page.getByRole('button', { name: 'Close heatmap drilldown' });
+  await dal.locator('td[data-heatmap-week="1"]').click();
+  await expect(dialog.getByText('Dallas Cowboys', { exact: true })).toBeVisible();
+  const dallasDefense = dialog.getByRole('button', { name: /^Dallas Cowboys details.*Rostered/ });
+  await expect(dallasDefense.getByText('Rostered', { exact: true })).toBeVisible();
+  await dallasDefense.click();
+  await expect(dialog.getByRole('definition').filter({ hasText: '+4.0' })).toBeVisible();
+  await close.click();
+
+  await dal.locator('td[data-heatmap-column-week="2"]').click();
+  await dialog.getByRole('button', { name: 'Unrostered', exact: true }).click();
+  await expect(dialog.getByText('Dallas Cowboys', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Rostered', { exact: true })).toBeVisible();
+  const scoring = dialog.locator('.companion-heatmap-drilldown-stat').filter({ hasText: 'DAL DEF scored' });
+  await expect(scoring.getByText('0.0 PPG')).toBeVisible();
+  const allowance = dialog.locator('.companion-heatmap-drilldown-stat').filter({ hasText: 'SF allowed to DEF' });
+  await expect(allowance.getByText('4.0 PPG')).toBeVisible();
+  await dallasDefense.click();
+  const gameLog = dialog.getByRole('table', { name: 'Dallas Cowboys game log' });
+  await expect(gameLog.getByRole('row').filter({ hasText: /1.*SF.*4/ })).toBeVisible();
+  await expect(gameLog.locator('tfoot td')).toHaveText('4');
+  await expect(gameLog.getByRole('columnheader', { name: 'Snap %' })).toHaveCount(0);
+  await close.click();
+
+  await page.getByRole('button', { name: 'Show Filters' }).click();
+  await page.getByRole('button', { name: 'Fantasy Pts Allowed' }).click();
+  await page.getByRole('button', { name: 'Hide Filters' }).click();
+  await dal.locator('td[data-heatmap-column-week="2"]').click();
+  const sanFranciscoDefense = dialog.getByRole('button', { name: /^San Francisco 49ers details.*Unrostered/ });
+  await expect(sanFranciscoDefense.getByText('Unrostered', { exact: true })).toBeVisible();
+  const opponentScoring = dialog.locator('.companion-heatmap-drilldown-stat').filter({ hasText: 'SF DEF scored' });
+  await expect(opponentScoring.getByText('2.0 PPG')).toBeVisible();
+  await sanFranciscoDefense.click();
+  await dialog.getByRole('button', { name: 'View D/ST statistics' }).click();
+  await expect(page).toHaveURL(/\/statistics\/player\/sf(?:\/|\?)/i);
 });
 
 test('Heatmap keeps empty weeks visible across viewport sizes', async ({ page }) => {

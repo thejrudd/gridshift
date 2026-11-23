@@ -6,7 +6,7 @@ import {
   fetchEspnScoreboardWeek,
   normalizeEspnScoreboardEvent,
   normalizeEspnScoreboardSeason,
-  overlayEspnBroadcastsWeek,
+  overlayEspnGameMetadataWeek,
   overlayEspnScoreboardWeek,
   replaceEspnScoreboardWeek,
 } from '../../src/utils/espnNflScoreboard.js';
@@ -282,16 +282,33 @@ test('overlays ESPN broadcast metadata without replacing BALLDONTLIE game state'
     metadata: {},
   };
 
-  const updated = overlayEspnBroadcastsWeek(season, {
-    events: [makeEvent({ state: 'post', completed: true, awayScore: '21', homeScore: '17' })],
+  const liveEvent = makeEvent({ state: 'in', awayScore: '21', homeScore: '17' });
+  const competition = liveEvent.competitions[0];
+  competition.competitors.find((entry) => entry.homeAway === 'home').team.id = '22';
+  competition.situation = { possession: '22', awayTimeouts: 0, homeTimeouts: 1, shortDownDistanceText: '2nd & 3' };
+  bdlGame.live = { period: '3', clock: '8:00', possession: null, awayTimeouts: null, homeTimeouts: null };
+  liveEvent.status.period = 3;
+  const updated = overlayEspnGameMetadataWeek(season, {
+    events: [liveEvent],
   }, 1);
   const game = updated.weeks[0].games[0];
+  assert.equal(game.live.clock, '8:00');
+  assert.equal(game.live.possession, 'ARI');
+  assert.equal(game.live.awayTimeouts, 0);
+  assert.equal(game.live.homeTimeouts, 1);
+  assert.equal(game.live.next.downDistance, '2nd & 3');
+  assert.deepEqual(game.records, { away: '0-0', home: '0-0' });
 
-  assert.equal(game.network, 'NBC');
-  assert.deepEqual(game.broadcasts, [{ name: 'NBC' }]);
-  assert.equal(game.broadcastProvider, 'espn');
-  assert.equal(game.status, 'live');
-  assert.deepEqual(game.score, { away: 3, home: 7 });
+  const finalOverlay = overlayEspnGameMetadataWeek(season, {
+    events: [makeEvent({ state: 'post', completed: true, awayScore: '21', homeScore: '17' })],
+  }, 1).weeks[0].games[0];
+
+  assert.equal(finalOverlay.network, 'NBC');
+  assert.deepEqual(finalOverlay.broadcasts, [{ name: 'NBC' }]);
+  assert.equal(finalOverlay.broadcastProvider, 'espn');
+  assert.equal(finalOverlay.status, 'live');
+  assert.deepEqual(finalOverlay.score, { away: 3, home: 7 });
+  assert.equal(finalOverlay.live.awayTimeouts, null);
 });
 
 test('matches ESPN team aliases without dropping unmatched BALLDONTLIE games', () => {

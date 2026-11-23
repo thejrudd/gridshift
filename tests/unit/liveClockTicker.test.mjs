@@ -203,6 +203,96 @@ test('a held clock shows the latest play reason, and nothing when unknown', () =
   assert.equal(capped.stopReason, null);
 });
 
+test('fresh responses keep an unchanged clock running and a stale plays feed freezes it', () => {
+  const env = fakeEnvironment();
+  const ticker = createLiveClockTicker(env.api);
+  ticker.subscribe(() => {});
+  const snapshot = (verifiedAt) => {
+    const game = liveGame({
+      latestPlay: { verifiedAt, play: { typeSlug: 'rush', period: 2, time: '8:14' } },
+    });
+    game.live.providerClockAnchor.verifiedAt = verifiedAt;
+    return game;
+  };
+  assert.equal(ticker.resolveGame(snapshot(START)).clock, '8:14');
+  env.advance(8_000);
+  const refreshed = snapshot(env.time);
+  assert.equal(ticker.resolveGame(refreshed).clock, '8:06');
+  env.advance(4_000);
+  assert.equal(ticker.resolveGame(refreshed).clock, '8:02');
+  env.advance(6_000);
+  refreshed.live.providerClockAnchor.verifiedAt = env.time;
+  assert.equal(ticker.resolveGame(refreshed).clock, '7:56');
+  assert.equal(ticker.resolveGame(refreshed).stale, true);
+  env.advance(2_000);
+  assert.equal(ticker.resolveGame(refreshed).clock, '7:56');
+});
+
+test('a new snap at 2:00 releases the two-minute warning hold', () => {
+  const env = fakeEnvironment();
+  const ticker = createLiveClockTicker(env.api);
+  ticker.subscribe(() => {});
+  const warning = liveGame({
+    clock: '2:00', key: '2|2:00|warning',
+    latestPlay: { play: { typeSlug: 'two-minute-warning', period: 2, time: '2:00' } },
+  });
+  assert.equal(ticker.resolveGame(warning).stopReason, '2-min warning');
+  env.advance(20_000);
+  const restarted = liveGame({
+    clock: '2:00', key: '2|2:00|rush', changedAt: env.time,
+    latestPlay: { play: { typeSlug: 'rush', period: 2, time: '2:00' } },
+  });
+  assert.equal(ticker.resolveGame(restarted).clock, '2:00');
+  env.advance(2_000);
+  assert.equal(ticker.resolveGame(restarted).clock, '1:58');
+});
+
+test('an unchanged reading resumes from the held clock after a stale period', () => {
+  const env = fakeEnvironment();
+  const ticker = createLiveClockTicker(env.api);
+  ticker.subscribe(() => {});
+  const game = liveGame({ clock: '4:00', period: '3' });
+  const anchor = game.live.providerClockAnchor;
+  anchor.verifiedAt = START;
+
+  assert.equal(ticker.resolveGame(game).clock, '4:00');
+  env.advance(180_000);
+  assert.equal(ticker.resolveGame(game).clock, '3:50');
+  assert.equal(ticker.resolveGame(game).stale, true);
+
+  anchor.verifiedAt = env.time;
+  assert.equal(ticker.resolveGame(game).clock, '3:50');
+  assert.equal(ticker.resolveGame(game).stale, false);
+  env.advance(1_000);
+  assert.equal(ticker.resolveGame(game).clock, '3:49');
+});
+
+test('a quarter-ending score or turnover holds at zero and through the break', () => {
+  for (const typeSlug of ['rushing-touchdown', 'pass-interception-return']) {
+    const env = fakeEnvironment();
+    const ticker = createLiveClockTicker(env.api);
+    ticker.subscribe(() => {});
+    const latestPlay = { play: { typeSlug, period: 1, time: '0:04' } };
+    const endOfQuarter = liveGame({ clock: '0:00', period: '1', latestPlay });
+    assert.equal(ticker.resolveGame(endOfQuarter).frozen, true);
+    env.advance(8_000);
+    assert.equal(ticker.resolveGame(endOfQuarter).label, 'Q1 · 0:00');
+
+    const betweenQuarters = liveGame({ clock: '15:00', period: '2', changedAt: env.time, latestPlay });
+    assert.equal(ticker.resolveGame(betweenQuarters).label, 'Q2 · 15:00');
+    env.advance(8_000);
+    assert.equal(ticker.resolveGame(betweenQuarters).label, 'Q2 · 15:00');
+
+    const firstSnap = liveGame({
+      clock: '15:00', period: '2', changedAt: env.time, key: '2|15:00|first-snap',
+      latestPlay: { play: { typeSlug: 'rush', period: 2, time: '15:00' } },
+    });
+    assert.equal(ticker.resolveGame(firstSnap).label, 'Q2 · 15:00');
+    env.advance(2_000);
+    assert.equal(ticker.resolveGame(firstSnap).label, 'Q2 · 14:58');
+  }
+});
+
 test('display memory is shared and monotonic across surfaces and samples', () => {
   const env = fakeEnvironment();
   const ticker = createLiveClockTicker(env.api);
@@ -235,4 +325,17 @@ test('device-local first sight bounds a skewed anchor age', () => {
   assert.equal(ticker.resolveGame(skewed).clock, '8:14');
   env.advance(2_000);
   assert.equal(ticker.resolveGame(skewed).clock, '8:12');
+});
+
+test('a fresh fetch of the same value preserves the countdown origin of a cached first sample', () => {
+  const env = fakeEnvironment();
+  const ticker = createLiveClockTicker(env.api);
+  ticker.subscribe(() => {});
+  const game = liveGame({ changedAt: START - 5_000 });
+  game.live.providerClockAnchor.sampleAgeMs = 5_000;
+  assert.equal(ticker.resolveGame(game).clock, '8:09');
+  env.advance(2_000);
+  game.live.providerClockAnchor.sampleAgeMs = 0;
+  game.live.providerClockAnchor.verifiedAt = env.time;
+  assert.equal(ticker.resolveGame(game).clock, '8:07');
 });

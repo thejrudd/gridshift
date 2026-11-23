@@ -151,8 +151,7 @@ export function isKickFiledUnderFumble(play) {
 
 /**
  * A kick for possession and scoring: the slug's kicks (`isKickPossessionPlay`)
- * plus a punt or kickoff filed under a fumble slug. The game clock keeps the
- * slug-only reading.
+ * plus a punt or kickoff filed under a fumble slug.
  */
 export function isKickPlay(play) {
   return isKickPossessionPlay(play) || isKickFiledUnderFumble(play);

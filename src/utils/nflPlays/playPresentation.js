@@ -1,3 +1,5 @@
+import { replayReviewLabel } from './playNarrative.js';
+
 /**
  * Compact, non-animated labels shared by the full play feed and the live
  * scorecard preview. Geometry is still used for classification, but the
@@ -37,4 +39,11 @@ export function isPossessionChange(play, geometry = {}) {
   return geometry.flag === 'fumble'
     && /fumble/.test(slug)
     && /opp|opponent/.test(slug);
+}
+
+export function withReplayReview(play, sentence) {
+  const review = replayReviewLabel(play);
+  if (!review || replayReviewLabel({ rawText: sentence }) === review) return sentence;
+  const description = (sentence ?? '').trim().replace(/([^.!?])$/, '$1.');
+  return [description, `${review}.`].filter(Boolean).join(' ');
 }

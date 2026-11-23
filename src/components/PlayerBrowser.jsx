@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { fetchPlayerProfile, fetchRoster } from '../utils/playerApi';
 import PlayerProfile from './PlayerProfile';
 import TeamPage from './TeamPage';
+import { normalizeCrosswalkTeamId } from '../utils/espnNflScoreboard.js';
 import { getTeamVisualTheme } from '../utils/teamVisualTheme';
 import { formatPlayerHeight, formatPlayerWeight } from '../utils/playerMeasurements.js';
+import { buildStatisticsDefenseMeta } from '../utils/playerDrilldown.js';
 import { useSleeperStats } from '../context/SleeperContext';
 import Spinner from './ui/Spinner';
 
@@ -114,7 +116,13 @@ const PlayerBrowser = ({
   const selectedTeam = statsView === 'team'
     ? (teams.find((team) => team.id.toUpperCase() === normalizedSelectedTeamId) ?? null)
     : null;
-  const selectedPlayer = statsView === 'player' ? resolvedPlayer : null;
+  const defenseTeamId = statsView === 'player' ? normalizeCrosswalkTeamId(normalizedSelectedPlayerId) : null;
+  const defenseTeam = defenseTeamId
+    ? teams.find((team) => normalizeCrosswalkTeamId(team.id) === defenseTeamId)
+    : null;
+  const selectedPlayer = defenseTeam
+    ? buildStatisticsDefenseMeta({ teamId: defenseTeam.id.toUpperCase(), displayName: defenseTeam.name })
+    : statsView === 'player' ? resolvedPlayer : null;
 
   useEffect(() => {
     if (statsView !== 'player' || !normalizedSelectedPlayerId) {
@@ -140,7 +148,7 @@ const PlayerBrowser = ({
   }, [statsView, normalizedSelectedPlayerId, selectedPlayerMeta]);
 
   useEffect(() => {
-    if (statsView !== 'player' || !normalizedSelectedPlayerId) return;
+    if (statsView !== 'player' || !normalizedSelectedPlayerId || defenseTeam) return;
 
     let cancelled = false;
     let cancelInjuryLookup = () => {};
@@ -230,7 +238,7 @@ const PlayerBrowser = ({
       cancelled = true;
       if (typeof cancelInjuryLookup === 'function') cancelInjuryLookup();
     };
-  }, [loadPlayers, statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
+  }, [defenseTeam, loadPlayers, statsView, normalizedSelectedPlayerId, selectedPlayerMeta, teams]);
 
 
   if (statsView === 'player') {

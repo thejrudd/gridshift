@@ -17,7 +17,7 @@ import { formatFieldSpot, getPlayTrajectory } from '../../../utils/nflPlays/fiel
 import { getRoleLabel } from '../../../utils/nflPlays/playNarrative.js';
 import { readPlayNarrative } from '../../../utils/playByPlay/normalizePlay.js';
 import { lookupPlayerByName } from '../../../utils/nflPlays/playerNameIndex.js';
-import { getPlayTag } from '../../../utils/nflPlays/playPresentation.js';
+import { getPlayTag, withReplayReview } from '../../../utils/nflPlays/playPresentation.js';
 
 const MAX_FACES = 3;
 
@@ -31,11 +31,12 @@ function resolveActors(actors, participants, teamAbbr) {
 export function PlayCard({ play, participants, homeTeam, awayTeam, awayTheme, homeTheme, barColor, flipped = false }) {
   const [expanded, setExpanded] = useState(false);
   const narrative = readPlayNarrative(play);
+  const sentence = withReplayReview(play, narrative.confident || narrative.administrative ? narrative.sentence : play.description);
 
   if (narrative.administrative) {
     return (
       <div className="scores-play is-admin">
-        <p className="scores-play__admin-text">{narrative.sentence}</p>
+        <p className="scores-play__admin-text">{sentence}</p>
         <time className="scores-play__clock">{play.time}</time>
       </div>
     );
@@ -49,7 +50,6 @@ export function PlayCard({ play, participants, homeTeam, awayTeam, awayTheme, ho
   // `flag === 'fg'` covers a miss as well as a make, so the scoreboard answer is
   // the only one that can tell them apart.
   const scoring = geometry.scoring;
-  const sentence = narrative.confident ? narrative.sentence : play.description;
   // The spot is read off the same geometry the strip draws, so the label and
   // the picture can't disagree. The provider's own `spot` falls back to the
   // *end* of the play whenever it omits the start, and on a kick it is written

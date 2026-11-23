@@ -132,10 +132,12 @@ function formatDate(value, options) {
   }).format(date);
 }
 
-function getLiveSituation(competition, awayTeam, homeTeam, eventStatus) {
+function getLiveSituation(competition, awayCompetitor, homeCompetitor, eventStatus) {
   const situation = competition?.situation;
-  const competitors = competition?.competitors ?? [];
-  const possessionCompetitor = competitors.find((entry) => entry?.possession === true);
+  const competitors = [awayCompetitor, homeCompetitor];
+  const possessionCompetitor = (situation?.possession == null ? null : competitors.find((entry) => (
+    String(entry.team?.id ?? entry.id) === String(situation.possession)
+  ))) ?? competitors.find((entry) => entry.possession === true);
   const possession = possessionCompetitor?.team?.abbreviation?.toUpperCase?.() ?? null;
   const status = competition?.status ?? eventStatus ?? {};
   if (!situation && !possession && !status?.displayClock) return null;
@@ -147,8 +149,8 @@ function getLiveSituation(competition, awayTeam, homeTeam, eventStatus) {
     downDistance: situation?.shortDownDistanceText ?? situation?.downDistanceText ?? null,
     fieldPosition: situation?.possessionText ?? null,
     redZone: Boolean(situation?.isRedZone),
-    awayTimeouts: competitors.find((entry) => entry?.team?.abbreviation === awayTeam.id)?.timeouts ?? null,
-    homeTimeouts: competitors.find((entry) => entry?.team?.abbreviation === homeTeam.id)?.timeouts ?? null,
+    awayTimeouts: asScore(situation?.awayTimeouts ?? awayCompetitor.timeouts),
+    homeTimeouts: asScore(situation?.homeTimeouts ?? homeCompetitor.timeouts),
   };
 }
 
@@ -210,7 +212,7 @@ export function normalizeEspnScoreboardEvent(event, { phase = NFL_SEASON_PHASES.
       away: getQuarterScores(awayCompetitor),
       home: getQuarterScores(homeCompetitor),
     },
-    live: status === 'live' ? getLiveSituation(competition, away, home, event?.status) : null,
+    live: status === 'live' ? getLiveSituation(competition, awayCompetitor, homeCompetitor, event?.status) : null,
   };
 }
 
@@ -408,16 +410,44 @@ function overlayEspnSnapshot(baseGame, espnGame, options = {}) {
   return reconcileProviderClockAnchor(baseGame, nextGame, options);
 }
 
-function overlayEspnBroadcastMetadata(baseGame, espnGame) {
+function overlayEspnGameMetadata(baseGame, espnGame) {
+  if (baseGame.scoreboardProvider === 'espn') return baseGame;
+  const live = baseGame.live;
+  const espnLive = espnGame.live;
+  const period = Number(live?.period);
+  const espnPeriod = Number(espnLive?.period);
+  const usableSituation = period > 0 && espnPeriod > 0 && baseGame.status === 'live';
+  const samePeriod = usableSituation && period === espnPeriod;
+  const sameHalf = usableSituation && Math.ceil(period / 2) === Math.ceil(espnPeriod / 2);
+  const espnPossession = normalizeCrosswalkTeamId(espnLive?.possession);
+  const possession = samePeriod
+    ? [baseGame.away.id, baseGame.home.id].find((id) => normalizeCrosswalkTeamId(id) === espnPossession)
+    : null;
+  const canUseEspnDown = samePeriod && (!live.possession || live.possession === possession);
   return {
     ...baseGame,
     network: espnGame.network,
     broadcasts: espnGame.broadcasts,
     broadcastProvider: 'espn',
+    records: {
+      away: espnGame.records.away ?? baseGame.records?.away ?? null,
+      home: espnGame.records.home ?? baseGame.records?.home ?? null,
+    },
+    live: sameHalf ? {
+      ...live,
+      awayTimeouts: espnLive.awayTimeouts ?? live.awayTimeouts,
+      homeTimeouts: espnLive.homeTimeouts ?? live.homeTimeouts,
+      possession: live.possession ?? possession ?? null,
+      next: live.next ?? (canUseEspnDown && espnLive.downDistance ? {
+        downDistance: espnLive.downDistance,
+        fieldPosition: espnLive.fieldPosition,
+        redZone: espnLive.redZone,
+      } : null),
+    } : live,
   };
 }
 
-export function overlayEspnBroadcastsWeek(seasonData, payload, weekNumber) {
+export function overlayEspnGameMetadataWeek(seasonData, payload, weekNumber) {
   const replacement = normalizeWeek(payload, weekNumber, seasonData?.phase ?? NFL_SEASON_PHASES.PRESEASON);
   const weeks = (seasonData?.weeks ?? []).map((week) => {
     if (week.week !== weekNumber) return week;
@@ -425,7 +455,7 @@ export function overlayEspnBroadcastsWeek(seasonData, payload, weekNumber) {
       ...week,
       games: (week.games ?? []).map((game) => {
         const espnGame = replacement.games.find((candidate) => sameNflMatchup(game, candidate));
-        return espnGame ? overlayEspnBroadcastMetadata(game, espnGame) : game;
+        return espnGame ? overlayEspnGameMetadata(game, espnGame) : game;
       }),
     };
   });

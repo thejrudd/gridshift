@@ -612,22 +612,32 @@ function latestPlaySituation(game, play) {
   const hasValidYardsToEndzone = yardsToEndzone != null
     && yardsToEndzone !== ''
     && Number.isFinite(Number(yardsToEndzone));
+  const [endDown, endSpot] = (play.endDownDistanceText ?? '').split(/ at /i);
+  const nextDown = /^\d(?:st|nd|rd|th) & /i.test(endDown)
+    ? endDown
+    : play.endDown > 0 && play.endDistance != null
+      ? `${ordinal(play.endDown)} & ${play.endDistance}`
+      : null;
 
   return {
     ...live,
     possession: possession ?? live.possession ?? null,
-    downDistance: play.down ?? live.downDistance ?? null,
+    downDistance: play.startDown > 0 ? play.down : live.downDistance,
     fieldPosition: play.spot && play.spot !== '—' ? play.spot : live.fieldPosition ?? null,
     redZone: hasValidYardsToEndzone ? Number(yardsToEndzone) <= 20 : live.redZone,
+    next: nextDown ? {
+      downDistance: nextDown,
+      fieldPosition: endSpot || play.endPossessionText,
+      redZone: play.endYardsToEndzone != null && play.endYardsToEndzone <= 20,
+    } : null,
   };
 }
 
 // The latest play's clock and situation applied to a live scorecard, without
 // touching its clock anchor. `adopted` says whether the play's period and
-// clock replaced the games clock. A non-snap play (timeout, two-minute
-// warning, end of period) is authoritative even when its clock is above the
-// games clock; any other older play never rolls the clock back up.
-function applyBdlLatestPlayClock(game, latestPlay) {
+// clock replaced the games clock. A non-snap event can correct a same-period
+// clock only when the event itself happened after the Games sample.
+function applyBdlLatestPlayClock(game, latestPlay, gamesFetchedAt = gameProviderFetchedAt(game)) {
   if (game?.provider !== 'balldontlie' || game.status !== 'live' || !game.live) return { game, adopted: false };
   if (!latestPlay?.play || latestPlay.stale === true) return { game, adopted: false };
 
@@ -641,7 +651,14 @@ function applyBdlLatestPlayClock(game, latestPlay) {
 
   const gameProgress = getBdlClockProgress(game.live.period, game.live.clock);
   const providerClockFrozen = isNonSnapPlay(latestPlay.play);
-  if (gameProgress != null && playProgress < gameProgress && !providerClockFrozen) return { game, adopted: false };
+  const samePeriod = Number(playPeriod) === Number(game.live.period);
+  if (gameProgress != null && playProgress < gameProgress) {
+    const supersedesGames = samePeriod && providerClockFrozen && gamesFetchedAt != null
+      && latestPlay.play.wallclock > gamesFetchedAt;
+    if (!supersedesGames) {
+      return { game: samePeriod ? { ...game, live: mergedSituation } : game, adopted: false };
+    }
+  }
 
   return {
     game: {
@@ -673,8 +690,8 @@ function latestPlayClockTiming(latestPlay) {
 
 /**
  * Apply a newer BDL play clock to a live scorecard without allowing an older
- * play response to replace a fresher game snapshot. The play clock is a
- * discrete provider-verified value; the UI does not interpolate it.
+ * play response to replace a fresher game snapshot. The UI can interpolate
+ * from this provider clock when the newest play permits it.
  */
 export function mergeBdlLatestPlayClock(game, latestPlay) {
   const applied = applyBdlLatestPlayClock(game, latestPlay);
@@ -683,6 +700,7 @@ export function mergeBdlLatestPlayClock(game, latestPlay) {
     ...latestPlayClockTiming(latestPlay),
     feedStale: false,
     providerClockFrozen: applied.providerClockFrozen,
+    playId: latestPlay.play.id,
   });
 }
 
@@ -699,13 +717,17 @@ export function buildBdlLatestPlaySample(rawPlay, game, {
   if (!rawPlay) return null;
   const play = normalizeBdlScorePlay(rawPlay, game);
   if (!play) return null;
+  const sampleAgeMs = finiteAgeMs(ageMs);
+  const receivedAt = timestampValue(observedAt);
+  const fetchedAt = timestampValue(providerFetchedAt);
   return {
     status: 'ready',
     play,
     stale: stale === true,
     updatedAt: providerFetchedAt,
     observedAt,
-    ageMs: finiteAgeMs(ageMs),
+    ageMs: sampleAgeMs,
+    verifiedAt: receivedAt != null && sampleAgeMs != null ? receivedAt - sampleAgeMs : fetchedAt ?? receivedAt,
     error: null,
   };
 }
@@ -725,10 +747,18 @@ export function resolveBdlLiveClockGame(previousGame, game, {
   feedStale = false,
   latestPlay = null,
 } = {}) {
-  const scored = latestPlay ? mergeBdlLatestPlayScore(game, latestPlay) : game;
-  const applied = latestPlay ? applyBdlLatestPlayClock(scored, latestPlay) : { game: scored, adopted: false };
+  let scored = latestPlay ? mergeBdlLatestPlayScore(game, latestPlay) : game;
+  const previousLive = previousGame?.live;
+  if (scored.live && previousLive && scored.live.period === previousLive.period
+    && (!latestPlay || isNonSnapPlay(latestPlay.play))) {
+    const { possession, downDistance, fieldPosition, redZone, next } = previousLive;
+    scored = { ...scored, live: { ...scored.live, possession, downDistance, fieldPosition, redZone, next } };
+  }
+  const applied = latestPlay
+    ? applyBdlLatestPlayClock(scored, latestPlay, timestampValue(providerFetchedAt) ?? undefined)
+    : { game: scored, adopted: false };
   const timing = applied.adopted
-    ? { ...latestPlayClockTiming(latestPlay), feedStale: false, providerClockFrozen: applied.providerClockFrozen }
+    ? { ...latestPlayClockTiming(latestPlay), feedStale: false, providerClockFrozen: applied.providerClockFrozen, playId: latestPlay.play.id }
     : { observedAt, providerFetchedAt, ageMs: finiteAgeMs(ageMs), feedStale };
   const anchored = reconcileProviderClockAnchor(previousGame, applied.game, timing);
   return latestPlay ? { ...anchored, latestPlay } : anchored;
@@ -738,11 +768,13 @@ function sameLatestPlay(left, right) {
   const a = left?.play;
   const b = right?.play;
   if (!a || !b) return a === b;
-  return a.id === b.id && a.period === b.period && a.time === b.time && a.typeSlug === b.typeSlug;
+  return a.id === b.id && a.period === b.period && a.time === b.time && a.typeSlug === b.typeSlug
+    && a.rawText === b.rawText && a.scoring === b.scoring
+    && left.stale === right.stale && left.verifiedAt === right.verifiedAt;
 }
 
 // Clock-relevant equality: the fields the shared ticker resolves from. The
-// anchor's observation times move on every poll and do not count.
+// latest fresh response extends the interpolation window for games with plays.
 function sameClockGame(left, right) {
   const a = left?.live?.providerClockAnchor;
   const b = right?.live?.providerClockAnchor;
@@ -752,6 +784,7 @@ function sameClockGame(left, right) {
     && left.live?.clock === right.live?.clock
     && a?.key === b?.key
     && a?.changedAt === b?.changedAt
+    && (!right.latestPlay?.play || a?.verifiedAt === b?.verifiedAt)
     && a?.feedStale === b?.feedStale
     && a?.providerClockFrozen === b?.providerClockFrozen
     && sameLatestPlay(left.latestPlay, right.latestPlay);
@@ -1384,6 +1417,10 @@ export function buildScoreDetailFromGame(game, {
     : null;
   const playerGroups = buildPlayerGroups(playerStats, quarterStats);
   const playByPlayAvailable = detailStatus === 'ready' && drives.length > 0;
+  const lastSnap = drives.at(-1)?.plays.findLast((play) => !isNonSnapPlay(play));
+  const playPossession = Number(lastSnap?.period) === Number(game?.live?.period)
+    ? gameTeamId(game, lastSnap?.team)
+    : null;
   return {
     status: game?.status ?? 'scheduled',
     statusLabel: game?.statusLabel ?? 'Scheduled',
@@ -1392,7 +1429,7 @@ export function buildScoreDetailFromGame(game, {
     away: game?.away ?? teamFromBdl(rawGame?.visitor_team),
     home: game?.home ?? teamFromBdl(rawGame?.home_team),
     score: game?.score ?? { away: null, home: null },
-    possession: game?.live?.possession ?? drives.at(-1)?.team ?? null,
+    possession: game?.live?.possession ?? playPossession,
     quarterLabels: quarterValues.labels,
     lineScore: {
       away: quarterValues.away,

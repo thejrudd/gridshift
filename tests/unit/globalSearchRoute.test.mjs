@@ -32,6 +32,36 @@ test('a player the index has an ESPN id for routes without any lookup', async ()
   assert.equal(fetched, false, 'the fast path does no network work');
 });
 
+test('defense searches open the named D/ST with or without a directory entry', async () => {
+  const staticRecords = buildStaticRecords({ scheduleData: { teams: [
+    { id: 'BAL', name: 'Baltimore Ravens' },
+    { id: 'WSH', name: 'Washington Commanders' },
+  ] } });
+  const playerRecords = buildPlayerRecords({
+    WAS: { full_name: 'Washington Commanders', team: 'WAS', position: 'DEF' },
+  });
+  const index = composeIndex({ staticRecords, playerRecords });
+
+  for (const [query, teamId, sleeperId] of [
+    ['Ravens Defense', 'BAL', 'BAL'],
+    ['Ravens D/ST', 'BAL', 'BAL'],
+    ['Commanders D/ST', 'WSH', 'WAS'],
+  ]) {
+    const groups = rankResults(index, parseGlobalQuery(query));
+    assert.equal(groups[0].results.length, 1, query);
+    const [entry] = groups[0].results;
+    const { route, playerMeta, reason } = await resolveResultRoute(entry, {
+      rosterFetcher: () => assert.fail('D/ST should not need a player roster'),
+      nameLookup: () => assert.fail('D/ST should not need a player lookup'),
+    });
+    assert.equal(reason, null, query);
+    assert.equal(route.statisticsView, 'player', query);
+    assert.equal(route.statisticsPlayerId, teamId, query);
+    assert.equal(playerMeta.position, 'DEF', query);
+    assert.equal(playerMeta.sleeperId, sleeperId, query);
+  }
+});
+
 test('a player without an ESPN id resolves from their team roster', async () => {
   // Regression: the fallback used to require the Sleeper player directory to be
   // loaded in memory. It usually is not, so roughly 70% of players resolved to a

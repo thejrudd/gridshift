@@ -13,6 +13,7 @@
 import { slugifyRouteSegment } from '../appRoutes.js';
 import { fetchRoster } from '../playerApi.js';
 import {
+  buildStatisticsDefenseMeta,
   buildStatisticsPlayerMeta,
   findRosterMatchForSleeperPlayer,
   lookupEspnIdByName,
@@ -154,6 +155,11 @@ export async function resolveResultRoute(entry, {
   if (record.kind !== KIND_PLAYER) {
     const route = entry.route ?? record.route ?? null;
     return { route, playerMeta: null, reason: route ? null : 'no-route' };
+  }
+
+  if (record.meta?.position === 'DEF' && record.meta.team) {
+    const playerMeta = buildStatisticsDefenseMeta({ teamId: record.meta.team, displayName: record.label });
+    return { route: routeForPlayerMeta(playerMeta, { mode }), playerMeta, reason: null };
   }
 
   // The fast path: the index already knows the ESPN id, so no lookup at all.

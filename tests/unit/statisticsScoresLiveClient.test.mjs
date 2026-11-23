@@ -125,6 +125,8 @@ test('uses a newer BDL play clock without overwriting a newer game snapshot', ()
     start_distance: 11,
     start_yards_to_endzone: 18,
     start_possession_text: 'BAL 18',
+    end_down_distance_text: '3rd & 6 at BAL 13',
+    end_yards_to_endzone: 13,
     team: { abbreviation: 'BAL' },
   }, baseGame);
   const fromPlay = mergeBdlLatestPlayClock(baseGame, {
@@ -139,6 +141,7 @@ test('uses a newer BDL play clock without overwriting a newer game snapshot', ()
   assert.equal(fromPlay.live.downDistance, '2nd & 11');
   assert.equal(fromPlay.live.fieldPosition, 'BAL 18');
   assert.equal(fromPlay.live.redZone, true);
+  assert.deepEqual(fromPlay.live.next, { downDistance: '3rd & 6', fieldPosition: 'BAL 13', redZone: true });
   // Anchored at the plays response, never the play's provider-side wallclock.
   assert.equal(fromPlay.live.providerClockAnchor.changedAt, Date.parse('2026-09-06T01:02:06.000Z'));
 
@@ -344,4 +347,15 @@ test('uses an official timeout clock to correct a locally advanced scorebug and 
 
   assert.equal(fromPlay.live.clock, '12:48');
   assert.equal(fromPlay.live.providerClockAnchor.providerClockFrozen, true);
+
+  const laterGames = {
+    ...baseGame,
+    asOf: '2026-09-06T01:02:15.000Z',
+    live: { ...baseGame.live, providerClockAnchor: null, clock: '12:47' },
+  };
+  const fromLaterGames = mergeBdlLatestPlayClock(laterGames, { play: timeoutPlay });
+  assert.equal(fromLaterGames.live.clock, '12:47');
+
+  const fourthQuarter = { ...laterGames, live: { ...laterGames.live, period: '4', clock: '14:56' } };
+  assert.equal(mergeBdlLatestPlayClock(fourthQuarter, { play: timeoutPlay }).live.clock, '14:56');
 });

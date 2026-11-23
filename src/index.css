@@ -17861,12 +17861,20 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   --heatmap-player-tackles-count: 1;
 }
 
+.companion-heatmap-player-results.is-team-defense {
+  --heatmap-player-metric-grid: var(--heatmap-player-metric-width);
+}
+
 @container heatmap-drilldown (min-width: 610px) {
   .companion-heatmap-player-results {
     --heatmap-player-metric-grid: repeat(
       calc(var(--heatmap-player-priority-count) + var(--heatmap-player-tackles-count) - 1),
       var(--heatmap-player-metric-width)
     ) max(var(--heatmap-player-metric-width), 5.5rem) var(--heatmap-player-metric-width);
+  }
+
+  .companion-heatmap-player-results.is-team-defense {
+    --heatmap-player-metric-grid: max(var(--heatmap-player-metric-width), 5.5rem) var(--heatmap-player-metric-width);
   }
 }
 

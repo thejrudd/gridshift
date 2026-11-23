@@ -1,5 +1,6 @@
 import { fetchRoster } from './playerApi.js';
 import { cachedFetch, TTL } from './playerCache.js';
+import { normalizeCrosswalkTeamId } from './espnNflScoreboard.js';
 
 export const STATISTICS_MODES = {
   GAME: 'game',
@@ -206,4 +207,14 @@ export function buildStatisticsPlayerMeta(player = {}, fallback = {}) {
     status: player.status ?? player.injury_status ?? fallback.status ?? '',
     injuryStatus: player.injuryStatus ?? player.injury_status ?? fallback.injuryStatus ?? fallback.injury_status ?? fallback.status ?? '',
   };
+}
+
+export function buildStatisticsDefenseMeta({ teamId, displayName }) {
+  return buildStatisticsPlayerMeta({
+    id: teamId,
+    sleeperId: normalizeCrosswalkTeamId(teamId),
+    teamId,
+    displayName,
+    position: 'DEF',
+  });
 }
