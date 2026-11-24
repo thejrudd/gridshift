@@ -181,7 +181,7 @@ test(HISTORICAL_WAR_ROOM_TEST, async ({ page }) => {
 
   const warRoomTab = page.getByRole('tab', { name: 'War Room' });
   await expect(warRoomTab).toHaveAttribute('aria-selected', 'true');
-  await expect(page).toHaveURL(/\/draft$/);
+  await expect(page).toHaveURL(/\/draft\/war-room$/);
   await expect(page.getByText('War Room is unavailable for the 2025 league year.')).toBeVisible();
   await expect(page.getByText('The 2025 draft has already finished.')).toBeVisible();
 
@@ -189,7 +189,7 @@ test(HISTORICAL_WAR_ROOM_TEST, async ({ page }) => {
   await expect(page).toHaveURL(/\/draft\/results$/);
   await page.getByRole('tab', { name: 'War Room' }).click();
 
-  await expect(page).toHaveURL(/\/draft$/);
+  await expect(page).toHaveURL(/\/draft\/war-room$/);
   await expect(warRoomTab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('War Room is unavailable for the 2025 league year.')).toBeVisible();
 });

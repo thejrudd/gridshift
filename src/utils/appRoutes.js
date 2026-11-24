@@ -107,7 +107,7 @@ const DEFAULT_ROUTE = {
   tradeOtherPlayerId: null,
   tradeShareToken: null,
   scoutView: 'prospects',
-  draftView: 'war-room',
+  draftView: null,
   sleeperDraftId: null,
 };
 
@@ -188,8 +188,10 @@ function normalizeLowerToken(value, allowedValues, fallback = null) {
 }
 
 function normalizeDraftView(value) {
-  if (typeof value === 'string' && value.trim().toLowerCase() === 'draft-order') return 'results';
-  return normalizeLowerToken(value, DRAFT_VIEWS, DEFAULT_ROUTE.draftView);
+  const view = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!view) return null;
+  if (view === 'draft-order') return 'results';
+  return DRAFT_VIEWS.has(view) ? view : 'war-room';
 }
 
 function normalizeBooleanFlag(value) {
@@ -291,7 +293,7 @@ export function getDefaultRouteForTab(tab) {
     case 'scout':
       return { ...DEFAULT_ROUTE, activeTab: 'scout' };
     case 'draft':
-      return { ...DEFAULT_ROUTE, activeTab: 'draft', draftView: 'war-room' };
+      return { ...DEFAULT_ROUTE, activeTab: 'draft' };
     case 'predictions':
     default:
       return { ...DEFAULT_ROUTE, activeTab: 'predictions', seasonView: 'predictions' };
@@ -653,7 +655,7 @@ export function parseAppRoute(pathname = '/', search = '') {
       return normalizeAppRoute({ activeTab: 'league', leagueView: subview });
     case 'companion':
       if (subview === 'draft') {
-        return normalizeAppRoute({ activeTab: 'draft', draftView: 'war-room' });
+        return getDefaultRouteForTab('draft');
       }
       if (LEAGUE_VIEWS.has(subview)) {
         return normalizeAppRoute({ activeTab: 'league', leagueView: subview });
@@ -871,9 +873,7 @@ export function buildAppPath(route) {
         ? '/scout'
         : `/scout/${normalized.scoutView}`;
     case 'draft':
-      return `${normalized.draftView === 'war-room'
-        ? '/draft'
-        : `/draft/${normalized.draftView}`}${buildQueryString([
+      return `${normalized.draftView ? `/draft/${normalized.draftView}` : '/draft'}${buildQueryString([
         ['sleeperDraftId', normalized.sleeperDraftId],
       ])}`;
     case 'trade':

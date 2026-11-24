@@ -661,6 +661,7 @@ function AppInner() {
     error: '',
     leagueId: null,
     season: null,
+    overrideId: '',
   });
   useBodyScrollLock(leagueSwitcherOpen);
 
@@ -784,7 +785,9 @@ function AppInner() {
   const draftView = appRoute.draftView;
   const draftSleeperDraftId = appRoute.sleeperDraftId;
   const draftStatusOverrideId = getDevSleeperDraftIdOverride(draftSleeperDraftId);
-  const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId && draftNavState.season === season;
+  const draftNavMatchesSelection = draftNavState.leagueId === selectedLeagueId
+    && draftNavState.season === season
+    && draftNavState.overrideId === draftStatusOverrideId;
   const selectedDraft = draftNavMatchesSelection ? draftNavState.draft : null;
   const draftResultsPresentation = getDraftResultsPresentation(selectedDraft);
   const draftTourContext = getDraftTourContext({
@@ -1016,6 +1019,18 @@ function AppInner() {
   }, [applyRoute, tradeNavDisabled]);
 
   useEffect(() => {
+    if (activeTab !== 'draft' || draftView || !hasLeague || !draftLeagueSelectionReady
+      || !draftNavMatchesSelection || draftNavState.loading) return;
+    // A newer navigation may have changed the URL before its React transition commits.
+    if (!isSameAppRoute(appRoute, parseAppRoute(window.location.pathname, window.location.search))) return;
+    applyRoute({
+      ...appRoute,
+      draftView: getSleeperDraftStatus(selectedDraft) === 'complete' ? 'results' : 'war-room',
+    }, { replace: true });
+  }, [activeTab, appRoute, applyRoute, draftLeagueSelectionReady, draftNavMatchesSelection,
+    draftNavState.loading, draftView, hasLeague, selectedDraft]);
+
+  useEffect(() => {
     if (!tradeNavDisabled || activeTab !== 'trade') return;
     applyRoute({ activeTab: 'fantasy', companionView: 'rosters' }, { replace: true });
   }, [activeTab, applyRoute, tradeNavDisabled]);
@@ -1180,13 +1195,14 @@ function AppInner() {
 
   useEffect(() => {
     if (!hasLeague || !selectedLeagueId || !league) {
-      setDraftNavState({ loading: false, draft: null, error: '', leagueId: null, season: null });
+      setDraftNavState({ loading: false, draft: null, error: '', leagueId: null, season: null, overrideId: '' });
       return undefined;
     }
 
     let cancelled = false;
     let timeoutId = null;
     let hasLoadedDraft = false;
+    const selection = { leagueId: selectedLeagueId, season, overrideId: draftStatusOverrideId };
 
     const loadDraftStatus = async () => {
       const initialLoad = !hasLoadedDraft;
@@ -1195,8 +1211,7 @@ function AppInner() {
           loading: true,
           draft: null,
           error: '',
-          leagueId: selectedLeagueId,
-          season,
+          ...selection,
         });
       }
 
@@ -1205,7 +1220,7 @@ function AppInner() {
           || resolveLeagueDraftId(league, await getLeagueDrafts(selectedLeagueId).catch(() => []));
         if (!draftId) {
           if (!cancelled) {
-            setDraftNavState({ loading: false, draft: null, error: '', leagueId: selectedLeagueId, season });
+            setDraftNavState({ loading: false, draft: null, error: '', ...selection });
             hasLoadedDraft = true;
           }
           return;
@@ -1214,7 +1229,7 @@ function AppInner() {
         const nextDraft = await getDraft(draftId);
         if (cancelled) return;
 
-        setDraftNavState({ loading: false, draft: nextDraft, error: '', leagueId: selectedLeagueId, season });
+        setDraftNavState({ loading: false, draft: nextDraft, error: '', ...selection });
         hasLoadedDraft = true;
 
         if (isSleeperDraftPollable(nextDraft)) {
@@ -1226,8 +1241,7 @@ function AppInner() {
             loading: false,
             draft: null,
             error: error?.message ?? 'Could not load draft status.',
-            leagueId: selectedLeagueId,
-            season,
+            ...selection,
           });
           hasLoadedDraft = true;
         }
@@ -2336,7 +2350,7 @@ function AppInner() {
           </div>
         )}
 
-        {activeTab === 'draft' && hasLeague && (
+        {activeTab === 'draft' && hasLeague && draftView && (
           <div className="season-subnav league-subnav">
             <DraftSubNav
               activeView={draftView}
@@ -2906,15 +2920,17 @@ function AppInner() {
 
           {activeTab === 'draft' && hasLeague && (
             draftLeagueSelectionReady ? (
-              <Suspense fallback={<SectionLoading label="Loading Draft" />}>
-                <DraftAssistant
-                  key={`${selectedLeagueId}:${season}`}
-                  view={draftView}
-                  sleeperDraftId={draftSleeperDraftId}
-                  onViewPlayer={navigateDraftPlayerToStatistics}
-                  tourDemoMode={tourDemoMode}
-                />
-              </Suspense>
+              draftView ? (
+                <Suspense fallback={<SectionLoading label="Loading Draft" />}>
+                  <DraftAssistant
+                    key={`${selectedLeagueId}:${season}`}
+                    view={draftView}
+                    sleeperDraftId={draftSleeperDraftId}
+                    onViewPlayer={navigateDraftPlayerToStatistics}
+                    tourDemoMode={tourDemoMode}
+                  />
+                </Suspense>
+              ) : <SectionLoading label="Loading Draft" />
             ) : (
               <SectionLoading label={`Switching to ${seasonSwitching ?? season} league year`} />
             )
@@ -3076,7 +3092,7 @@ function AppInner() {
             leagueView={leagueView}
             tradeView={tradeView}
             scoutView={scoutView}
-            draftView={draftView}
+            draftView={draftView ?? undefined}
           />
         </Suspense>
       )}

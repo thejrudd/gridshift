@@ -1635,3 +1635,6 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Desktop bye label** - Fantasy Matchups shows “BYE” so the label fits on desktop player cards.
 - **Recent Form chart** - The faded average line sits above the bars and behind the score labels.
 - **Report a bug** - The desktop sidebar links directly to GridShift’s GitHub issue form.
+- **Fantasy Schedule export** - Stats Export can include the league’s remaining regular-season matchups and byes in the downloaded JSON.
+- **Fantasy navigation** - Heatmap appears immediately after Rankings.
+- **Draft default** - Opening Draft goes to Results after the selected league year’s draft finishes. Before and during the draft, it opens War Room.
