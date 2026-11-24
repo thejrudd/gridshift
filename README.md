@@ -46,7 +46,7 @@ BALLDONTLIE is optional. Core predictions and many Sleeper league tools work wit
 
 ## What's New
 
-- **v9.4.6 — Live Scores and fantasy scoring fixes, D/ST cards and search, and a Heatmap details tour.** See the [changelog](CHANGELOG.md) for details and history.
+- **v9.4.7 — Separate IR slots, improved mobile sheets, and visual Heatmap tour examples.** See the [changelog](CHANGELOG.md) for details and history.
 
 ## Privacy, license, and more
 

@@ -47,7 +47,7 @@ function usePlayerSnaps(rows, season) {
     return () => { active = false; };
   }, [ids, season]);
 
-  return result?.season === season ? result.counts : null;
+  return result && result.season === season ? result.counts : null;
 }
 
 function useInactiveReasons(games, { name, position }, season) {
@@ -168,9 +168,9 @@ function GameLog({ row, season, counts }) {
 }
 
 export default function HeatmapPlayerResults({
-  rows, season, upcoming, valueLabel, darkMode, canOpenStats, onOpenStats, openingId,
+  rows, season, upcoming, valueLabel, darkMode, canOpenStats, onOpenStats, openingId, initialExpandedId = null,
 }) {
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedId, setExpandedId] = useState(initialExpandedId);
   const [sort, setSort] = useState({ key: 'value', direction: 'desc' });
   const detailId = useId();
   const snapsById = usePlayerSnaps(rows, season);

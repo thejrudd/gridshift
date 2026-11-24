@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import useBodyScrollLock from '../hooks/useBodyScrollLock';
 import useSheetHistory from '../hooks/useSheetHistory';
 import { createSpring, estimateReleaseVelocity, shouldDismissSheet } from '../utils/sheetSpring.js';
@@ -10,6 +10,7 @@ const DISMISS_SECONDS = 0.38;
 const OFFSCREEN_MARGIN = 40; // clears the sheet's upward shadow
 const MAX_VELOCITY_SAMPLES = 8;
 const OVERLAY_CLICK_GUARD_MS = 400; // the click that trails a drag is not a backdrop tap
+const TOUCH_DRAG_SLOP = 6;
 
 const REST_TRANSFORM = 'translate3d(0, 0px, 0)';
 
@@ -22,6 +23,19 @@ function inputTime(event) {
 function prefersReducedMotion() {
   return typeof window !== 'undefined'
     && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+}
+
+function canPullFromContent(target, panel) {
+  if (!(target instanceof Element) || target.closest('.modal-panel--mobile-sheet') !== panel) return false;
+  if (target.closest('.mobile-sheet-drag-handle, input, textarea, select, [contenteditable]')) return false;
+
+  let insideScrollArea = false;
+  for (let element = target; element && element !== panel; element = element.parentElement) {
+    if (!/^(auto|scroll|overlay)$/.test(window.getComputedStyle(element).overflowY)) continue;
+    insideScrollArea = true;
+    if (element.scrollTop > 0) return false;
+  }
+  return insideScrollArea;
 }
 
 export default function Modal({
@@ -139,41 +153,37 @@ export default function Modal({
     });
   };
 
-  const handlePointerDown = (event) => {
-    if (!mobileSheet || dismissingRef.current || !event.isPrimary) return;
+  const startDrag = (pointerId, clientY, time) => {
     // Catching a sheet that is still springing back picks it up where it is.
     cancelMotion();
     dragRef.current = {
-      pointerId: event.pointerId,
-      grabOffset: event.clientY - offsetRef.current,
+      pointerId,
+      grabOffset: clientY - offsetRef.current,
       peak: offsetRef.current,
-      samples: [{ t: inputTime(event), y: offsetRef.current }],
+      samples: [{ t: time, y: offsetRef.current }],
     };
     setHasEntered(true);
     setIsDragging(true);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
-  const handlePointerMove = (event) => {
+  const updateDrag = (clientY, time) => {
     const drag = dragRef.current;
-    if (!mobileSheet || drag.pointerId !== event.pointerId) return;
-    const offset = Math.max(0, event.clientY - drag.grabOffset);
+    const offset = Math.max(0, clientY - drag.grabOffset);
     setOffset(offset);
     drag.peak = Math.max(drag.peak, offset);
-    drag.samples.push({ t: inputTime(event), y: offset });
+    drag.samples.push({ t: time, y: offset });
     if (drag.samples.length > MAX_VELOCITY_SAMPLES) drag.samples.shift();
   };
 
-  const finishDrag = (event) => {
+  const endDrag = (cancelled, time) => {
     const drag = dragRef.current;
-    if (!mobileSheet || drag.pointerId !== event.pointerId) return;
-    const velocity = estimateReleaseVelocity(drag.samples, inputTime(event));
+    const velocity = estimateReleaseVelocity(drag.samples, time);
     const { peak } = drag;
     dragRef.current = { pointerId: null, grabOffset: 0, peak: 0, samples: [] };
     dragEndedAtRef.current = performance.now();
     setIsDragging(false);
 
-    if (event.type !== 'pointercancel' && shouldDismissSheet({
+    if (!cancelled && shouldDismissSheet({
       offset: offsetRef.current,
       peak,
       velocity,
@@ -186,6 +196,84 @@ export default function Modal({
 
     snapBackWithSpring(velocity);
   };
+
+  const handlePointerDown = (event) => {
+    if (!mobileSheet || dismissingRef.current || !event.isPrimary || dragRef.current.pointerId != null) return;
+    startDrag(event.pointerId, event.clientY, inputTime(event));
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (dragRef.current.pointerId === event.pointerId) updateDrag(event.clientY, inputTime(event));
+  };
+
+  const finishDrag = (event) => {
+    if (dragRef.current.pointerId === event.pointerId) endDrag(event.type === 'pointercancel', inputTime(event));
+  };
+
+  const startContentDrag = useEffectEvent((y, time) => startDrag('content', y, time));
+  const updateContentDrag = useEffectEvent((y, time) => updateDrag(y, time));
+  const endContentDrag = useEffectEvent((cancelled, time) => endDrag(cancelled, time));
+
+  useEffect(() => {
+    if (!mobileSheet || !panelRef.current) return undefined;
+    const panel = panelRef.current;
+    let gesture = null;
+
+    const onTouchStart = (event) => {
+      if (event.touches.length !== 1) {
+        if (gesture?.dragging) endContentDrag(true, inputTime(event));
+        gesture = null;
+        return;
+      }
+      if (dismissingRef.current || dragRef.current.pointerId != null
+        || !window.matchMedia('(max-width: 1023px)').matches || !canPullFromContent(event.target, panel)) return;
+
+      // Decide at touchstart, so reaching the top mid-scroll never takes over this gesture.
+      const { identifier, clientX, clientY } = event.touches[0];
+      gesture = { identifier, clientX, clientY, time: inputTime(event), dragging: false };
+    };
+
+    const onTouchMove = (event) => {
+      if (!gesture || event.touches.length !== 1 || event.touches[0].identifier !== gesture.identifier) return;
+      const { clientX, clientY } = event.touches[0];
+      const time = inputTime(event);
+      if (!gesture.dragging) {
+        const dx = Math.abs(clientX - gesture.clientX);
+        const dy = clientY - gesture.clientY;
+        if (Math.max(dx, Math.abs(dy)) < TOUCH_DRAG_SLOP) return;
+        if (dy <= dx || !event.cancelable) {
+          gesture = null;
+          return;
+        }
+        gesture.dragging = true;
+        startContentDrag(gesture.clientY, gesture.time);
+      }
+      event.preventDefault();
+      updateContentDrag(clientY, time);
+    };
+
+    const onTouchEnd = (event) => {
+      if (!gesture || !Array.from(event.changedTouches).some(touch => touch.identifier === gesture.identifier)) return;
+      if (gesture.dragging) endContentDrag(event.type === 'touchcancel', inputTime(event));
+      gesture = null;
+    };
+
+    panel.addEventListener('touchstart', onTouchStart, { passive: true });
+    panel.addEventListener('touchmove', onTouchMove, { passive: false });
+    panel.addEventListener('touchend', onTouchEnd);
+    panel.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      panel.removeEventListener('touchstart', onTouchStart);
+      panel.removeEventListener('touchmove', onTouchMove);
+      panel.removeEventListener('touchend', onTouchEnd);
+      panel.removeEventListener('touchcancel', onTouchEnd);
+      if (gesture?.dragging) {
+        dragRef.current.pointerId = null;
+        offsetRef.current = 0;
+      }
+    };
+  }, [mobileSheet]);
 
   if (mobileSheet) {
     return (

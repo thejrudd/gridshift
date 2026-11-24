@@ -110,6 +110,7 @@ test('expanded desktop sidebar keeps every option and the version visible on sho
         { role: 'link', name: 'Support GridShift on Buy Me a Coffee', tooltip: 'Support GridShift' },
         { role: 'link', name: 'Email a feature request', tooltip: 'Feature Request' },
         { role: 'link', name: 'Open GridShift on GitHub', tooltip: 'About / GitHub' },
+        { role: 'link', name: 'Report a bug', tooltip: 'Report a bug' },
         { role: 'button', name: 'Open Privacy & Attributions', tooltip: 'Privacy & Attributions' },
       ];
       for (const action of footerActions) {
@@ -137,6 +138,9 @@ test('expanded desktop sidebar keeps every option and the version visible on sho
         expect(tooltipGeometry.verticalOffset).toBeLessThanOrEqual(1);
         expect(tooltipGeometry.right).toBeLessThanOrEqual(tooltipGeometry.viewportWidth);
       }
+
+      await expect(sidebar.getByRole('link', { name: 'Report a bug', exact: true }))
+        .toHaveAttribute('href', 'https://github.com/thejrudd/gridshift/issues/new');
 
       const releaseLink = sidebar.getByRole('link', { name: /View GridShift v.+ release on GitHub/ });
       await expect(releaseLink).toBeVisible();

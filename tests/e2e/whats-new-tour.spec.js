@@ -106,6 +106,16 @@ test('full upgrade history replays every tour step', async ({ page, isMobile }) 
       }).toBe(true);
     }
     await expect(page.locator(`${selector}:visible`).first()).toBeVisible();
+    if (step.heatmapExample === 'upcoming') {
+      const gameLog = tour.getByRole('table', { name: 'Jayden Reed game log' });
+      await expect(gameLog).toBeVisible();
+      await expect(gameLog.getByRole('columnheader', { name: 'Snap %' })).toBeVisible();
+      await expect(gameLog.getByText('DNP')).toBeVisible();
+    }
+    if (step.heatmapExample === 'completed') {
+      await expect(tour.getByLabel('Jayden Reed scoring breakdown')).toContainText('Receiving Yards');
+      await expect(tour.getByRole('table', { name: 'Jayden Reed game log' })).toHaveCount(0);
+    }
 
     const copyOptions = (step.contextKey ? Object.values(step.copyByContext) : [step])
       .map((copy) => materializeExpectedCopy(copy, {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSleeperLeague } from '../context/SleeperContext';
+import { BugIcon } from '@phosphor-icons/react/Bug';
 import { ChatCircleTextIcon } from '@phosphor-icons/react/ChatCircleText';
 import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
 import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
@@ -415,6 +416,13 @@ export default function Sidebar({
             ariaLabel="Open GridShift on GitHub"
           >
             <GithubLogoIcon size={19} weight="bold" aria-hidden="true" />
+          </SidebarFooterLink>
+          <SidebarFooterLink
+            href="https://github.com/thejrudd/gridshift/issues/new"
+            label="Report a bug"
+            ariaLabel="Report a bug"
+          >
+            <BugIcon size={19} weight="bold" aria-hidden="true" />
           </SidebarFooterLink>
           <SidebarFooterButton
             label="Privacy & Attributions"

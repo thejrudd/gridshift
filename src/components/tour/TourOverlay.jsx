@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useBodyScrollLock from '../../hooks/useBodyScrollLock';
+import HeatmapTourExample from './HeatmapTourExample.jsx';
 
 const ANCHOR_TIMEOUT_MS = 10000;
 const SPOTLIGHT_PADDING = 6;
@@ -99,6 +100,7 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
   const [anchorRect, setAnchorRect] = useState(null); // null = resolving
   const [timedOut, setTimedOut] = useState(false);
   const anchorElRef = useRef(null);
+  const exampleHeadingRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
 
   const rawStep = steps[stepIndex];
@@ -119,6 +121,10 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
     demoMode: demoEnabled ? rawStep.demoMode : null,
   } : null), [rawStep, materializedCopy, demoEnabled]);
   const total = steps.length;
+
+  useEffect(() => {
+    if (step?.heatmapExample && routeReady) exampleHeadingRef.current?.focus({ preventScroll: true });
+  }, [step?.heatmapExample, routeReady]);
 
   const finish = useCallback(() => {
     onStepChange?.(null);
@@ -155,12 +161,14 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
   // views appearing after navigation), with a timeout that skips the step.
   useEffect(() => {
     if (!step) return undefined;
-    let cancelled = false;
-    let rafId = null;
-    let timeoutId = null;
     setAnchorRect(null);
     setTimedOut(false);
     anchorElRef.current = null;
+    if (step.heatmapExample) return undefined;
+
+    let cancelled = false;
+    let rafId = null;
+    let timeoutId = null;
 
     const selector = (isMobile && step.anchorMobile) ? step.anchorMobile : step.anchor;
 
@@ -257,15 +265,22 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
   if (!step) return null;
 
   const isLast = stepIndex === total - 1;
-  const placement = anchorRect ? pickPlacement(anchorRect, step.placement) : null;
-  const tooltipPos = anchorRect ? computeTooltipPosition(anchorRect, placement) : null;
+  const showExample = step.heatmapExample && routeReady;
+  const showSpotlight = !step.heatmapExample && anchorRect;
+  const tooltipPos = showSpotlight ? computeTooltipPosition(anchorRect, pickPlacement(anchorRect, step.placement)) : null;
 
   return (
-    <div className="fixed inset-0 z-[95]" role="dialog" aria-modal="true" aria-label="Feature tour">
-      {anchorRect ? (
+    <div
+      className={`fixed inset-0 z-[95]${showExample ? ' flex items-center justify-center p-4' : ''}`}
+      style={showExample ? { background: 'rgba(0, 0, 0, 0.55)' } : undefined}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Feature tour"
+    >
+      {showSpotlight || showExample ? (
         <>
           {/* Spotlight cutout — the giant box-shadow forms the dimmed scrim. */}
-          <div
+          {showSpotlight && <div
             className="absolute rounded-xl pointer-events-none"
             style={{
               top: anchorRect.top - SPOTLIGHT_PADDING,
@@ -275,9 +290,11 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
               boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.55)',
               border: '2px solid var(--color-signature)',
             }}
-          />
+          />}
           <div
-            className="absolute rounded-2xl p-4 shadow-xl"
+            className={showExample
+              ? 'flex max-h-[calc(100dvh-2rem)] w-full max-w-[680px] flex-col overflow-hidden rounded-2xl shadow-xl'
+              : 'absolute rounded-2xl shadow-xl'}
             style={{
               ...tooltipPos,
               background: 'var(--color-bg-secondary)',
@@ -285,19 +302,33 @@ export default function TourOverlay({ entries, navigate, currentRoute, context =
               boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
             }}
           >
-            <div
-              className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: 'var(--color-label-secondary)' }}
-            >
-              {step.featureName} · Step {stepIndex + 1} of {total}
+            <div className={showExample ? 'min-h-0 overflow-y-auto overscroll-contain' : undefined}>
+              <div className="px-4 pt-4">
+                <div
+                  className="text-xs font-bold uppercase tracking-widest"
+                  style={{ color: 'var(--color-label-secondary)' }}
+                >
+                  {step.featureName} · Step {stepIndex + 1} of {total}
+                </div>
+                <h2
+                  ref={showExample ? exampleHeadingRef : undefined}
+                  tabIndex={showExample ? -1 : undefined}
+                  className="mt-1 text-base font-bold"
+                  style={{ color: 'var(--color-label)' }}
+                >
+                  {step.title}
+                </h2>
+                <div className="mt-1 text-sm leading-snug" style={{ color: 'var(--color-label-secondary)' }}>
+                  {step.body}
+                </div>
+              </div>
+              {showExample && (
+                <div className="mt-4" style={{ background: 'var(--color-bg)' }}>
+                  <HeatmapTourExample key={step.heatmapExample} kind={step.heatmapExample} />
+                </div>
+              )}
             </div>
-            <div className="mt-1 text-base font-bold" style={{ color: 'var(--color-label)' }}>
-              {step.title}
-            </div>
-            <div className="mt-1 text-sm leading-snug" style={{ color: 'var(--color-label-secondary)' }}>
-              {step.body}
-            </div>
-            <div className="mt-3 flex items-center justify-between gap-3">
+            <div className={`flex shrink-0 items-center justify-between gap-3 px-4 pb-4 pt-3${showExample ? ' [&_button]:min-h-11' : ''}`}>
               <button
                 type="button"
                 onClick={finish}

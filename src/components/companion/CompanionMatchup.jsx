@@ -41,6 +41,7 @@ import { formatLocalKickoffDayTime } from '../../utils/statisticsScoresTime.js';
 import { getPlayerRowTeamTheme } from '../../utils/playerRowTheme';
 import { getPlayerAvailabilityStatus } from '../../utils/playerAvailabilityStatus.js';
 import { getSleeperAvatarUrl, POSITION_COLORS } from '../../utils/companionAssetVisuals.js';
+import { getReserveSlotCount, splitMatchupReserve } from '../../utils/fantasyReserve.js';
 import { debugCompanionLog, debugCompanionMeasure, debugCompanionTimeAsync } from '../../utils/companionPerfDebug';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
 import CompanionPlayerRow, { CompanionPlayerMetric, CompanionPlayerStatus } from './CompanionPlayerRow.jsx';
@@ -1181,30 +1182,15 @@ function CompanionMatchupView({
     });
   }, [displayMyMatchup, displayOpponentMatchup, enrichPlayer, starterPositions, myLineupUnavailable, opponentLineupUnavailable, myVisiblePointsMap, oppVisiblePointsMap, week, hasAdvancedStats]);
 
-  // Bench players
-  const myBench = useMemo(() => {
-    if (!myRosterData || !displayMyMatchup) return [];
-    return debugCompanionMeasure('Matchup my bench enrich', () => {
-      const starterSet = new Set(displayMyMatchup.starters ?? []);
-      const historicalPlayers = displayMyMatchup.players?.length ? displayMyMatchup.players : myRosterData.players;
-      return (historicalPlayers ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, myVisiblePointsMap)).filter(Boolean);
-    }, {
-      rosterPlayerCount: displayMyMatchup.players?.length ?? myRosterData.players?.length ?? 0,
-      hasAdvancedStats,
-    });
-  }, [myRosterData, displayMyMatchup, enrichPlayer, myVisiblePointsMap, hasAdvancedStats]);
-
-  const oppBench = useMemo(() => {
-    if (!opponentRoster || !displayOpponentMatchup) return [];
-    return debugCompanionMeasure('Matchup opponent bench enrich', () => {
-      const starterSet = new Set(displayOpponentMatchup.starters ?? []);
-      const historicalPlayers = displayOpponentMatchup.players?.length ? displayOpponentMatchup.players : opponentRoster.players;
-      return (historicalPlayers ?? []).filter(id => !starterSet.has(id)).map(id => enrichPlayer(id, oppVisiblePointsMap)).filter(Boolean);
-    }, {
-      rosterPlayerCount: displayOpponentMatchup.players?.length ?? opponentRoster.players?.length ?? 0,
-      hasAdvancedStats,
-    });
-  }, [opponentRoster, displayOpponentMatchup, enrichPlayer, oppVisiblePointsMap, hasAdvancedStats]);
+  // Weekly matchups do not contain historical reserve assignments. Only use
+  // the current roster snapshot for the current fantasy week.
+  const useRosterReserve = currentFantasyWeek != null && Number(week) === Number(currentFantasyWeek);
+  const myReserveGroups = useMemo(() => splitMatchupReserve({ roster: myRosterData, matchup: displayMyMatchup, useRosterReserve }), [myRosterData, displayMyMatchup, useRosterReserve]);
+  const oppReserveGroups = useMemo(() => splitMatchupReserve({ roster: opponentRoster, matchup: displayOpponentMatchup, useRosterReserve }), [opponentRoster, displayOpponentMatchup, useRosterReserve]);
+  const myBench = useMemo(() => myReserveGroups.bench.map(id => enrichPlayer(id, myVisiblePointsMap)).filter(Boolean), [myReserveGroups, enrichPlayer, myVisiblePointsMap]);
+  const oppBench = useMemo(() => oppReserveGroups.bench.map(id => enrichPlayer(id, oppVisiblePointsMap)).filter(Boolean), [oppReserveGroups, enrichPlayer, oppVisiblePointsMap]);
+  const myReserve = useMemo(() => myReserveGroups.reserve.map(id => enrichPlayer(id, myVisiblePointsMap)).filter(Boolean), [myReserveGroups, enrichPlayer, myVisiblePointsMap]);
+  const oppReserve = useMemo(() => oppReserveGroups.reserve.map(id => enrichPlayer(id, oppVisiblePointsMap)).filter(Boolean), [oppReserveGroups, enrichPlayer, oppVisiblePointsMap]);
 
   // Fetch weather for all outdoor home stadiums referenced by starters
   useEffect(() => {
@@ -1326,6 +1312,9 @@ function CompanionMatchupView({
 
   const liveEnrichedMyBench = useMemo(() => myBench.map(addProjection), [addProjection, myBench]);
   const liveEnrichedOppBench = useMemo(() => oppBench.map(addProjection), [addProjection, oppBench]);
+  const liveEnrichedMyReserve = useMemo(() => myReserve.map(addProjection), [addProjection, myReserve]);
+  const liveEnrichedOppReserve = useMemo(() => oppReserve.map(addProjection), [addProjection, oppReserve]);
+  const reserveAssignmentKey = useRosterReserve ? JSON.stringify([myReserveGroups.reserve, oppReserveGroups.reserve]) : '';
 
   const matchupSnapshotKey = useMemo(() => [
     selectedLeagueId ?? '',
@@ -1335,7 +1324,8 @@ function CompanionMatchupView({
     matchupRefreshTick,
     matchupSnapshotRevision,
     projectionLoadKey,
-  ].join('|'), [matchupRefreshTick, matchupSnapshotRevision, projectionLoadKey, season, selectedLeagueId, selectedMatchupGroup?.key, week]);
+    reserveAssignmentKey,
+  ].join('|'), [matchupRefreshTick, matchupSnapshotRevision, projectionLoadKey, reserveAssignmentKey, season, selectedLeagueId, selectedMatchupGroup?.key, week]);
   const snapshotWeatherKeys = useMemo(() => [...new Set(
     starterSlots
       .flatMap((slot) => [slot.mine, slot.opp])
@@ -1445,17 +1435,21 @@ function CompanionMatchupView({
       enrichedSlots: liveEnrichedSlots,
       enrichedMyBench: liveEnrichedMyBench,
       enrichedOppBench: liveEnrichedOppBench,
+      enrichedMyReserve: liveEnrichedMyReserve,
+      enrichedOppReserve: liveEnrichedOppReserve,
     });
-  }, [hasMatchupSnapshot, liveEnrichedMyBench, liveEnrichedOppBench, liveEnrichedSlots, matchupSnapshotGate, matchupSnapshotKey, season, selectedLeagueId, selectedMatchupGroup?.key, starterSlots, week]);
+  }, [hasMatchupSnapshot, liveEnrichedMyBench, liveEnrichedOppBench, liveEnrichedMyReserve, liveEnrichedOppReserve, liveEnrichedSlots, matchupSnapshotGate, matchupSnapshotKey, season, selectedLeagueId, selectedMatchupGroup?.key, starterSlots, week]);
 
   const renderedStarterSlots = hasMatchupSnapshot ? matchupSnapshot.starterSlots : starterSlots;
   const enrichedSlots = hasMatchupSnapshot ? matchupSnapshot.enrichedSlots : liveEnrichedSlots;
   const enrichedMyBench = hasMatchupSnapshot ? matchupSnapshot.enrichedMyBench : liveEnrichedMyBench;
   const enrichedOppBench = hasMatchupSnapshot ? matchupSnapshot.enrichedOppBench : liveEnrichedOppBench;
+  const enrichedMyReserve = hasMatchupSnapshot ? matchupSnapshot.enrichedMyReserve : liveEnrichedMyReserve;
+  const enrichedOppReserve = hasMatchupSnapshot ? matchupSnapshot.enrichedOppReserve : liveEnrichedOppReserve;
   const drilldownPlayers = useMemo(() => [
     ...enrichedSlots.flatMap(slot => [slot.mine, slot.opp]),
-    ...enrichedMyBench, ...enrichedOppBench,
-  ].filter(player => player?.id), [enrichedSlots, enrichedMyBench, enrichedOppBench]);
+    ...enrichedMyBench, ...enrichedOppBench, ...enrichedMyReserve, ...enrichedOppReserve,
+  ].filter(player => player?.id), [enrichedSlots, enrichedMyBench, enrichedOppBench, enrichedMyReserve, enrichedOppReserve]);
   const projectionBaselines = useMatchupProjectionBaselines({
     leagueId: selectedLeagueId, season, week, scoringSettings: activeScoringSettings,
     players: drilldownPlayers,
@@ -1836,14 +1830,9 @@ function CompanionMatchupView({
     ? oppDisplayPoints.toFixed(2)
     : oppForecastTotal != null ? oppForecastTotal.toFixed(1) : '—';
 
-  const sharedPlayerNameFontSize = useMemo(() => {
-    const labels = [
-      ...enrichedSlots.flatMap(slot => [slot.mine?.name, slot.opp?.name]),
-      ...enrichedMyBench.map(player => player?.name),
-      ...enrichedOppBench.map(player => player?.name),
-    ].filter(Boolean);
-    return getUnifiedPlayerNameFontSize(labels, isCompactPhone);
-  }, [enrichedMyBench, enrichedOppBench, enrichedSlots, isCompactPhone]);
+  const sharedPlayerNameFontSize = useMemo(() => (
+    getUnifiedPlayerNameFontSize(drilldownPlayers.map(player => player.name).filter(Boolean), isCompactPhone)
+  ), [drilldownPlayers, isCompactPhone]);
 
   // ── Live layer: replay bar, win chance / lead chart, scoring plays ───────
   // The current NFL week, or an earlier week of the same season replayed from
@@ -2367,13 +2356,7 @@ function CompanionMatchupView({
     const requestedWeek = Number(initialWeekRequest?.week ?? week);
     if (!requestedPlayerId || requestedWeek !== week) return;
 
-    const matchupPlayers = [
-      ...enrichedSlots.flatMap((slot) => [slot.mine, slot.opp]),
-      ...enrichedMyBench,
-      ...enrichedOppBench,
-    ].filter(Boolean);
-
-    const match = matchupPlayers.find((player) => player?.id === requestedPlayerId);
+    const match = drilldownPlayers.find(player => player.id === requestedPlayerId);
     if (match) {
       setSelectedPlayer({
         id: match.id,
@@ -2382,7 +2365,7 @@ function CompanionMatchupView({
       });
     }
     onConsumeInitialWeekRequest?.();
-  }, [enrichedMyBench, enrichedOppBench, enrichedSlots, initialWeekRequest, onConsumeInitialWeekRequest, week]);
+  }, [drilldownPlayers, initialWeekRequest, onConsumeInitialWeekRequest, week]);
 
   useEffect(() => {
     setSelectedPlayer(null);
@@ -2604,6 +2587,48 @@ function CompanionMatchupView({
     );
   }
 
+  const renderNonStarterSection = (label, myPlayers, opponentPlayers, minSlots = 0, slotPos) => {
+    const slotCount = Math.max(minSlots, myPlayers.length, opponentPlayers.length);
+    if (slotCount === 0) return null;
+
+    return (
+      <section aria-label={label}>
+        <h2
+          className="mx-2 sm:mx-4 mt-5 mb-2 px-4 py-2 text-xs font-bold uppercase tracking-widest"
+          style={{
+            color: 'var(--color-label-secondary)',
+            background: 'var(--color-fill)',
+            border: '1px solid var(--color-separator)',
+            fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+          }}
+        >
+          {label}
+        </h2>
+        <div className="companion-matchup-bench-list">
+          {Array.from({ length: slotCount }, (_, index) => {
+            const mine = myPlayers[index] ?? null;
+            const opp = opponentPlayers[index] ?? null;
+            return (
+              <HeadToHeadRow
+                key={index}
+                mine={mine}
+                opp={opp}
+                slotPos={slotPos}
+                bench
+                sharedPlayerNameFontSize={sharedPlayerNameFontSize}
+                statLineFor={cardStatLineFor}
+                gameStatusFor={cardGameStatusFor}
+                onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
+                onSelectMine={() => mine?.id && setSelectedPlayer({ id: mine.id, projection: mine.projection ?? null, enriched: mine })}
+                onSelectOpp={() => opp?.id && setSelectedPlayer({ id: opp.id, projection: opp.projection ?? null, enriched: opp })}
+              />
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
+
   const StarterReveal = animateEntrance ? RevealList : 'div';
   const startersContent = (
     <>
@@ -2634,44 +2659,8 @@ function CompanionMatchupView({
             ))}
           </StarterReveal>
 
-          {/* Bench section */}
-          {(enrichedMyBench.length > 0 || enrichedOppBench.length > 0) && (
-            <>
-              <div
-                className="mx-2 sm:mx-4 mt-5 mb-2 px-4 py-2 text-xs font-bold uppercase tracking-widest"
-                style={{
-                  color: 'var(--color-label-secondary)',
-                  background: 'var(--color-fill)',
-                  border: '1px solid var(--color-separator)',
-                  fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-                }}
-              >
-                Bench
-              </div>
-              {/* The bench is always shown. */}
-              {(() => {
-                const len = Math.max(enrichedMyBench.length, enrichedOppBench.length);
-                return (
-                  <div className="companion-matchup-bench-list">
-                    {Array.from({ length: len }, (_, i) => (
-                      <HeadToHeadRow
-                        key={i}
-                        mine={enrichedMyBench[i] ?? null}
-                        opp={enrichedOppBench[i] ?? null}
-                        bench
-                        sharedPlayerNameFontSize={sharedPlayerNameFontSize}
-                        statLineFor={cardStatLineFor}
-                        gameStatusFor={cardGameStatusFor}
-                        onOpenInjuries={platform === 'sleeper' ? onOpenInjuries : null}
-                        onSelectMine={() => enrichedMyBench[i]?.id && setSelectedPlayer({ id: enrichedMyBench[i].id, projection: enrichedMyBench[i].projection ?? null, enriched: enrichedMyBench[i] })}
-                        onSelectOpp={() => enrichedOppBench[i]?.id && setSelectedPlayer({ id: enrichedOppBench[i].id, projection: enrichedOppBench[i].projection ?? null, enriched: enrichedOppBench[i] })}
-                      />
-                    ))}
-                  </div>
-                );
-              })()}
-            </>
-          )}
+          {renderNonStarterSection('Bench', enrichedMyBench, enrichedOppBench)}
+          {useRosterReserve && renderNonStarterSection('IR', enrichedMyReserve, enrichedOppReserve, getReserveSlotCount(league), 'IR')}
     </>
   );
   const replayingMasthead = Boolean(liveLayerActive && effectiveReplayAt != null && liveFrame);
@@ -3891,7 +3880,7 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
       columns={isBye ? [
         <CompanionPlayerStatus
           key="bye-week"
-          label={compact ? 'Bye' : 'Bye Week'}
+          label={compact ? 'Bye' : 'BYE'}
           className="companion-matchup-bye-metric"
         />,
       ] : scoreColumns}

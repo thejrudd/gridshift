@@ -10510,6 +10510,7 @@ body {
     border-top: 2px solid var(--color-separator-opaque);
     box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.20);
     padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
     animation: sheet-slide-up 240ms cubic-bezier(0.32, 0.72, 0, 1) both;
   }
 
@@ -10542,6 +10543,7 @@ body {
   .modal-panel--mobile-sheet [style*="overflow-y: auto"] {
     -ms-overflow-style: none;
     scrollbar-width: none;
+    overscroll-behavior-y: none;
   }
 
   .modal-panel--mobile-sheet .overflow-y-auto::-webkit-scrollbar,
@@ -29563,6 +29565,7 @@ button.matchup-preview__meeting:focus-visible { outline: 2px solid var(--color-a
 
   .matchup-preview-modal.is-compact .matchup-preview__body {
     overflow-x: clip;
+    overscroll-behavior-y: none;
   }
 }
 
