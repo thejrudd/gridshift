@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSleeperLeague } from '../context/SleeperContext';
+import { BugIcon } from '@phosphor-icons/react/Bug';
 import { ChatCircleTextIcon } from '@phosphor-icons/react/ChatCircleText';
 import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
 import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
@@ -416,6 +417,14 @@ export default function Sidebar({
           >
             <GithubLogoIcon size={19} weight="bold" aria-hidden="true" />
           </SidebarFooterLink>
+          <SidebarFooterLink
+            href="https://github.com/thejrudd/gridshift/issues/new"
+            label="Report a bug"
+            ariaLabel="Report a bug"
+            dataTour="report-bug"
+          >
+            <BugIcon size={19} weight="bold" aria-hidden="true" />
+          </SidebarFooterLink>
           <SidebarFooterButton
             label="Privacy & Attributions"
             ariaLabel="Open Privacy & Attributions"
@@ -561,7 +570,7 @@ function SidebarAction({ label, onClick, disabled, destructive, secondary, dataT
   );
 }
 
-function SidebarFooterLink({ href, label, ariaLabel, children, external = true }) {
+function SidebarFooterLink({ href, label, ariaLabel, children, external = true, dataTour }) {
   return (
     <SidebarFooterIcon
       as="a"
@@ -569,6 +578,7 @@ function SidebarFooterLink({ href, label, ariaLabel, children, external = true }
       target={external ? '_blank' : undefined}
       rel={external ? 'noopener noreferrer' : undefined}
       aria-label={ariaLabel}
+      data-tour={dataTour}
       title={label}
       label={label}
     >{children}</SidebarFooterIcon>

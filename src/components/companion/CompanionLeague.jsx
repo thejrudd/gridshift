@@ -27,6 +27,7 @@ import StatsProgressBanner from '../ui/StatsProgressBanner';
 import UiEmptyState from '../ui/EmptyState';
 import LoadingSwap, { SkeletonRows } from '../ui/LoadingSwap.jsx';
 import Tabs from '../ui/Tabs.jsx';
+import { getReservePlayerIds, getReserveSlotCount } from '../../utils/fantasyReserve.js';
 
 const POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'DE', 'DT', 'CB', 'S'];
 const MAX_ROUNDS = 36; // generous cap — Sleeper dynasty startups can run 25+ rounds
@@ -36,7 +37,7 @@ const MOBILE_SHEET_QUERY = '(max-width: 1023px)';
 const LEAGUE_ROW_LEFT_BORDER = 4;
 
 function getRosterPlayerIds(roster) {
-  return [...new Set([...(roster?.players || []), ...(roster?.reserve || [])])];
+  return [...new Set([...(roster?.players ?? []).map(String), ...getReservePlayerIds(roster)])];
 }
 
 function hasScoreSource(stats) {
@@ -365,7 +366,7 @@ export default function CompanionLeague({ onTradePlayer, onViewPlayer = null, tr
 
 function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = false, tradeDisabledTitle = 'Trade is not available for the connected platform.', selectedRosterIdProp = null, onSelectedRosterChange = null }) {
   const {
-    platform, season, selectedLeagueId,
+    platform, season, selectedLeagueId, league,
     leagueUsers, rosters, myRoster, getUserDisplayName,
     players, loadPlayers,
     weeklyStats, seasonStats, loadSeasonStats,
@@ -407,6 +408,8 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
     [rosters, selectedRosterId],
   );
   const selectedRosterPlayerIds = useMemo(() => getRosterPlayerIds(selectedRoster), [selectedRoster]);
+  const reserveIds = useMemo(() => new Set(getReservePlayerIds(selectedRoster)), [selectedRoster]);
+  const reserveSlotCount = Math.max(getReserveSlotCount(league), reserveIds.size);
   const hasSelectedRosterWeeklyRows = useMemo(() => (
     selectedRosterPlayerIds.some((id) => (weeklyStats?.[id] ?? []).length > 0)
   ), [selectedRosterPlayerIds, weeklyStats]);
@@ -438,7 +441,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
       const pts = getRosterSeasonPoints(stats, weekly, activeScoringSettings, p.position);
       const avgPPG = getRosterAvgPPG(weekly, stats, pts, activeScoringSettings, p.position);
       const rank = positionalRanks[id] ?? null;
-      const isReserve = selectedRoster.reserve?.includes(id);
+      const isReserve = reserveIds.has(id);
       const availability = getPlayerAvailabilityContext(p, { isReserve });
       return {
         id,
@@ -455,7 +458,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
         teamTheme: teamRowTheme(p.team || '', darkMode),
       };
     }).filter(Boolean);
-  }, [selectedRoster, selectedRosterPlayerIds, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
+  }, [selectedRoster, selectedRosterPlayerIds, reserveIds, players, seasonStats, weeklyStats, activeScoringSettings, positionalRanks, darkMode]);
 
   const bodyColPx = useMemo(() => measureMaxRosterBodyWidth(rosterPlayers), [rosterPlayers]);
   const layout = useMemo(
@@ -473,7 +476,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
   const grouped = useMemo(() => {
     const groups = {};
     for (const p of rosterPlayers) {
-      const pos = POSITION_ORDER.includes(p.position) ? p.position : 'Other';
+      const pos = p.isReserve ? 'IR' : (POSITION_ORDER.includes(p.position) ? p.position : 'Other');
       if (!groups[pos]) groups[pos] = [];
       groups[pos].push(p);
     }
@@ -623,7 +626,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
         resetKey={selectedRosterId ?? ''}
         skeleton={<SkeletonRows count={rosterSkeletonCount} height="4rem" className="mx-2 sm:mx-4" />}
       >
-        {players && selectedRoster && POSITION_ORDER.filter(pos => grouped[pos]?.length).flatMap((pos, groupIndex) => {
+        {players && selectedRoster && [...POSITION_ORDER, 'IR'].filter(pos => grouped[pos]?.length || (pos === 'IR' && reserveSlotCount > 0)).flatMap((pos, groupIndex) => {
           const isOpponent = selectedRosterId !== myRosterData?.roster_id;
           const isOwnRoster = selectedRosterId === myRosterData?.roster_id;
           return [
@@ -637,7 +640,7 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
             >
               <h2 className="gs-text-meta">{pos}</h2>
             </div>,
-            ...grouped[pos].map(player => (
+            ...(grouped[pos] ?? []).map(player => (
               <LeagueResponsivePlayerRow
                 key={player.id}
                 player={player}
@@ -657,6 +660,14 @@ function LeagueRosterView({ onTradePlayer, onViewPlayer = null, tradeDisabled = 
                 tradeDisabledTitle={tradeDisabledTitle}
               />
             )),
+            ...(pos === 'IR' ? [
+              ...Array.from({ length: reserveIds.size - (grouped.IR?.length ?? 0) }, (_, index) => (
+                <div key={`unavailable-ir-${index}`} className="mx-2 sm:mx-4 px-4 py-3 gs-text-meta" style={{ color: 'var(--color-label-secondary)' }}>Player record unavailable</div>
+              )),
+              ...Array.from({ length: reserveSlotCount - reserveIds.size }, (_, index) => (
+                <div key={`empty-ir-${index}`} className="mx-2 sm:mx-4 px-4 py-3 gs-text-meta" style={{ color: 'var(--color-label-secondary)' }}>Empty IR slot</div>
+              )),
+            ] : []),
           ];
         })}
       </LoadingSwap>

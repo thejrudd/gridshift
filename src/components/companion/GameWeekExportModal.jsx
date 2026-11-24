@@ -8,6 +8,7 @@ const STATUS_LABELS = {
   partial: 'Partial',
   unavailable: 'Unavailable',
   not_requested: 'Not included',
+  no_upcoming_weeks: 'No upcoming weeks',
   'selected-season-only': 'Selected season',
 };
 
@@ -46,6 +47,7 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
   const [week, setWeek] = useState(defaultWeek);
   const [includeHistory, setIncludeHistory] = useState(true);
   const [includeMarketValues, setIncludeMarketValues] = useState(true);
+  const [includeUpcomingSchedule, setIncludeUpcomingSchedule] = useState(false);
   const [nflDetail, setNflDetail] = useState('box_score');
   const [exportMode, setExportMode] = useState('full');
   const fantasyPointsOnly = exportMode === 'fantasy_points_only';
@@ -58,7 +60,7 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
 
   const handleExport = async () => {
     try {
-      await runExport({ week, includeHistory, includeMarketValues, nflDetail, exportMode });
+      await runExport({ week, includeHistory, includeMarketValues, includeUpcomingSchedule, nflDetail, exportMode });
     } catch {
       // The hook owns the visible error state. Keep the sheet open so the user
       // can change the scope or retry without losing their selections.
@@ -76,6 +78,9 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
     ['League records', result.coverage?.leagueHistory?.status],
     ['Market values', result.coverage?.marketValues?.status],
   ]) : [];
+  if (result?.coverage?.upcomingSchedule) {
+    coverageRows.push(['Upcoming fantasy schedule', result.coverage.upcomingSchedule.status]);
+  }
 
   return (
     <Modal
@@ -141,9 +146,21 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
           </small>
         </label>
 
-        {!fantasyPointsOnly && (
-          <>
-            <div className="game-week-export__options">
+        <div className="game-week-export__options">
+          <label className="game-week-export__check-row col-span-full">
+            <input
+              type="checkbox"
+              checked={includeUpcomingSchedule}
+              onChange={(event) => setIncludeUpcomingSchedule(event.target.checked)}
+              disabled={busy}
+            />
+            <span>
+              <strong>Upcoming fantasy schedule</strong>
+              <small>Include league-wide pairings from the current fantasy week through the end of the regular season.</small>
+            </span>
+          </label>
+          {!fantasyPointsOnly && (
+            <>
               <label className="game-week-export__check-row">
                 <input
                   type="checkbox"
@@ -168,17 +185,19 @@ export default function GameWeekExportModal({ initialWeek = null, onClose }) {
                   <small>Include a point-in-time KeepTradeCut snapshot when the source is available.</small>
                 </span>
               </label>
-            </div>
+            </>
+          )}
+        </div>
 
-            <label className="game-week-export__detail-field">
-              <span className="game-week-export__section-label">NFL detail</span>
-              <select value={nflDetail} onChange={(event) => setNflDetail(event.target.value)} disabled={busy}>
-                <option value="box_score">Scoreboard + box scores</option>
-                <option value="full_play_by_play">Scoreboard + box scores + play-by-play</option>
-              </select>
-              <small>Paid provider capabilities and local quota can make detail partial; coverage is recorded in the file.</small>
-            </label>
-          </>
+        {!fantasyPointsOnly && (
+          <label className="game-week-export__detail-field">
+            <span className="game-week-export__section-label">NFL detail</span>
+            <select value={nflDetail} onChange={(event) => setNflDetail(event.target.value)} disabled={busy}>
+              <option value="box_score">Scoreboard + box scores</option>
+              <option value="full_play_by_play">Scoreboard + box scores + play-by-play</option>
+            </select>
+            <small>Paid provider capabilities and local quota can make detail partial; coverage is recorded in the file.</small>
+          </label>
         )}
 
         {busy && (

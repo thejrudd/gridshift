@@ -307,6 +307,16 @@ test.describe('pregame interactions', () => {
     const form = section(page, 'Recent form');
     await expect(form.locator('.pdd-pick')).toHaveCount(6);
     await expect(form.locator('.pdd-sec__m')).toHaveText('last 5 + this week');
+    const layers = await form.locator('svg').evaluate(svg => {
+      const orderedLayers = [...svg.children];
+      const lastColumn = svg.querySelector('.pdd-pick:last-of-type');
+      const average = svg.querySelector('line[stroke-dasharray]');
+      const firstScore = svg.querySelector('text[data-week]');
+      return orderedLayers.indexOf(lastColumn) < orderedLayers.indexOf(average)
+        && orderedLayers.indexOf(average) < orderedLayers.indexOf(firstScore)
+        && Number(average.getAttribute('opacity')) < 1;
+    });
+    expect(layers).toBe(true);
 
     await form.getByRole('button', { name: 'Week 3 vs MIN', exact: true }).click();
     const statLine = section(page, 'Stat line');
@@ -317,7 +327,8 @@ test.describe('pregame interactions', () => {
     await expect(form.locator('.pdd-sec__m')).toHaveText('Rec Yards pts by week');
     await expect(statLine.getByRole('button', { name: /^Rec Yards/ })).toHaveAttribute('aria-pressed', 'true');
     // W2 had 91 receiving yards: the column now measures 9.1, not 22.1 total.
-    await expect(form.getByRole('button', { name: 'Week 2 at JAX', exact: true })).toContainText('9.1');
+    await expect(form.locator('text[data-week="2"]')).toHaveText('9.1');
+    await expect(form.getByRole('button', { name: 'Week 2 at JAX', exact: true })).toHaveAccessibleDescription('9.1');
 
     await statLine.getByRole('button', { name: /^Total/ }).click();
     await expect(form.locator('.pdd-sec__m')).toHaveText('last 5 + this week');
@@ -362,7 +373,7 @@ test.describe('pregame interactions', () => {
     await section(page, 'Stat line').getByRole('button', { name: /^Fumble Lost/ }).click();
     await expect(form.locator('.pdd-sec__m')).toHaveText('Fumble Lost pts by week');
     const week3 = form.getByRole('button', { name: 'Week 3 vs MIN', exact: true });
-    await expect(week3).toContainText('-2.0');
+    await expect(form.locator('text[data-week="3"]')).toHaveText('-2.0');
     // Wait out the 500ms bar transition, then compare against the zero line.
     await expect.poll(async () => {
       const zero = await form.locator('svg > line').first().boundingBox();

@@ -357,6 +357,7 @@ export function WeekColumns({ columns = [], average = null, format = fmt, select
               role={onSelect ? 'button' : undefined}
               aria-pressed={onSelect ? column.week === selectedWeek : undefined}
               aria-label={column.ariaLabel}
+              aria-description={value != null ? format(value) : undefined}
               onClick={select}
               onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }}
             >
@@ -372,16 +373,36 @@ export function WeekColumns({ columns = [], average = null, format = fmt, select
                 style={{ transform: bar(value), fill }}
                 {...(column.ghost ? { stroke: 'var(--color-signature)', strokeWidth: 2, strokeDasharray: '4 3' } : column.current ? { stroke: 'var(--color-signature)', strokeWidth: 3 } : {})}
               />
-              {slot >= 26 && value != null && <text className="pdd-anim" x={cx} y={base} textAnchor="middle" style={{ fill: 'var(--color-label)', transform: labelShift(value) }}>{format(value)}</text>}
               <text className="wl" x={cx} y={H - (opponentRow ? (compact ? 21 : 22) : (compact ? 5 : 6))} textAnchor="middle">W{column.week}</text>
               {opponentRow && column.opp && <text x={cx} y={H - (compact ? 5 : 6)} textAnchor="middle">{column.opp}</text>}
             </g>
           );
         })}
         {average != null && <>
-          <line className="pdd-anim" x1={0} x2={iw} y1={base} y2={base} stroke="var(--color-label)" strokeWidth={1.5} strokeDasharray="4 4" pointerEvents="none" style={{ transform: shift(yAt(average)) }} />
+          <line className="pdd-anim" x1={0} x2={iw} y1={base} y2={base} stroke="var(--color-label)" strokeWidth={1.5} strokeDasharray="4 4" opacity={0.68} pointerEvents="none" style={{ transform: shift(yAt(average)) }} />
           <text className="pdd-anim" x={iw + 8} y={base + 4} style={{ fill: 'var(--color-label)', transform: shift(yAt(average)) }}>Avg {format(average)}</text>
         </>}
+        {/* Paint scores last so their background stroke clears the average guide. */}
+        {columns.map((column, index) => {
+          const value = column.value;
+          if (slot < 26 || value == null) return null;
+          const cx = slot * (index + 0.5);
+          return (
+            <text
+              key={column.week}
+              className="pdd-anim"
+              data-week={column.week}
+              x={cx}
+              y={base}
+              textAnchor="middle"
+              pointerEvents="none"
+              aria-hidden="true"
+              style={{ fill: 'var(--color-label)', transform: labelShift(value) }}
+            >
+              {format(value)}
+            </text>
+          );
+        })}
       </svg>
     </div>
   );

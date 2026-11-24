@@ -10,6 +10,7 @@ import {
   useFantasyLeague,
   useFantasyStats,
 } from '../context/SleeperContext.jsx';
+import { getFantasyScheduleWeekBounds } from '../utils/fantasySeasonSchedule.js';
 import { getLeagueHistorySnapshot } from '../utils/leagueHistory.js';
 import {
   applyKtcMultipliers,
@@ -26,6 +27,7 @@ import {
 
 const FULL_SEASON_WEEKS = 18;
 const HISTORY_CONCURRENCY = 2;
+const SCHEDULE_CONCURRENCY = 4;
 
 function key(value) {
   if (value == null) return null;
@@ -193,6 +195,7 @@ export default function useGameWeekExport() {
     rosters,
     leagueUsers,
     season,
+    currentFantasyWeek,
     linkedLeagueHistory,
     scoringSettings,
     activeScoringSettings,
@@ -229,6 +232,7 @@ export default function useGameWeekExport() {
     week,
     includeHistory = true,
     includeMarketValues = true,
+    includeUpcomingSchedule = false,
     nflDetail = 'box_score',
     exportMode = 'full',
   } = {}) => {
@@ -426,6 +430,34 @@ export default function useGameWeekExport() {
         }
       }
       throwIfAborted(controller.signal);
+
+      let upcomingSchedule = null;
+      if (includeUpcomingSchedule) {
+        update({ progress: { label: 'Loading upcoming fantasy schedule', completed: 4, total: 5 } });
+        const { regularSeasonWeeks } = getFantasyScheduleWeekBounds(league);
+        const completed = league.status === 'complete';
+        if (completed || currentFantasyWeek != null) {
+          const remainingWeeks = completed ? 0 : Math.max(0, regularSeasonWeeks - currentFantasyWeek + 1);
+          const weeks = Array.from({ length: remainingWeeks }, (_, index) => currentFantasyWeek + index);
+          const entries = await mapWithConcurrency(weeks, SCHEDULE_CONCURRENCY, async (scheduleWeek) => {
+            throwIfAborted(controller.signal);
+            if (scheduleWeek === normalizedWeek && matchupSucceeded && Array.isArray(currentMatchups)) {
+              return [scheduleWeek, currentMatchups];
+            }
+            try {
+              const rows = await loadMatchups(selectedLeagueId, scheduleWeek);
+              return [scheduleWeek, Array.isArray(rows) ? rows : null];
+            } catch {
+              return [scheduleWeek, null];
+            }
+          });
+          upcomingSchedule = { matchupsByWeek: Object.fromEntries(entries) };
+        } else {
+          upcomingSchedule = { matchupsByWeek: null };
+          warnings.push('The upcoming fantasy schedule is unavailable because the current fantasy week could not be determined.');
+        }
+      }
+      throwIfAborted(controller.signal);
       update({ progress: { label: 'Packaging stats export', completed: 5, total: 5 } });
 
       const currentMatchupsByWeek = {
@@ -450,6 +482,7 @@ export default function useGameWeekExport() {
         historySnapshots,
         historyCurrentSnapshot,
         currentMatchupsByWeek,
+        upcomingSchedule,
         nflBundle,
         marketValuesByPlayer,
         exportMode: fantasyPointsOnly ? 'fantasy_points_only' : 'full',
@@ -544,6 +577,7 @@ export default function useGameWeekExport() {
     }
   }, [
     activeScoringSettings,
+    currentFantasyWeek,
     league,
     leagueUsers,
     linkedLeagueHistory,

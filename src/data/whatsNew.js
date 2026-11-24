@@ -20,6 +20,7 @@
 //       placement: 'auto',             // 'auto' | 'top' | 'bottom' | 'left' | 'right'
 //       contextKey/copyByContext: null, // optional context-sensitive copy
 //       demoMode/demoWhen: null,        // optional tour-only presentation state
+//       heatmapExample: null,          // optional 'upcoming' or 'completed' visual sample
 //     }],
 //   }],
 // }
@@ -719,19 +720,40 @@ export const WHATS_NEW = [
         steps: [
           {
             route: { activeTab: 'fantasy', companionView: 'heatmap', heatmapFutureOpponents: '1' },
-            anchor: '[data-tour="heatmap-weekly-grid"]',
+            anchor: '[data-tour="heatmap-drilldown-example"]',
+            heatmapExample: 'upcoming',
             title: 'Scout an upcoming matchup',
             body: 'Select an upcoming opponent and expand a player to see season points, snap percentages, weekly stats, and inactive weeks.',
             placement: 'auto',
           },
           {
             route: { activeTab: 'fantasy', companionView: 'heatmap', heatmapFutureOpponents: '0' },
-            anchor: '[data-tour="heatmap-weekly-grid"]',
+            anchor: '[data-tour="heatmap-drilldown-example"]',
+            heatmapExample: 'completed',
             title: 'Review a completed matchup',
             body: 'Select a completed week and expand a player to see which stats earned their fantasy points in that game.',
             placement: 'auto',
           },
         ],
+      },
+    ],
+  },
+  {
+    version: '9.4.7',
+    title: 'Report a Bug',
+    features: [
+      {
+        id: 'report-a-bug',
+        name: 'Report a bug',
+        description: 'Open GridShift\'s GitHub issue form straight from the sidebar.',
+        steps: [{
+          route: null,
+          anchor: '[data-tour="report-bug"]',
+          anchorMobile: '[data-tour="app-menu"]',
+          title: 'Report a bug',
+          body: 'Spot something wrong? Use the bug icon in the sidebar, or in the app menu on a phone, to file it on GitHub.',
+          placement: 'auto',
+        }],
       },
     ],
   },

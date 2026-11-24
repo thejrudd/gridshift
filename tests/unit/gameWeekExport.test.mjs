@@ -68,7 +68,67 @@ test('builds an LLM-ready selected-week bundle with authoritative zeroes and rec
   assert.equal(bundle.fantasy.records.selectedWeek.highestScoreInLoss.score, 0);
   assert.equal(bundle.coverage.weeklyPlayerStats.status, 'complete');
   assert.equal(bundle.raw.sleeper.seasonStats['player-1'].pass_yd, 0);
+  assert.equal('upcomingSchedule' in bundle.fantasy, false);
   assert.equal(JSON.stringify(bundle).includes('[Circular]'), false);
+});
+
+test('includes league-wide remaining schedule pairings and byes in either export mode when requested', () => {
+  const extendedRosters = [
+    ...rosters,
+    { roster_id: 3, owner_id: 'user-3', players: [], starters: [] },
+  ];
+  const extendedUsers = [
+    ...users,
+    { user_id: 'user-3', display_name: 'Manager Three', metadata: { team_name: 'The Bye' } },
+  ];
+  const upcomingSchedule = {
+    matchupsByWeek: {
+      7: [
+        { roster_id: 1, matchup_id: 4 },
+        { roster_id: 2, matchup_id: 4 },
+        { roster_id: 3, matchup_id: null },
+      ],
+      8: [],
+    },
+  };
+
+  for (const exportMode of ['full', 'fantasy_points_only']) {
+    const bundle = buildGameWeekExport({
+      season: '2026',
+      fantasyWeek: 7,
+      league,
+      rosters: extendedRosters,
+      leagueUsers: extendedUsers,
+      upcomingSchedule,
+      exportMode,
+    });
+
+    assert.deepEqual(bundle.fantasy.upcomingSchedule.weeks, [
+      {
+        week: 7,
+        status: 'scheduled',
+        matchups: [
+          {
+            matchupId: null,
+            isBye: true,
+            teams: [{ rosterId: '3', teamName: 'The Bye' }],
+          },
+          {
+            matchupId: '4',
+            isBye: false,
+            teams: [
+              { rosterId: '1', teamName: 'The Winners' },
+              { rosterId: '2', teamName: 'The Losers' },
+            ],
+          },
+        ],
+      },
+      { week: 8, status: 'pending', matchups: [] },
+    ]);
+    assert.deepEqual(bundle.coverage.upcomingSchedule, {
+      status: 'partial', requestedWeeks: 2, scheduledWeeks: 1,
+    });
+  }
 });
 
 test('uses Sleeper custom_points as the official team-score override in weekly exports', () => {

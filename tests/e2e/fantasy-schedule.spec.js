@@ -15,6 +15,20 @@ test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page);
 });
 
+test('Stats Export keeps the upcoming fantasy schedule opt-in by default', async ({ page, isMobile }) => {
+  await page.goto('/fantasy/schedule');
+
+  if (isMobile) {
+    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Stats Export', exact: true }).click();
+
+  const upcomingSchedule = page.getByRole('checkbox', { name: /Upcoming fantasy schedule/ });
+  await expect(upcomingSchedule).toBeVisible();
+  await expect(upcomingSchedule).not.toBeChecked();
+  await expect(page.getByText('Include league-wide pairings from the current fantasy week through the end of the regular season.')).toBeVisible();
+});
+
 test('Schedule opens on the connected manager season and lists the remaining weeks', async ({ page }) => {
   await page.goto('/fantasy/schedule');
 

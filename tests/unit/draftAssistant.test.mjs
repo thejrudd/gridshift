@@ -200,7 +200,7 @@ test('draft roster eligibility expands flex slots without treating bench slots a
 test('draft route round-trips cleanly', () => {
   const route = parseAppRoute('/draft');
   assert.equal(route.activeTab, 'draft');
-  assert.equal(route.draftView, 'war-room');
+  assert.equal(route.draftView, null);
   assert.equal(buildAppPath(route), '/draft');
 });
 
@@ -240,7 +240,7 @@ test('All Players keeps rostered rows visible beyond the ranked display cap', ()
 test('legacy companion draft route redirects to top-level draft', () => {
   const route = parseAppRoute('/companion/draft');
   assert.equal(route.activeTab, 'draft');
-  assert.equal(route.draftView, 'war-room');
+  assert.equal(route.draftView, null);
   assert.equal(buildAppPath(route), '/draft');
 });
 
@@ -319,8 +319,14 @@ test('retired draft routes fall back to War Room', () => {
     const route = parseAppRoute(`/draft/${view}`);
     assert.equal(route.activeTab, 'draft');
     assert.equal(route.draftView, 'war-room');
-    assert.equal(buildAppPath(route), '/draft');
+    assert.equal(buildAppPath(route), '/draft/war-room');
   }
+});
+
+test('explicit War Room route round-trips cleanly', () => {
+  const route = parseAppRoute('/draft/war-room');
+  assert.equal(route.draftView, 'war-room');
+  assert.equal(buildAppPath(route), '/draft/war-room');
 });
 
 test('legacy draft order route normalizes to results', () => {

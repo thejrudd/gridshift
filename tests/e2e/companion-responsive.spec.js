@@ -2325,6 +2325,56 @@ test('Fantasy Matchups mobile keeps only VS in the axis and contains the preview
   expect(geometry.bodyOverflow).toBeLessThanOrEqual(1);
 });
 
+test('Matchup preview only pulls down on a fresh swipe from the top', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Uses mobile browser touch input');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('https://api.sleeper.com/stats/nfl/**', (route) => {
+    const week = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    return route.fulfill({ json: weeklyStatsForWeek(week) });
+  });
+  await page.route('**/api/statistics/scores/espn-week*', route => route.fulfill({ json: { scoreboard: { events: [] } } }));
+  await page.goto('/fantasy/matchups?week=1');
+  await page.locator('.companion-matchup-masthead .companion-matchup-masthead__axis').tap();
+
+  const sheet = page.locator('.matchup-preview-modal');
+  const body = sheet.locator('.matchup-preview__body');
+  await expect(body).toBeVisible();
+  const position = () => sheet.evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42);
+  await expect.poll(position).toBe(0);
+  const bodyBox = await body.boundingBox();
+  const x = Math.round(bodyBox.x + bodyBox.width / 2);
+  const y = Math.round(bodyBox.y + 150);
+  const client = await page.context().newCDPSession(page);
+  const start = (startY) => client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart', touchPoints: [{ x, y: startY }],
+  });
+  const move = async (from, to) => {
+    for (let step = 1; step <= 12; step += 1) {
+      await client.send('Input.dispatchTouchEvent', {
+        type: 'touchMove', touchPoints: [{ x, y: Math.round(from + (to - from) * step / 12) }],
+      });
+    }
+  };
+  const end = () => client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const scrollTop = () => body.evaluate(element => element.scrollTop);
+
+  // Start inside the content so the first swipe crosses the top.
+  await body.evaluate(element => { element.scrollTop = 100; });
+  await expect.poll(scrollTop).toBe(100);
+  await start(y);
+  await move(y, y + 270);
+  await expect.poll(scrollTop).toBe(0);
+  expect(await position()).toBe(0);
+  await end();
+  await expect(sheet).toBeVisible();
+
+  await start(y);
+  await move(y, y + 140);
+  await expect.poll(position).toBeGreaterThan(80);
+  await end();
+  await expect(sheet).toBeHidden();
+});
+
 test('Fantasy Matchups picker selects a whole matchup', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/fantasy/matchups?week=1');

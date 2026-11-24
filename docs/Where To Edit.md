@@ -485,6 +485,10 @@ Read first: [[Prediction Share Cards]] — product, privacy, state, recipient, a
 | `src/utils/predictionShareModel.js` | Pick-week context, snapshot-to-card projection |
 | `src/components/ShareableImage.jsx` | Legacy shareable image |
 | `src/utils/exportImport.js`, `src/utils/exportStats.js`, `src/utils/layoutUtils.js` | Export/import helpers |
+| `src/components/companion/GameWeekExportModal.jsx`, `src/hooks/useGameWeekExport.js` | Fantasy Actions Stats Export controls and optional upcoming schedule fetch |
+| `src/utils/gameWeekExport.js` | Stats export bundle, including optional future pairings and bye weeks |
+
+The Stats Export upcoming fantasy schedule option is unchecked by default. When selected, it includes every league matchup and bye from the current fantasy week through the regular-season end in either JSON export mode; coverage distinguishes scheduled, pending, partial, and unavailable weeks.
 
 ## Trade Proposal Rooms
 

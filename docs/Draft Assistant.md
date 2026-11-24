@@ -19,6 +19,11 @@ Draft Sync is an opt-in, host-controlled feature. Set `GRIDSHIFT_DRAFT_SYNC_ENAB
 - Offline edits remain local and queue for retry. Authorization failures require pairing again. Revision conflicts preserve both copies and are resolved from the Draft Sync dialog without silently overwriting a Board.
 - The server database is durable persistence, not an automatic off-site backup. Hosters should back up the Docker volume containing the SQLite file if they need recovery after volume deletion.
 
+## Routing
+
+- `/draft` waits for the selected league year’s draft status, then replaces the URL with `/draft/results` when complete or `/draft/war-room` before or during the draft. Missing or unavailable draft status defaults to War Room. The legacy `/companion/draft` alias follows the same rule.
+- Explicit `/draft/war-room`, `/draft/my-board`, and `/draft/results` links and browser history retain their chosen view, including for historical seasons. War Room displays its unavailable state for a completed draft.
+
 ## Results View
 
 - Route: `/draft/results` (`draftView === 'results'`, registered in `appRoutes.js` `DRAFT_VIEWS` and `DraftSubNav.jsx`). `DraftAssistant.jsx` dispatches `DraftResultsView`. Legacy `/draft/draft-order` routes normalize to `/draft/results`.

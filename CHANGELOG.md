@@ -1625,3 +1625,15 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Quarter stats** - Pick-sixes count as a pass attempt and interception in the quarter they occurred.
 - **What's New tour** - See how to open season game logs and individual game scoring from the Heatmap details introduced in 9.4.5.
 - **Global Search** - Searches like `Ravens Defense` and `Ravens D/ST` open the team’s defense statistics, including after a reload.
+
+## v9.4.7 - Matchups & Mobile Sheets
+*2026-11-24*
+
+- **Heatmap tour examples** - The existing Heatmap tour shows an expandable game log for an upcoming matchup and a fantasy scoring breakdown for a completed game.
+- **Mobile sheets** - A swipe through scrolled content stops at the top. A fresh downward swipe from the top pulls the sheet toward dismissal.
+- **Desktop bye label** - Fantasy Matchups shows “BYE” so the label fits on desktop player cards.
+- **Recent Form chart** - The faded average line sits above the bars and behind the score labels.
+- **Report a bug** - The desktop sidebar and the phone app menu link directly to GridShift’s GitHub issue form.
+- **Fantasy Schedule export** - Stats Export can include the league’s remaining regular-season matchups and byes in the downloaded JSON.
+- **Fantasy navigation** - Heatmap appears immediately after Rankings.
+- **Draft default** - Opening Draft goes to Results after the selected league year’s draft finishes. Before and during the draft, it opens War Room.

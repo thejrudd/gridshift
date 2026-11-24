@@ -106,6 +106,16 @@ test('full upgrade history replays every tour step', async ({ page, isMobile }) 
       }).toBe(true);
     }
     await expect(page.locator(`${selector}:visible`).first()).toBeVisible();
+    if (step.heatmapExample === 'upcoming') {
+      const gameLog = tour.getByRole('table', { name: 'Jayden Reed game log' });
+      await expect(gameLog).toBeVisible();
+      await expect(gameLog.getByRole('columnheader', { name: 'Snap %' })).toBeVisible();
+      await expect(gameLog.getByText('DNP')).toBeVisible();
+    }
+    if (step.heatmapExample === 'completed') {
+      await expect(tour.getByLabel('Jayden Reed scoring breakdown')).toContainText('Receiving Yards');
+      await expect(tour.getByRole('table', { name: 'Jayden Reed game log' })).toHaveCount(0);
+    }
 
     const copyOptions = (step.contextKey ? Object.values(step.copyByContext) : [step])
       .map((copy) => materializeExpectedCopy(copy, {
@@ -171,7 +181,7 @@ test(HISTORICAL_WAR_ROOM_TEST, async ({ page }) => {
 
   const warRoomTab = page.getByRole('tab', { name: 'War Room' });
   await expect(warRoomTab).toHaveAttribute('aria-selected', 'true');
-  await expect(page).toHaveURL(/\/draft$/);
+  await expect(page).toHaveURL(/\/draft\/war-room$/);
   await expect(page.getByText('War Room is unavailable for the 2025 league year.')).toBeVisible();
   await expect(page.getByText('The 2025 draft has already finished.')).toBeVisible();
 
@@ -179,7 +189,7 @@ test(HISTORICAL_WAR_ROOM_TEST, async ({ page }) => {
   await expect(page).toHaveURL(/\/draft\/results$/);
   await page.getByRole('tab', { name: 'War Room' }).click();
 
-  await expect(page).toHaveURL(/\/draft$/);
+  await expect(page).toHaveURL(/\/draft\/war-room$/);
   await expect(warRoomTab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('War Room is unavailable for the 2025 league year.')).toBeVisible();
 });

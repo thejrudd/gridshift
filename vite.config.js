@@ -43,6 +43,7 @@ const STATIC_SHARE_ROUTES = [
   '/scout/picks',
   '/scout/results',
   '/draft',
+  '/draft/war-room',
   '/draft/my-board',
   '/draft/results',
   ...shareTeams.flatMap((team) => {

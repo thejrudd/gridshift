@@ -1,6 +1,7 @@
 import { normalizeBdlScoreboardGame } from './balldontlieNflScoreboard.js';
 import { normalizeEspnScoreboardEvent } from './espnNflScoreboard.js';
 import { buildFantasyMatchupScoringBreakdown } from './fantasyMatchupBreakdown.js';
+import { buildFantasyMatchupGroups } from './fantasyMatchups.js';
 import { buildLeagueHistoryModel, buildSeasonStandings } from './leagueHistory.js';
 import { getOfficialMatchupRowPoints, getSleeperCustomPointsOverride } from './liveScoringFeed.js';
 import { calcPoints, calcPointsFromTotals } from './scoringEngine.js';
@@ -869,6 +870,21 @@ function buildStorylineSignals({ records, outcomes }) {
   return signals;
 }
 
+function buildUpcomingScheduleWeeks(matchupsByWeek, rosters, rosterIdentities) {
+  return Object.entries(matchupsByWeek ?? {}).map(([week, rows]) => {
+    if (rows == null) return { week: Number(week), status: 'unavailable', matchups: [] };
+    const matchups = buildFantasyMatchupGroups(rows, rosters).map(({ matchupId, sides }) => ({
+      matchupId,
+      isBye: sides.length === 1,
+      teams: sides.map(({ rosterId, name }) => ({
+        rosterId,
+        teamName: rosterIdentities.get(rosterId)?.teamName || name,
+      })),
+    }));
+    return { week: Number(week), status: matchups.length ? 'scheduled' : 'pending', matchups };
+  });
+}
+
 export function buildGameWeekExport({
   season,
   fantasyWeek,
@@ -887,6 +903,7 @@ export function buildGameWeekExport({
   historySnapshots = [],
   historyCurrentSnapshot = null,
   currentMatchupsByWeek = null,
+  upcomingSchedule = null,
   nflBundle = null,
   marketValuesByPlayer = {},
   coverage = {},
@@ -1085,11 +1102,20 @@ export function buildGameWeekExport({
     };
   }
 
-  if (exportMode === 'fantasy_points_only') {
-    return toSerializable(buildFantasyPointsOnlyPayload(output));
+  const payload = exportMode === 'fantasy_points_only' ? buildFantasyPointsOnlyPayload(output) : output;
+  if (upcomingSchedule) {
+    const { matchupsByWeek } = upcomingSchedule;
+    const weeks = buildUpcomingScheduleWeeks(matchupsByWeek, rosters, rosterIdentities);
+    const scheduledWeeks = weeks.filter((entry) => entry.status === 'scheduled').length;
+    let status = 'unavailable';
+    if (matchupsByWeek && !weeks.length) status = 'no_upcoming_weeks';
+    else if (scheduledWeeks) status = scheduledWeeks === weeks.length ? 'complete' : 'partial';
+
+    payload.fantasy.upcomingSchedule = { weeks };
+    payload.coverage.upcomingSchedule = { status, requestedWeeks: weeks.length, scheduledWeeks };
   }
 
-  return toSerializable(output);
+  return toSerializable(payload);
 }
 
 export function downloadGameWeekExport(payload, filename = 'gridshift-game-week-stats.json') {
