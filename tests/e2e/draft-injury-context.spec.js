@@ -823,14 +823,16 @@ test('desktop Board keeps card controls and drafting status inside one fixed car
   expect(new Set(heights).size).toBe(1);
 });
 
-test('Draft root chooses a view from draft status while explicit routes and history stay deliberate', async ({ page }) => {
+test('Draft root opens War Room before the draft and history preserves explicit views', async ({ page }) => {
   await page.goto('/draft');
   await expect(page).toHaveURL(/\/draft\/war-room$/);
   await page.goto('/draft/results');
   await expect(page).toHaveURL(/\/draft\/results$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/draft\/war-room$/);
+});
 
+test('Draft root opens Results after completion and honors explicit War Room', async ({ page }) => {
   await installTradeFixtures(page, {
     players,
     drafts: [{ ...preDraft[0], status: 'complete' }],
@@ -839,6 +841,7 @@ test('Draft root chooses a view from draft status while explicit routes and hist
   await expect(page).toHaveURL(/\/draft\/results$/);
   await page.goto('/draft/war-room');
   await expect(page.getByText(`War Room is unavailable for the ${TEST_SEASON} league year.`)).toBeVisible();
+  await expect(page).toHaveURL(/\/draft\/war-room$/);
 });
 
 test('Draft root opens War Room during a live draft', async ({ page }) => {

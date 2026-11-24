@@ -15,15 +15,13 @@ test.beforeEach(async ({ page }) => {
   await installTradeFixtures(page);
 });
 
-test('Stats Export keeps the upcoming fantasy schedule opt-in by default', async ({ page }) => {
+test('Stats Export keeps the upcoming fantasy schedule opt-in by default', async ({ page, isMobile }) => {
   await page.goto('/fantasy/schedule');
 
-  let exportAction = page.getByRole('button', { name: 'Stats Export', exact: true });
-  if (!(await exportAction.count())) {
+  if (isMobile) {
     await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-    exportAction = page.getByRole('button', { name: 'Stats Export', exact: true });
   }
-  await exportAction.click();
+  await page.getByRole('button', { name: 'Stats Export', exact: true }).click();
 
   const upcomingSchedule = page.getByRole('checkbox', { name: /Upcoming fantasy schedule/ });
   await expect(upcomingSchedule).toBeVisible();
