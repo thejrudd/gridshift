@@ -109,17 +109,17 @@ test('includes league-wide remaining schedule pairings and byes in either export
         status: 'scheduled',
         matchups: [
           {
+            matchupId: null,
+            isBye: true,
+            teams: [{ rosterId: '3', teamName: 'The Bye' }],
+          },
+          {
             matchupId: '4',
             isBye: false,
             teams: [
               { rosterId: '1', teamName: 'The Winners' },
               { rosterId: '2', teamName: 'The Losers' },
             ],
-          },
-          {
-            matchupId: null,
-            isBye: true,
-            teams: [{ rosterId: '3', teamName: 'The Bye' }],
           },
         ],
       },
