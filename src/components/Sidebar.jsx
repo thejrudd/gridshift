@@ -421,6 +421,7 @@ export default function Sidebar({
             href="https://github.com/thejrudd/gridshift/issues/new"
             label="Report a bug"
             ariaLabel="Report a bug"
+            dataTour="report-bug"
           >
             <BugIcon size={19} weight="bold" aria-hidden="true" />
           </SidebarFooterLink>
@@ -569,7 +570,7 @@ function SidebarAction({ label, onClick, disabled, destructive, secondary, dataT
   );
 }
 
-function SidebarFooterLink({ href, label, ariaLabel, children, external = true }) {
+function SidebarFooterLink({ href, label, ariaLabel, children, external = true, dataTour }) {
   return (
     <SidebarFooterIcon
       as="a"
@@ -577,6 +578,7 @@ function SidebarFooterLink({ href, label, ariaLabel, children, external = true }
       target={external ? '_blank' : undefined}
       rel={external ? 'noopener noreferrer' : undefined}
       aria-label={ariaLabel}
+      data-tour={dataTour}
       title={label}
       label={label}
     >{children}</SidebarFooterIcon>

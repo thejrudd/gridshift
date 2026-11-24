@@ -738,4 +738,23 @@ export const WHATS_NEW = [
       },
     ],
   },
+  {
+    version: '9.4.7',
+    title: 'Report a Bug',
+    features: [
+      {
+        id: 'report-a-bug',
+        name: 'Report a bug',
+        description: 'Open GridShift\'s GitHub issue form straight from the sidebar.',
+        steps: [{
+          route: null,
+          anchor: '[data-tour="report-bug"]',
+          anchorMobile: '[data-tour="app-menu"]',
+          title: 'Report a bug',
+          body: 'Spot something wrong? Use the bug icon in the sidebar, or in the app menu on a phone, to file it on GitHub.',
+          placement: 'auto',
+        }],
+      },
+    ],
+  },
 ];

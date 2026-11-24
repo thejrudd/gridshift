@@ -1631,10 +1631,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Heatmap tour examples** - The existing Heatmap tour shows an expandable game log for an upcoming matchup and a fantasy scoring breakdown for a completed game.
 - **Mobile sheets** - A swipe through scrolled content stops at the top. A fresh downward swipe from the top pulls the sheet toward dismissal.
-- **Sleeper IR slots** - Fantasy Rosters and current-week Matchups show IR assignments and configured empty slots in a separate section.
 - **Desktop bye label** - Fantasy Matchups shows “BYE” so the label fits on desktop player cards.
 - **Recent Form chart** - The faded average line sits above the bars and behind the score labels.
-- **Report a bug** - The desktop sidebar links directly to GridShift’s GitHub issue form.
+- **Report a bug** - The desktop sidebar and the phone app menu link directly to GridShift’s GitHub issue form.
 - **Fantasy Schedule export** - Stats Export can include the league’s remaining regular-season matchups and byes in the downloaded JSON.
 - **Fantasy navigation** - Heatmap appears immediately after Rankings.
 - **Draft default** - Opening Draft goes to Results after the selected league year’s draft finishes. Before and during the draft, it opens War Room.

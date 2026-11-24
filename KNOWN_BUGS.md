@@ -8,9 +8,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Status |
 |-----|--------|
-| Fantasy Rosters and current-week Matchups did not show Sleeper injured-reserve assignments or empty IR slots separately. | Implemented for v9.4.7 |
-| The desktop Fantasy Matchups bye-week label was truncated. | Implemented for v9.4.7 |
-| The average line in the Matchups player drilldown crossed Recent Form score labels. | Implemented for v9.4.7 |
+| Fantasy Rosters and current-week Matchups do not show Sleeper injured-reserve assignments or empty IR slots separately. | Open |
 
 ---
 
@@ -18,6 +16,8 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 
 | Bug | Fixed In |
 |-----|----------|
+| The desktop Fantasy Matchups bye-week label was truncated. | v9.4.7 |
+| The average line in the Matchups player drilldown crossed Recent Form score labels. | v9.4.7 |
 | Sorting the Heatmap by a week on a phone scrolled the grid back to the first week, pushing the sorted week off screen. | v9.4.3 |
 | Statistics player rank strips drew other players as tall ovals on phones instead of small dots. | v9.4.3 |
 | Selecting a player from the Heatmap opened their Statistics Overview instead of their Seasons tab. | v9.4.3 |

@@ -1,4 +1,5 @@
 import Modal from './Modal';
+import { BugIcon } from '@phosphor-icons/react/Bug';
 import { ChatCircleTextIcon } from '@phosphor-icons/react/ChatCircleText';
 import { CoffeeIcon } from '@phosphor-icons/react/Coffee';
 import { GithubLogoIcon } from '@phosphor-icons/react/GithubLogo';
@@ -246,6 +247,16 @@ export default function ActionSheet({
             title="About / GitHub"
           >
             <GithubLogoIcon size={19} weight="bold" aria-hidden="true" />
+          </a>
+          <a
+            href="https://github.com/thejrudd/gridshift/issues/new"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="action-sheet-footer-icon"
+            aria-label="Report a bug"
+            title="Report a bug"
+          >
+            <BugIcon size={19} weight="bold" aria-hidden="true" />
           </a>
           <button
             type="button"
