@@ -3,7 +3,7 @@ import { memo, useState, useEffect, useMemo, useCallback, useDeferredValue, useR
 import { useSleeperStats } from '../../../context/SleeperContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { fmtTradeValue } from '../../../utils/tradeValueScale';
-import { sumTradeValues } from '../../../utils/tradeValue';
+import { summarizeTradeValues, sumTradeValues } from '../../../utils/tradeValue';
 import { compareDraftPickAssets, getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import useMediaQuery from '../../../hooks/useMediaQuery.js';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
@@ -283,6 +283,18 @@ function sumProposalAssetValues(assets = []) {
     return Number.isFinite(numericValue) ? numericValue : null;
   }));
   return total == null ? null : Math.round(total);
+}
+
+// "62+" when some assets have no value; the unvalued assets are left out, never counted as zero.
+function formatProposalSideTotal(assets = []) {
+  const { total, partialTotal, valuedCount, unvaluedCount } = summarizeTradeValues((assets ?? []).map((asset) => {
+    const rawValue = asset?.value ?? asset?.val;
+    if (rawValue == null || rawValue === '') return null;
+    const numericValue = Number(rawValue);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  }));
+  if (total != null) return fmtTradeValue(Math.round(total));
+  return valuedCount > 0 && unvaluedCount > 0 ? `${fmtTradeValue(Math.round(partialTotal))}+` : '—';
 }
 
 function countProposalAssets(proposal) {
@@ -568,8 +580,8 @@ const TradeProposalItem = memo(function TradeProposalItem({
   const proposalShadow = isHovered
     ? '0 10px 24px rgba(12,15,20,0.12), 0 3px 8px rgba(12,15,20,0.08)'
     : '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)';
-  const outgoingTotal = sumProposalAssetValues(proposal?.outgoingAssets ?? []);
-  const incomingTotal = sumProposalAssetValues(proposal?.incomingAssets ?? []);
+  const outgoingTotalLabel = formatProposalSideTotal(proposal?.outgoingAssets ?? []);
+  const incomingTotalLabel = formatProposalSideTotal(proposal?.incomingAssets ?? []);
 
   if (isWorkspaceResult) {
     const summary = getUpgradeProposalSummary(proposal);
@@ -596,7 +608,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
             className="shrink-0 text-lg font-bold tabular-nums leading-none"
             style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}
           >
-            {fmtTradeValue(tone === 'give' ? outgoingTotal : incomingTotal)}
+            {tone === 'give' ? outgoingTotalLabel : incomingTotalLabel}
           </span>
         </div>
         <div className="flex flex-col gap-1.5 md:hidden">
@@ -787,7 +799,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
               <span className="inline-block px-3 py-0.5 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-accent-red)', color: '#fff' }}>Give</span>
               <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
-                {fmtTradeValue(outgoingTotal)}
+                {outgoingTotalLabel}
               </span>
             </div>
           )}
@@ -860,7 +872,7 @@ const TradeProposalItem = memo(function TradeProposalItem({
               <span className="inline-block px-3 py-0.5 rounded-full text-[length:var(--type-label)] font-bold uppercase tracking-[0.12em]"
                 style={{ background: 'var(--color-accent-green)', color: '#fff' }}>Get</span>
               <span className="text-sm font-bold tabular-nums md:hidden" style={{ color: 'var(--color-label)', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.04em' }}>
-                {fmtTradeValue(incomingTotal)}
+                {incomingTotalLabel}
               </span>
             </div>
           )}

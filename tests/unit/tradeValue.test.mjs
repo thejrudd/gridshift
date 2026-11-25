@@ -72,6 +72,37 @@ describe('canonical trade values', () => {
     assert.equal(modules.tradeValue.sumTradeValues([100, null]), null);
   });
 
+  it('summarizes a side with unvalued assets without ever reading it as complete', () => {
+    const partial = modules.tradeValue.summarizeTradeValues([60, null, 25]);
+    assert.equal(partial.total, null);
+    assert.equal(partial.partialTotal, 85);
+    assert.equal(partial.valuedCount, 2);
+    assert.equal(partial.unvaluedCount, 1);
+    const complete = modules.tradeValue.summarizeTradeValues([60, 25]);
+    assert.equal(complete.total, 85);
+    assert.equal(complete.unvaluedCount, 0);
+    assert.equal(modules.tradeValue.summarizeTradeValues([]).total, 0);
+  });
+
+  it('withholds the verdict when a pick has no value, even if the valued part looks even', () => {
+    const side = modules.tradeEngine.valueSide([], [{ key: '2099-1-1', year: 2099, round: 1, fromRosterId: 1 }], players, [], '1qb', rosters, null, TEST_SEASON, null, null, null, league, drafts);
+    assert.equal(side.total, null);
+    assert.equal(side.unvaluedCount, 1);
+    assert.equal(side.partialTotal, 0);
+    assert.equal(modules.tradeEngine.evaluateTrade(100, side.total).verdict, 'unavailable');
+    assert.equal(modules.tradeEngine.evaluateTrade(side.partialTotal, 0).verdict, 'fair');
+  });
+
+  it('keeps packages with an unvalued asset out of Intelligence and Upgrades instead of pricing them at 0', async () => {
+    const shared = await server.ssrLoadModule('/src/utils/opportunity/opportunityShared.js');
+    assert.equal(shared.hasUnvaluedAsset({ outgoingAssets: [{ value: 40 }], incomingAssets: [{ value: null }] }), true);
+    assert.equal(shared.hasUnvaluedAsset({ outgoingAssets: [{ value: 0 }], incomingAssets: [{ value: 55 }] }), false);
+    const picks = shared.getRosterPickAssets(1, { 1: { '2099-1': { ownStatus: 'own', acquired: [] } } }, [{ key: '2099-1', year: 2099, round: 1 }], rosters, null, TEST_SEASON, league, drafts, [], '1qb');
+    assert.deepEqual(picks, []);
+    const valued = shared.getRosterPickAssets(1, { 1: { '2099-1': { ownStatus: 'own', acquired: [] } } }, [{ key: '2099-1', year: 2099, round: 1 }], rosters, { 1: 50 }, TEST_SEASON, league, drafts, [], '1qb');
+    assert.equal(valued.length, 1);
+  });
+
   it('uses computeTradePlayerValueDetail for Trade Agent valueSide output', () => {
     const detail = modules.tradeValue.computeTradePlayerValueDetail({
       id: '102',

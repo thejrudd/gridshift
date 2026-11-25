@@ -47,6 +47,14 @@ export function sumAssetValues(assets = []) {
   return assets.reduce((sum, asset) => sum + Math.max(0, Number(asset?.value) || 0), 0);
 }
 
+// An asset with no value must never be priced as 0 in a package. Packages that
+// include one are left out of Intelligence and Upgrades; the Agent shows them
+// with an incomplete total instead.
+export function hasUnvaluedAsset(proposal) {
+  return [...(proposal?.outgoingAssets ?? []), ...(proposal?.incomingAssets ?? [])]
+    .some((asset) => !Number.isFinite(Number(asset?.value)) || asset?.value == null);
+}
+
 export function oxfordJoin(items = []) {
   const list = items.filter(Boolean);
   if (!list.length) return '';
@@ -284,7 +292,7 @@ export function getRosterPickAssets(rosterId, rosterPicks, slots, rosters, pickV
   if (!rosterId || !rosterPicks || !slots) return [];
   return getPicksForRoster(rosterId, rosterPicks, slots)
     .map((pick) => buildPickAsset(pick, rosters, pickValueMap, currentSeason, league, drafts, ktcPlayers, leagueType))
-    .filter(Boolean)
+    .filter((asset) => asset && Number.isFinite(asset.value))
     .sort((a, b) => {
       const aPriority = (a.isOwn ? 0 : 25) + ((a.round ?? 99) * -3) + ((a.year ?? currentSeason) - Number(currentSeason)) * 2;
       const bPriority = (b.isOwn ? 0 : 25) + ((b.round ?? 99) * -3) + ((b.year ?? currentSeason) - Number(currentSeason)) * 2;

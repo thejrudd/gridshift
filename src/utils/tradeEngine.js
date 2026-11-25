@@ -4,7 +4,7 @@
 
 import { findKtcDraftPickBaseline, getKtcValue } from './ktcApi.js';
 import { getDraftPickDisplayInfo } from './draftPickDisplay.js';
-import { resolveTradePlayerValueDetail, sumTradeValues } from './tradeValue.js';
+import { resolveTradePlayerValueDetail, summarizeTradeValues } from './tradeValue.js';
 import { normalizeKtcMarketValue, normalizeKtcMarketValues } from './tradeValueScale.js';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
@@ -307,7 +307,8 @@ function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = 
  * @param {string}   leagueType     - '1qb' | 'sf'
  * @param {Array}    rosters        - League rosters retained for ownership/context
  * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
- * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
+ * @returns {{ total: number|null, partialTotal: number, unvaluedCount: number, items: Array<{ id, label, val, type }> }}
+ *   `total` is null when any asset has no value; `partialTotal` sums the valued assets only.
  */
 export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null, playerTradeValueDetailsMap = null, league = null, drafts = []) {
   const items = [];
@@ -340,8 +341,8 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
     items.push(buildDraftPickTradeItem(pick, valuation, { includeKtcEntry: true }));
   }
 
-  const total = sumTradeValues(items.map((it) => it.val));
-  return { total, items };
+  const { total, partialTotal, unvaluedCount } = summarizeTradeValues(items.map((it) => it.val));
+  return { total, partialTotal, unvaluedCount, items };
 }
 
 // ── Trade verdict ─────────────────────────────────────────────────────────────

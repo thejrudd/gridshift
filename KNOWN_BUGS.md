@@ -9,6 +9,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Bug | Status |
 |-----|--------|
 | Fantasy Rosters and current-week Matchups do not show Sleeper injured-reserve assignments or empty IR slots separately. | Open |
+| A draft pick with no value (no neutral-pool round value and no KTC pick baseline for its year) leaves its trade side incomplete (`62+`) and is hidden from Intelligence and Upgrades. | Open |
 
 ---
 
