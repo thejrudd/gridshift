@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in GridShift is wrong or not working
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      placeholder: "The trade says Values Unavailable"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to repeat it
+      placeholder: |
+        1. Open Trade
+        2. Add a player and a draft pick
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: league-id
+    attributes:
+      label: Sleeper league ID
+      description: "Open Switch league, then tap Copy ID next to your league. It's public. Write none if this isn't about a league."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where in GridShift?
+      options:
+        - Trade
+        - Rosters or League
+        - Matchups
+        - Statistics
+        - Draft
+        - Search
+        - Rankings
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: league-type
+    attributes:
+      label: League type
+      options:
+        - Dynasty
+        - Redraft
+        - Keeper
+        - Not about a league
+  - type: input
+    id: version
+    attributes:
+      label: GridShift version
+      description: Shown at the bottom of the menu.
+      placeholder: v9.4.7
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: iPhone, Safari
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Paste or drag an image here.
