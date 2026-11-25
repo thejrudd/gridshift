@@ -9,6 +9,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Bug | Status |
 |-----|--------|
 | Fantasy Rosters and current-week Matchups do not show Sleeper injured-reserve assignments or empty IR slots separately. | Open |
+| Trades in Dynasty leagues showed "Values Unavailable" whenever they included draft picks: the picks had no value because the market rankings page no longer included its player list, and one pick without a value blanked its whole side. | Open (found in v9.4.7) |
 
 ---
 
