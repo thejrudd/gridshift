@@ -123,6 +123,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Name every branch for what it is for (for example `live-stat-refresh-fix` or `v9.3-scores-dashboard`). Never put an AI or tool name in a branch name (`claude/`, `codex/`) or leave a generated suffix; rename such a branch before committing to it.
 - Read docs/Release Workflow.md before committing, preparing a release, changing release metadata, or generating release notes.
 - A request to commit or merge to main also covers pushing main and its tag, creating the GitHub release with release notes, and deploying that tag on the GridShift VPS (`ssh -t gridshift deploy-gridshift --ref <tag>`), and archiving the sessions whose work just shipped. Follow the Committing to main section of docs/Release Workflow.md. Other branches keep the no-push rule.
+- After a branch is merged to main, delete it locally and on origin. When a release fixes an issue reported on GitHub, the GitHub release notes reference it (for example `(#9)`).
 - Before running the What's New tour gate for a commit, present the genuinely new user-facing capabilities in the proposed commit scope (or say there are none) and wait for the user's confirmation.
 
 ## User-facing copy
