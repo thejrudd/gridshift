@@ -104,6 +104,27 @@ export function computeRedraftPickValues(
 }
 
 /**
+ * KTC-free round values for a DYNASTY league, used only when KTC publishes no
+ * pick values. The current rookie class stands in for every future class: its
+ * canonical Trade values are ranked, split into rounds of `leagueSize` picks,
+ * and priced with the same round-risk discount as redraft picks. Each round is
+ * flagged `estimated` so the UI can mark the value approximate. A rookie class
+ * with too few valued players leaves rounds out, and those picks stay unvalued.
+ *
+ * @param {number[]} rookieValues - canonical Trade values of the rookie class
+ * @param {number}  leagueSize    - number of teams (picks per round)
+ * @returns {{ [round: number]: { value: number, estimated: true } }}
+ */
+export function computeDynastyPickFallbackValues(rookieValues, leagueSize) {
+  const calibrationPool = (rookieValues ?? [])
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)
+    .map((value, index) => ({ rank: index + 1, value }));
+  const roundValues = computeRedraftPickValues([], leagueSize, '1qb', { calibrationPool });
+  return Object.fromEntries(Object.entries(roundValues).map(([round, value]) => [round, { value, estimated: true }]));
+}
+
+/**
  * Year-based discount for redraft pick values.
  * Picks usable sooner are worth more — 10% off per year into the future,
  * floored at 60% (picks 4+ years out).
@@ -239,10 +260,12 @@ export function valueDraftPick(
 
   let val = null;
   let ktcEntry = null;
+  let estimated = false;
   if (pickValueMap?.[pick?.round] != null) {
     const roundVal = typeof pickValueMap[pick.round] === 'number'
       ? pickValueMap[pick.round]
       : pickValueMap[pick.round].value ?? null;
+    estimated = typeof pickValueMap[pick.round] === 'object' && pickValueMap[pick.round].estimated === true;
     val = roundVal != null ? Math.round(roundVal * pickYearDiscount(pick.year, currentSeason)) : null;
   } else {
     ktcEntry = findKtcDraftPickBaseline(pick?.year, pick?.round, ktcPlayers);
@@ -254,6 +277,7 @@ export function valueDraftPick(
   return {
     val,
     value: val,
+    estimated: estimated && val != null,
     ktcEntry,
     displayInfo,
   };
@@ -279,11 +303,12 @@ function buildPlayerTradeItem(playerId, player, detail) {
 }
 
 function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = {}) {
-  const { val, ktcEntry, displayInfo } = valuation;
+  const { val, ktcEntry, displayInfo, estimated } = valuation;
   const item = {
     id: pick.key,
     label: displayInfo.label,
     val,
+    estimated: Boolean(estimated),
     type: 'pick',
     pickData: pick,
     year: pick.year,

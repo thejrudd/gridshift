@@ -103,6 +103,23 @@ describe('canonical trade values', () => {
     assert.equal(valued.length, 1);
   });
 
+  it('prices dynasty picks from the rookie class when KTC has no pick values, and says they are estimates', () => {
+    const rookieValues = [80, 70, 60, 50, 40, 30, null, 20, 10, 5, 5, 5];
+    const map = modules.tradeEngine.computeDynastyPickFallbackValues(rookieValues, 4);
+    assert.ok(map[1].estimated && map[2].estimated);
+    assert.ok(map[1].value > map[2].value, 'earlier rounds are worth more');
+    const pick = { key: '2027-1', year: 2027, round: 1, fromRosterId: 1 };
+    const valued = modules.tradeEngine.valueDraftPick(pick, { pickValueMap: map, currentSeason: TEST_SEASON, ktcPlayers: [] });
+    assert.ok(Number.isFinite(valued.val) && valued.estimated === true);
+    const side = modules.tradeEngine.valueSide([], [pick], players, [], '1qb', rosters, map, TEST_SEASON, null, null, null, league, drafts);
+    assert.equal(side.unvaluedCount, 0);
+    assert.equal(side.items[0].estimated, true);
+    assert.deepEqual(modules.tradeEngine.computeDynastyPickFallbackValues([], 4), {});
+    assert.deepEqual(modules.tradeEngine.computeDynastyPickFallbackValues([null, null], 4), {});
+    const plain = modules.tradeEngine.valueDraftPick(pick, { pickValueMap: { 1: 50 }, currentSeason: TEST_SEASON, ktcPlayers: [] });
+    assert.equal(plain.estimated, false);
+  });
+
   it('uses computeTradePlayerValueDetail for Trade Agent valueSide output', () => {
     const detail = modules.tradeValue.computeTradePlayerValueDetail({
       id: '102',

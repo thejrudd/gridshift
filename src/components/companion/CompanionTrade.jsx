@@ -29,6 +29,7 @@ import {
   suggestPackage,
   buildCandidatePool,
   computeRedraftPickValues,
+  computeDynastyPickFallbackValues,
   detectLeagueType,
 } from '../../utils/tradeEngine';
 import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
@@ -886,11 +887,22 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // current owner must not change its value because Sleeper does not assign a
   // reliable future slot before the draft.
   const pickValueMap = useMemo(() => {
+    // Dynasty picks price from KTC. Only when KTC publishes no pick values at
+    // all does the current rookie class's own Trade values stand in.
+    if (format === 'dynasty') {
+      if (!rosters?.length || !sleeperPlayers || !playerTradeValueMap) return null;
+      if ((adjustedKtcPlayers ?? []).some((entry) => entry?.position === 'RDP')) return null;
+      const rookieValues = Object.entries(sleeperPlayers)
+        .filter(([, player]) => player?.years_exp === 0 && player?.status === 'Active' && !['K', 'DEF'].includes(player?.position))
+        .map(([id]) => playerTradeValueMap.get(id));
+      const fallbackMap = computeDynastyPickFallbackValues(rookieValues, rosters.length);
+      return Object.keys(fallbackMap).length ? fallbackMap : null;
+    }
     if (format !== 'redraft' || !rosters?.length || (!adjustedKtcPlayers?.length && !draftPickCalibrationPool?.length)) return null;
     return computeRedraftPickValues(adjustedKtcPlayers ?? [], rosters.length, leagueType, {
       calibrationPool: draftPickCalibrationPool,
     });
-  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool]);
+  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool, sleeperPlayers, playerTradeValueMap]);
   const tradeOpportunityLayerCacheKey = useMemo(() => {
     if (!tradeAnalyticsReady) return null;
     return buildTradeOpportunityLayerCacheKey({

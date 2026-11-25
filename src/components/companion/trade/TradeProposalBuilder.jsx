@@ -32,7 +32,7 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
   const isInteractive = item.type === 'player' && !!onOpenPlayer;
   const metaSegments = getTradeAssetMetaSegments(item);
   const value = item.adjVal ?? item.val;
-  const valueIsEstimated = item.dynastyFallback || item.idpFallback;
+  const valueIsEstimated = item.dynastyFallback || item.idpFallback || item.estimated;
   const hasNoValue = !Number.isFinite(Number(value)) || value == null;
   const valueKicker = item.type === 'player' && item.avgPPG != null ? `${item.avgPPG.toFixed(1)} avg` : 'Value';
 
@@ -51,7 +51,7 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
       valueLabel={hasNoValue ? 'No value' : `${valueIsEstimated ? '~' : ''}${fmtTradeValue(value)}`}
       valueTitle={hasNoValue
         ? `No value yet. This ${item.type === 'pick' ? 'pick' : 'player'} is left out of the side total.`
-        : item.idpFallback ? 'Estimated from available league production or normalized market context' : undefined}
+        : item.idpFallback ? 'Estimated from available league production or normalized market context' : item.estimated ? 'Estimated from this year\'s rookie class because no market value is listed' : undefined}
       onClick={isInteractive ? onOpenPlayer : null}
       onRemove={onRemove}
       removeLabel={`Remove ${item.label}`}
