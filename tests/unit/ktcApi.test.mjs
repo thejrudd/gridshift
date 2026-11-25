@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractPlayersArray, findKtcPlayerFromSleeper } from '../../src/utils/ktcApi.js';
+import { extractPlayersArray, extractPlayersVersion, fetchKtcPlayers, findKtcPlayerFromSleeper } from '../../src/utils/ktcApi.js';
 import { valueDraftPick } from '../../src/utils/tradeEngine.js';
 import { sumTradeValues } from '../../src/utils/tradeValue.js';
 
@@ -74,5 +74,35 @@ describe('KTC page without an inline player list (issue 9)', () => {
     assert.equal(second.val, null);
     assert.equal(third.val, null);
     assert.equal(sumTradeValues([54, second.val, third.val]), null);
+  });
+});
+
+describe('KTC player pool loading (issue 9)', () => {
+  const pageHtml = "<script>var playersVersion = '2611250620-abc';\nvar playersArray = [];</script>";
+  const pool = [{ playerName: '2027 Mid 2nd', position: 'RDP', oneQBValues: { value: 3000 }, superflexValues: { value: 3200 } }];
+
+  it('reads the published pool version', () => {
+    assert.equal(extractPlayersVersion(pageHtml), '2611250620-abc');
+    assert.equal(extractPlayersVersion('<html></html>'), null);
+  });
+
+  it('loads the pool from the versioned endpoint when the page list is empty', async () => {
+    const calls = [];
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url, options });
+      return url.includes('player-pool')
+        ? { ok: true, json: async () => pool }
+        : { ok: true, text: async () => pageHtml };
+    };
+    assert.deepEqual(await fetchKtcPlayers('dynasty'), pool);
+    assert.equal(calls[1].url, '/ktc-proxy/dynasty-rankings/player-pool?v=2611250620-abc&sr=2');
+    assert.equal(calls[1].options.headers['X-KTC-Players-Version'], '2611250620-abc');
+  });
+
+  it('rejects instead of caching an empty list', async () => {
+    globalThis.fetch = async (url) => (url.includes('player-pool')
+      ? { ok: true, json: async () => [] }
+      : { ok: true, text: async () => pageHtml });
+    await assert.rejects(() => fetchKtcPlayers('redraft'), /no player values/);
   });
 });
