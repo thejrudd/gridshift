@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { extractPlayersArray, findKtcPlayerFromSleeper } from '../../src/utils/ktcApi.js';
+import { valueDraftPick } from '../../src/utils/tradeEngine.js';
+import { sumTradeValues } from '../../src/utils/tradeValue.js';
 
 const players = [
   {
@@ -50,5 +52,27 @@ describe('KTC player matching', () => {
     };
     assert.equal(findKtcPlayerFromSleeper('rb', players, ktcPlayers), ktcPlayers[0]);
     assert.equal(findKtcPlayerFromSleeper('wr', players, ktcPlayers), null);
+  });
+});
+
+// Refs #9: KTC's rankings page now ships only a small inline sample and fills
+// `playersArray` after load, so the extractor sees an empty array. Dynasty pick
+// values come only from KTC, so every pick is valueless and blanks its side.
+describe('KTC page without an inline player list (issue 9)', () => {
+  const html = `<script>var oneQBPlayers = [{"playerName":"2027 Early 3rd","position":"RDP"}];</script>
+    <script>var playersArray = [];
+    var ktcPoolReady = ktcFetchPlayerPool('dynasty', '1', null).then(function (pool) { playersArray = pool; });</script>`;
+
+  it('extracts an empty list without throwing', () => {
+    assert.deepEqual(extractPlayersArray(html), []);
+  });
+
+  it('leaves dynasty picks valueless, which blanks the whole side total', () => {
+    const ktcPlayers = extractPlayersArray(html);
+    const second = valueDraftPick({ year: '2027', round: 2 }, { ktcPlayers, leagueType: 'sf', currentSeason: '2026' });
+    const third = valueDraftPick({ year: '2027', round: 3 }, { ktcPlayers, leagueType: 'sf', currentSeason: '2026' });
+    assert.equal(second.val, null);
+    assert.equal(third.val, null);
+    assert.equal(sumTradeValues([54, second.val, third.val]), null);
   });
 });
