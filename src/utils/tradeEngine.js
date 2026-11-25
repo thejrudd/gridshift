@@ -4,7 +4,7 @@
 
 import { findKtcDraftPickBaseline, getKtcValue } from './ktcApi.js';
 import { getDraftPickDisplayInfo } from './draftPickDisplay.js';
-import { resolveTradePlayerValueDetail, sumTradeValues } from './tradeValue.js';
+import { resolveTradePlayerValueDetail, summarizeTradeValues } from './tradeValue.js';
 import { normalizeKtcMarketValue, normalizeKtcMarketValues } from './tradeValueScale.js';
 
 // ── Redraft pick valuation ────────────────────────────────────────────────────
@@ -101,6 +101,27 @@ export function computeRedraftPickValues(
   }
 
   return map;
+}
+
+/**
+ * KTC-free round values for a DYNASTY league, used only when KTC publishes no
+ * pick values. The current rookie class stands in for every future class: its
+ * canonical Trade values are ranked, split into rounds of `leagueSize` picks,
+ * and priced with the same round-risk discount as redraft picks. Each round is
+ * flagged `estimated` so the UI can mark the value approximate. A rookie class
+ * with too few valued players leaves rounds out, and those picks stay unvalued.
+ *
+ * @param {number[]} rookieValues - canonical Trade values of the rookie class
+ * @param {number}  leagueSize    - number of teams (picks per round)
+ * @returns {{ [round: number]: { value: number, estimated: true } }}
+ */
+export function computeDynastyPickFallbackValues(rookieValues, leagueSize) {
+  const calibrationPool = (rookieValues ?? [])
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)
+    .map((value, index) => ({ rank: index + 1, value }));
+  const roundValues = computeRedraftPickValues([], leagueSize, '1qb', { calibrationPool });
+  return Object.fromEntries(Object.entries(roundValues).map(([round, value]) => [round, { value, estimated: true }]));
 }
 
 /**
@@ -239,10 +260,12 @@ export function valueDraftPick(
 
   let val = null;
   let ktcEntry = null;
+  let estimated = false;
   if (pickValueMap?.[pick?.round] != null) {
     const roundVal = typeof pickValueMap[pick.round] === 'number'
       ? pickValueMap[pick.round]
       : pickValueMap[pick.round].value ?? null;
+    estimated = typeof pickValueMap[pick.round] === 'object' && pickValueMap[pick.round].estimated === true;
     val = roundVal != null ? Math.round(roundVal * pickYearDiscount(pick.year, currentSeason)) : null;
   } else {
     ktcEntry = findKtcDraftPickBaseline(pick?.year, pick?.round, ktcPlayers);
@@ -254,6 +277,7 @@ export function valueDraftPick(
   return {
     val,
     value: val,
+    estimated: estimated && val != null,
     ktcEntry,
     displayInfo,
   };
@@ -279,11 +303,12 @@ function buildPlayerTradeItem(playerId, player, detail) {
 }
 
 function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = {}) {
-  const { val, ktcEntry, displayInfo } = valuation;
+  const { val, ktcEntry, displayInfo, estimated } = valuation;
   const item = {
     id: pick.key,
     label: displayInfo.label,
     val,
+    estimated: Boolean(estimated),
     type: 'pick',
     pickData: pick,
     year: pick.year,
@@ -307,7 +332,8 @@ function buildDraftPickTradeItem(pick, valuation, { includeKtcEntry = false } = 
  * @param {string}   leagueType     - '1qb' | 'sf'
  * @param {Array}    rosters        - League rosters retained for ownership/context
  * @param {string}   currentSeason  - e.g. "2025" — for year-based pick discount
- * @returns {{ total: number, items: Array<{ id, label, val, type }> }}
+ * @returns {{ total: number|null, partialTotal: number, unvaluedCount: number, items: Array<{ id, label, val, type }> }}
+ *   `total` is null when any asset has no value; `partialTotal` sums the valued assets only.
  */
 export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leagueType, rosters, pickValueMap, currentSeason, dynastyFallbackPlayers = null, idpValueMap = null, playerTradeValueDetailsMap = null, league = null, drafts = []) {
   const items = [];
@@ -340,8 +366,8 @@ export function valueSide(playerIds, pickItems, sleeperPlayers, ktcPlayers, leag
     items.push(buildDraftPickTradeItem(pick, valuation, { includeKtcEntry: true }));
   }
 
-  const total = sumTradeValues(items.map((it) => it.val));
-  return { total, items };
+  const { total, partialTotal, unvaluedCount } = summarizeTradeValues(items.map((it) => it.val));
+  return { total, partialTotal, unvaluedCount, items };
 }
 
 // ── Trade verdict ─────────────────────────────────────────────────────────────

@@ -76,6 +76,14 @@ function normalizeParticipant(participant, fallbackRosterId) {
   };
 }
 
+// Totals for a side that holds unvalued assets stay null (so older clients keep
+// showing "—"); the sum of its valued assets travels separately.
+function normalizePartialSide(partial) {
+  const unvalued = Math.floor(Number(partial?.unvalued));
+  const value = normalizeValue(partial?.value);
+  return Number.isFinite(unvalued) && unvalued > 0 && value != null ? { value, unvalued } : null;
+}
+
 export function buildTradeProposalSnapshot({
   leagueId,
   season,
@@ -84,6 +92,7 @@ export function buildTradeProposalSnapshot({
   senderAssets = [],
   recipientAssets = [],
   totals = {},
+  partial = null,
   verdict = {},
   valueScaleId = TRADE_PROPOSAL_VALUE_SCALE_ID,
 } = {}) {
@@ -91,6 +100,8 @@ export function buildTradeProposalSnapshot({
   const normalizedRecipient = normalizeParticipant(recipient, recipient?.rosterId);
   normalizedSender.assets = senderAssets.map((asset) => normalizeTradeProposalAsset(asset, normalizedSender.rosterId, normalizedRecipient.rosterId)).filter(Boolean);
   normalizedRecipient.assets = recipientAssets.map((asset) => normalizeTradeProposalAsset(asset, normalizedRecipient.rosterId, normalizedSender.rosterId)).filter(Boolean);
+  const partialSender = normalizePartialSide(partial?.sender);
+  const partialRecipient = normalizePartialSide(partial?.recipient);
   return {
     schemaVersion: TRADE_PROPOSAL_SCHEMA_VERSION,
     valueScaleId: valueScaleId === TRADE_PROPOSAL_VALUE_SCALE_ID
@@ -105,6 +116,7 @@ export function buildTradeProposalSnapshot({
       sender: normalizeValue(totals.sender),
       recipient: normalizeValue(totals.recipient),
     },
+    ...(partialSender || partialRecipient ? { partial: { sender: partialSender, recipient: partialRecipient } } : {}),
     verdict: {
       verdict: cleanText(verdict.verdict, 'Trade proposal'),
       gap: normalizeValue(verdict.gap),
@@ -130,6 +142,10 @@ export function buildTradeProposalSnapshotFromSides({
     senderAssets: yourSide?.items ?? [],
     recipientAssets: theirSide?.items ?? [],
     totals: { sender: yourSide?.total, recipient: theirSide?.total },
+    partial: {
+      sender: { value: yourSide?.partialTotal, unvalued: yourSide?.unvaluedCount },
+      recipient: { value: theirSide?.partialTotal, unvalued: theirSide?.unvaluedCount },
+    },
     verdict,
   });
 }
@@ -174,6 +190,7 @@ export function swapTradeProposalPerspective(snapshot) {
     senderAssets: snapshot.recipient.assets,
     recipientAssets: snapshot.sender.assets,
     totals: { sender: snapshot.totals?.recipient, recipient: snapshot.totals?.sender },
+    partial: { sender: snapshot.partial?.recipient, recipient: snapshot.partial?.sender },
     verdict: snapshot.verdict,
     valueScaleId: snapshot.valueScaleId ?? null,
   });

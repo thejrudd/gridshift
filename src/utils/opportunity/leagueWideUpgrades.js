@@ -3,6 +3,7 @@ import {
   buildRosterPickAssetsById,
   getPositionPlayers,
   getPositionSurplus,
+  hasUnvaluedAsset,
   isBenchPlayer,
   sumAssetValues,
   toFixedNumber,
@@ -212,7 +213,7 @@ export function findLeagueWideUpgradeGroups({
     }
 
     const viableProposals = proposals.filter(
-      (proposal) => proposal.plausibilityScore >= (26 + ((4 - normalizedTradePostureLevel) * 1.5)),
+      (proposal) => !hasUnvaluedAsset(proposal) && proposal.plausibilityScore >= (26 + ((4 - normalizedTradePostureLevel) * 1.5)),
     );
     const groupedProposals = selectNeedDrivenTradeProposals(
       viableProposals,

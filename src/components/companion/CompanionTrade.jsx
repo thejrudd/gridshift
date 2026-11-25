@@ -29,11 +29,12 @@ import {
   suggestPackage,
   buildCandidatePool,
   computeRedraftPickValues,
+  computeDynastyPickFallbackValues,
   detectLeagueType,
 } from '../../utils/tradeEngine';
 import { buildPartnerTradeIntelligence, buildRosterOpportunityLayer, findLeagueWideUpgradeGroups } from '../../utils/opportunityEngine';
 import { buildTradeAnalyticsSnapshot } from '../../utils/tradeAnalytics';
-import { computeTradePlayerValueDetail, sumTradeValues } from '../../utils/tradeValue';
+import { computeTradePlayerValueDetail, summarizeTradeValues } from '../../utils/tradeValue';
 import TradeRosterPicker from './TradeRosterPicker';
 import TradePickPicker from './TradePickPicker';
 import PlayerStatsModal from '../PlayerStatsModal';
@@ -886,11 +887,22 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
   // current owner must not change its value because Sleeper does not assign a
   // reliable future slot before the draft.
   const pickValueMap = useMemo(() => {
+    // Dynasty picks price from KTC. Only when KTC publishes no pick values at
+    // all does the current rookie class's own Trade values stand in.
+    if (format === 'dynasty') {
+      if (!rosters?.length || !sleeperPlayers || !playerTradeValueMap) return null;
+      if ((adjustedKtcPlayers ?? []).some((entry) => entry?.position === 'RDP')) return null;
+      const rookieValues = Object.entries(sleeperPlayers)
+        .filter(([, player]) => player?.years_exp === 0 && player?.status === 'Active' && !['K', 'DEF'].includes(player?.position))
+        .map(([id]) => playerTradeValueMap.get(id));
+      const fallbackMap = computeDynastyPickFallbackValues(rookieValues, rosters.length);
+      return Object.keys(fallbackMap).length ? fallbackMap : null;
+    }
     if (format !== 'redraft' || !rosters?.length || (!adjustedKtcPlayers?.length && !draftPickCalibrationPool?.length)) return null;
     return computeRedraftPickValues(adjustedKtcPlayers ?? [], rosters.length, leagueType, {
       calibrationPool: draftPickCalibrationPool,
     });
-  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool]);
+  }, [format, adjustedKtcPlayers, leagueType, rosters, draftPickCalibrationPool, sleeperPlayers, playerTradeValueMap]);
   const tradeOpportunityLayerCacheKey = useMemo(() => {
     if (!tradeAnalyticsReady) return null;
     return buildTradeOpportunityLayerCacheKey({
@@ -1236,21 +1248,21 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
         currentContext: fallbackTradeValueDetail?.currentContext ?? null,
       };
     });
-    const adjTotal = sumTradeValues(enriched.map((it) => it.adjVal ?? it.val));
-    return { ...side, items: enriched, total: adjTotal };
+    const { total, partialTotal, unvaluedCount } = summarizeTradeValues(enriched.map((it) => it.adjVal ?? it.val));
+    return { ...side, items: enriched, total, partialTotal, unvaluedCount };
   }
 
   // Value calculations — show player cards immediately once sleeperPlayers is loaded,
   // even if KTC hasn't resolved yet (local utility values remain available).
   const yourSide = useMemo(() => {
-    if (!showTradeBuilder || !sleeperPlayers) return { total: 0, items: [] };
+    if (!showTradeBuilder || !sleeperPlayers) return { total: 0, partialTotal: 0, unvaluedCount: 0, items: [] };
     const side = valueSide(yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap, league, leagueDrafts);
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showTradeBuilder, yourPlayers, yourPicks, sleeperPlayers, adjustedKtcPlayers, adjustedDynastyKtcPlayers, mergedIDPMap, leagueType, rosters, pickValueMap, season, league, leagueDrafts, playerTradeValueDetailsMap, playerTradeValueMap, positionalAvgPPG, positionalValuePerPPG, leagueAvgMult, rankMap]);
 
   const theirSide = useMemo(() => {
-    if (!showTradeBuilder || !sleeperPlayers) return { total: 0, items: [] };
+    if (!showTradeBuilder || !sleeperPlayers) return { total: 0, partialTotal: 0, unvaluedCount: 0, items: [] };
     const side = valueSide(theirPlayers, theirPicks, sleeperPlayers, adjustedKtcPlayers ?? [], leagueType, rosters, pickValueMap, season, adjustedDynastyKtcPlayers, mergedIDPMap, playerTradeValueDetailsMap, league, leagueDrafts);
     return enrichItems(side);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1296,14 +1308,16 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
 
   const buildEngineTradeSnapshot = useCallback((proposal) => {
     if (!proposal?.targetRosterId || !myRosterData?.roster_id) return null;
-    const sumAssets = (assets = []) => sumTradeValues((assets ?? []).map((asset) => {
+    const summarizeAssets = (assets = []) => summarizeTradeValues((assets ?? []).map((asset) => {
       const rawValue = asset?.value ?? asset?.val;
       if (rawValue == null || rawValue === '') return null;
       const numericValue = Number(rawValue);
       return Number.isFinite(numericValue) ? numericValue : null;
     }));
-    const outgoingTotal = sumAssets(proposal.outgoingAssets);
-    const incomingTotal = sumAssets(proposal.incomingAssets);
+    const outgoing = summarizeAssets(proposal.outgoingAssets);
+    const incoming = summarizeAssets(proposal.incomingAssets);
+    const outgoingTotal = outgoing.total;
+    const incomingTotal = incoming.total;
     return buildTradeProposalSnapshot({
       leagueId: selectedLeagueId,
       season,
@@ -1312,6 +1326,10 @@ export default function CompanionTrade({ initialPlayer, onConsumeInitialPlayer, 
       senderAssets: proposal.outgoingAssets ?? [],
       recipientAssets: proposal.incomingAssets ?? [],
       totals: { sender: outgoingTotal, recipient: incomingTotal },
+      partial: {
+        sender: { value: outgoing.partialTotal, unvalued: outgoing.unvaluedCount },
+        recipient: { value: incoming.partialTotal, unvalued: incoming.unvaluedCount },
+      },
       verdict: evaluateTrade(outgoingTotal, incomingTotal),
     });
   }, [getTradeParticipant, myRosterData?.roster_id, season, selectedLeagueId]);

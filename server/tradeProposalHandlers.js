@@ -81,6 +81,12 @@ function normalizeFiniteNumber(value) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function normalizePartialSide(partial) {
+  const unvalued = Math.floor(Number(partial?.unvalued));
+  const value = normalizeFiniteNumber(partial?.value);
+  return Number.isFinite(unvalued) && unvalued > 0 && value != null ? { value, unvalued } : null;
+}
+
 function getUserName(user, fallback) {
   return safeLabel(user?.display_name ?? user?.username, fallback);
 }
@@ -267,6 +273,9 @@ function normalizeSnapshot(rawSnapshot, maps, sender, recipient, { requireAssets
   };
   const totals = isRecord(rawSnapshot.totals) ? rawSnapshot.totals : {};
   const verdict = isRecord(rawSnapshot.verdict) ? rawSnapshot.verdict : {};
+  const rawPartial = isRecord(rawSnapshot.partial) ? rawSnapshot.partial : {};
+  const partialSender = normalizePartialSide(rawPartial.sender);
+  const partialRecipient = normalizePartialSide(rawPartial.recipient);
   return {
     schemaVersion: SCHEMA_VERSION,
     valueScaleId: rawSnapshot.valueScaleId === TRADE_VALUE_SCALE_ID
@@ -281,6 +290,7 @@ function normalizeSnapshot(rawSnapshot, maps, sender, recipient, { requireAssets
       sender: normalizeFiniteNumber(totals.sender),
       recipient: normalizeFiniteNumber(totals.recipient),
     },
+    ...(partialSender || partialRecipient ? { partial: { sender: partialSender, recipient: partialRecipient } } : {}),
     verdict: {
       verdict: safeLabel(verdict.verdict, 'Trade proposal'),
       gap: normalizeFiniteNumber(verdict.gap),

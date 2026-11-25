@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/static-components */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../../../context/ThemeContext';
-import { fmtTradeValue, getTradeCurrentContextLabels } from '../../../utils/tradeValueScale';
+import { fmtTradeValue, formatUnvaluedCount, getTradeCurrentContextLabels } from '../../../utils/tradeValueScale';
 import { getPicksForRoster, valueDraftPick } from '../../../utils/tradeEngine';
 import { getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import CompanionAssetRow from '../CompanionAssetRow.jsx';
@@ -32,7 +32,8 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
   const isInteractive = item.type === 'player' && !!onOpenPlayer;
   const metaSegments = getTradeAssetMetaSegments(item);
   const value = item.adjVal ?? item.val;
-  const valueIsEstimated = item.dynastyFallback || item.idpFallback;
+  const valueIsEstimated = item.dynastyFallback || item.idpFallback || item.estimated;
+  const hasNoValue = !Number.isFinite(Number(value)) || value == null;
   const valueKicker = item.type === 'player' && item.avgPPG != null ? `${item.avgPPG.toFixed(1)} avg` : 'Value';
 
   return (
@@ -47,8 +48,10 @@ function TradeSideAssetRow({ item, darkMode, onOpenPlayer, onRemove }) {
       metaPrefix=""
       metaSegments={metaSegments}
       valueKicker={valueKicker}
-      valueLabel={`${valueIsEstimated ? '~' : ''}${fmtTradeValue(value)}`}
-      valueTitle={item.idpFallback ? 'Estimated from available league production or normalized market context' : undefined}
+      valueLabel={hasNoValue ? 'No value' : `${valueIsEstimated ? '~' : ''}${fmtTradeValue(value)}`}
+      valueTitle={hasNoValue
+        ? `No value yet. This ${item.type === 'pick' ? 'pick' : 'player'} is left out of the side total.`
+        : item.idpFallback ? 'Estimated from available league production or normalized market context' : item.estimated ? 'Estimated from this year\'s rookie class because no market value is listed' : undefined}
       onClick={isInteractive ? onOpenPlayer : null}
       onRemove={onRemove}
       removeLabel={`Remove ${item.label}`}
@@ -217,9 +220,11 @@ function getColorCommentary(verdict, gap, partnerName) {
 }
 
 // ── BroadcastScoreboard ────────────────────────────────────────────────────────
-function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear, onShareTrade, attribution }) {
+function BroadcastScoreboard({ yourTotal, theirTotal, yourPartial, theirPartial, yourName, yourAvatar, partnerName, partnerAvatar, verdict, hasItems, onClear, onShareTrade, attribution }) {
   const { verdict: v, pct, gap } = verdict;
   const valuesUnavailable = hasItems && v === 'unavailable';
+  const unvaluedTotal = (yourPartial?.unvaluedCount ?? 0) + (theirPartial?.unvaluedCount ?? 0);
+  const incomplete = valuesUnavailable && unvaluedTotal > 0;
   const safePct = Number.isFinite(pct) ? pct : 0;
   const safeGap = Number.isFinite(gap) ? gap : 0;
   const sign = v === 'favors_you' ? 1 : v === 'favors_them' ? -1 : 0;
@@ -232,6 +237,8 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
   const amberLen = Math.max(0, Math.min(((90 + angleDeg) / 180) * arcLen, arcLen));
   const verdictText = !hasItems
     ? 'Build Trade'
+    : incomplete
+      ? 'Incomplete Deal'
     : valuesUnavailable
       ? 'Values Unavailable'
     : v === 'fair'
@@ -242,6 +249,8 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
   const verdictFill = !hasItems || valuesUnavailable ? 'rgba(255,255,255,0.52)' : v === 'fair' ? '#F5B700' : v === 'favors_you' ? '#22c55e' : '#ef4444';
   const detailText = !hasItems
     ? 'Add players or picks to compare values'
+    : incomplete
+      ? `${unvaluedTotal} without a value · totals count the rest`
     : valuesUnavailable
       ? 'Add players with available values to compare'
     : v === 'fair'
@@ -270,14 +279,19 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
       {(name || (align === 'right' ? 'P' : 'Y'))[0]?.toUpperCase()}
     </div>
   );
-  const TeamBlock = ({ name, total, avatar, align = 'left' }) => (
+  const TeamBlock = ({ name, total, partial, avatar, align = 'left' }) => (
     <div className={`trade-scoreboard__team trade-scoreboard__team--${align}`} style={{ display: 'flex', alignItems: 'center', justifyContent: align === 'right' ? 'flex-end' : 'flex-start', gap: 10, minWidth: 0 }}>
       {align === 'left' && <Avatar hash={avatar} name={name} align={align} />}
       <div className="trade-scoreboard__team-copy" style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 2, minWidth: 0, textAlign: align === 'right' ? 'right' : 'left' }}>
         <span className="trade-scoreboard__team-name" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 700, fontSize: 'var(--type-body)', lineHeight: 1.1, color: 'rgba(255,255,255,0.78)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
         <span className="trade-scoreboard__team-total" style={{ fontFamily: df, fontWeight: 800, fontSize: 40, lineHeight: 0.92, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em', color: '#fff' }}>
-          {hasItems ? (Number.isFinite(total) ? fmtTradeValue(total) : '—') : '0'}
+          {hasItems ? (Number.isFinite(total) ? fmtTradeValue(total) : partial?.unvaluedCount > 0 ? `${fmtTradeValue(partial.partialTotal)}+` : '—') : '0'}
         </span>
+        {hasItems && !Number.isFinite(total) && partial?.unvaluedCount > 0 && (
+          <span className="trade-scoreboard__team-note" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 600, fontSize: 'var(--type-label)', lineHeight: 1.1, color: 'rgba(255,255,255,0.68)' }}>
+            {formatUnvaluedCount(partial.unvaluedCount)}
+          </span>
+        )}
       </div>
       {align === 'right' && <Avatar hash={avatar} name={name} align={align} />}
     </div>
@@ -299,7 +313,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
         {attribution && <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>{attribution}</div>}
       </div>
       <div className="trade-scoreboard__grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 24, alignItems: 'center' }}>
-        <TeamBlock name={yourName || 'You'} total={yourTotal} avatar={yourAvatar} />
+        <TeamBlock name={yourName || 'You'} total={yourTotal} partial={yourPartial} avatar={yourAvatar} />
         <div className="trade-scoreboard__meter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
           <div className="trade-scoreboard__verdict" style={{ textAlign: 'center', marginBottom: -8, minHeight: 34 }}>
             <div className="trade-scoreboard__verdict-title" style={{ fontFamily: "'Figtree', sans-serif", fontWeight: 800, fontSize: 'var(--type-emphasis)', lineHeight: 1.1, color: verdictFill }}>
@@ -329,7 +343,7 @@ function BroadcastScoreboard({ yourTotal, theirTotal, yourName, yourAvatar, part
             <circle cx={cx} cy={cy} r="7" fill="#F5B700" stroke="rgba(0,0,0,0.65)" strokeWidth="2.5"/>
           </svg>
         </div>
-        <TeamBlock name={partnerName || 'Select Partner'} total={theirTotal} avatar={partnerAvatar} align="right" />
+        <TeamBlock name={partnerName || 'Select Partner'} total={theirTotal} partial={theirPartial} avatar={partnerAvatar} align="right" />
       </div>
     </div>
   );
@@ -986,6 +1000,8 @@ export default function TradeProposalBuilder({
                     <BroadcastScoreboard
                       yourTotal={yourSide.total}
                       theirTotal={theirSide.total}
+                    yourPartial={yourSide}
+                      theirPartial={theirSide}
                       yourName={getUserDisplayName(myRosterData?.owner_id ?? '')}
                       yourAvatar={leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null}
                       partnerName={partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? null) : null}
@@ -1039,6 +1055,8 @@ export default function TradeProposalBuilder({
                   <BroadcastScoreboard
                     yourTotal={yourSide.total}
                     theirTotal={theirSide.total}
+                    yourPartial={yourSide}
+                      theirPartial={theirSide}
                     yourName={getUserDisplayName(myRosterData?.owner_id ?? '')}
                     yourAvatar={leagueUserById.get(myRosterData?.owner_id ?? '')?.avatar ?? null}
                     partnerName={partnerRosterId ? (ownerNameByRosterId.get(partnerRosterId) ?? null) : null}

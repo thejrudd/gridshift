@@ -12,6 +12,20 @@ export function sumTradeValues(values) {
   return values.every(Number.isFinite) ? values.reduce((sum, value) => sum + value, 0) : null;
 }
 
+// Partial view of a side: the sum of the assets that have a value plus how many
+// do not. Display and flagging only; a partial sum must never feed a fairness
+// verdict, which still requires `sumTradeValues` (every asset valued).
+export function summarizeTradeValues(values) {
+  const list = Array.isArray(values) ? values : [];
+  const valued = list.filter(Number.isFinite);
+  return {
+    total: sumTradeValues(list),
+    partialTotal: valued.reduce((sum, value) => sum + value, 0),
+    valuedCount: valued.length,
+    unvaluedCount: list.length - valued.length,
+  };
+}
+
 // KTC does not publish market values for these roster positions. Some payloads
 // can still contain a name-matched placeholder row with value 0, which must not
 // short-circuit the league-scored production estimate.

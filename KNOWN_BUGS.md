@@ -9,6 +9,7 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Bug | Status |
 |-----|--------|
 | Fantasy Rosters and current-week Matchups do not show Sleeper injured-reserve assignments or empty IR slots separately. | Open |
+| Dynasty pick values for years KTC does not list can land on the Early baseline, so a later pick year can be worth more than an earlier one. | Open |
 
 ---
 

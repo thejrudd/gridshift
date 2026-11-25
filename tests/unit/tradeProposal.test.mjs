@@ -196,6 +196,7 @@ test('Trade proposal API preserves unavailable valuation fields as null', async 
     rawSnapshot.recipient.assets[0].value = 0;
     rawSnapshot.totals = { sender: null, recipient: 0 };
     rawSnapshot.verdict = { verdict: 'unavailable', gap: null, pct: null };
+    rawSnapshot.partial = { sender: { value: 42.5, unvalued: 1 }, recipient: { value: 10, unvalued: 0 } };
 
     const created = await invoke(router, '/proposals', 'post', {
       token: session.body.sessionToken,
@@ -217,6 +218,7 @@ test('Trade proposal API preserves unavailable valuation fields as null', async 
     assert.equal(normalized.totals.recipient, 0);
     assert.equal(normalized.verdict.gap, null);
     assert.equal(normalized.verdict.pct, null);
+    assert.deepEqual(normalized.partial, { sender: { value: 42.5, unvalued: 1 }, recipient: null });
     assert.equal(normalized.valueScaleId, 'fantasy-baseline-0-100-v3');
 
     const shareHtml = await invoke(shareRouter, '/:token', 'get', {
@@ -677,4 +679,26 @@ test('Trade proposal acceptance follows the latest counter author and expires wi
     store.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+test('Trade proposal snapshots keep null totals and carry partial sums only for sides with unvalued assets', () => {
+  const sender = { userId: 'u1', rosterId: '1', name: 'One' };
+  const recipient = { userId: 'u2', rosterId: '2', name: 'Two' };
+  const value = buildTradeProposalSnapshot({
+    leagueId: 'league-1',
+    season: '2026',
+    sender,
+    recipient,
+    senderAssets: [{ type: 'player', id: 'p1', label: 'P1', value: 60 }, { type: 'pick', id: '2027-1', year: 2027, round: 1, value: null }],
+    recipientAssets: [{ type: 'player', id: 'p2', label: 'P2', value: 55 }],
+    totals: { sender: null, recipient: 55 },
+    partial: { sender: { value: 60, unvalued: 1 }, recipient: { value: 55, unvalued: 0 } },
+    verdict: { verdict: 'unavailable' },
+  });
+  assert.equal(value.totals.sender, null);
+  assert.deepEqual(value.partial, { sender: { value: 60, unvalued: 1 }, recipient: null });
+  const swapped = swapTradeProposalPerspective(value);
+  assert.deepEqual(swapped.partial, { sender: null, recipient: { value: 60, unvalued: 1 } });
+  const complete = buildTradeProposalSnapshot({ leagueId: 'league-1', season: '2026', sender, recipient, totals: { sender: 1, recipient: 1 } });
+  assert.equal('partial' in complete, false);
 });

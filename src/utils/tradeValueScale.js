@@ -11,6 +11,12 @@ export function fmtTradeValue(value) {
   return Math.round(Number(value)).toLocaleString();
 }
 
+// Partial side totals read "62+" with this count beside them.
+export function formatUnvaluedCount(count) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return `${n} without a value`;
+}
+
 const POSITION_GROUPS = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB', 'DEF'];
 const GROUP_ALIASES = {
   QB: 'QB', RB: 'RB', FB: 'RB', WR: 'WR', TE: 'TE', K: 'K', PK: 'K', KICKER: 'K',
