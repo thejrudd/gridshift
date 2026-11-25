@@ -24,6 +24,7 @@
 
 - For a non-trivial bug, regression, or architectural change, establish the likely cause and affected surfaces before editing.
 - Prefer targeted searches, call-site tracing, and small reversible experiments over broad refactors.
+- For a bug that depends on a reporter's league, ask for their Sleeper league ID so the case can be reproduced and tested directly. Tell them to open Switch league in GridShift and tap Copy ID beside the league; the ID is public. Drafts for the reporter are written separately in plain language and are not posted to the issue unless the user asks.
 - Match the solution to the request. Do not introduce abstractions, cleanup, or speculative follow-up work without a reason.
 - Before creating a component, hook, utility, formatter, token, data model, or shared pattern, search for an equivalent and extend it only when responsibilities genuinely align.
 - Once the requested behavior and proportionate checks are complete, stop editing.
