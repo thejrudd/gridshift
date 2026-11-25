@@ -1642,3 +1642,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-11-25*
 
 - **Dynasty draft pick values** - Trade loads KTC player values from its versioned data when the rankings page has no inline player list, so draft pick values no longer show as unavailable.
+
+## v9.4.9 - Incomplete Trade Totals
+*2026-11-25*
+
+- **Incomplete trades** - When a player or pick has no value, its side shows the total of the valued assets with a "+" and how many have no value. The deal reads Incomplete Deal with no winner, and the asset reads No value instead of blanking the whole side.
+- **Trade Intelligence and Upgrades** - Packages with a player or pick that has no value are left out instead of being ranked as if it were free.
+- **Dynasty pick values** - If KTC lists no pick values, picks are estimated from this year's rookie class and marked with ~.
+- **Sent proposals** - Proposals keep their totals for older versions and add the partial total so the share card shows it.
