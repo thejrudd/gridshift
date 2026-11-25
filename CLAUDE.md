@@ -16,6 +16,7 @@
 3. Read only the references needed for the task. Do not scan the whole repository unless targeted exploration fails.
 4. Check TO_DO.md when the task affects planned work.
 5. Check KNOWN_BUGS.md when the task fixes or investigates a tracked bug.
+   A GitHub-reported bug confirmed as real and not a duplicate is added to KNOWN_BUGS.md Open under the live version (see docs/Release Workflow.md).
 6. Preserve unrelated modified, untracked, ignored, and scratch files.
 7. Delegate only when independent work can run in parallel or materially improves confidence; a single coherent change normally stays with the parent.
 8. Keep AGENTS.md and CLAUDE.md byte-identical; mirror any instruction or project-memory change in both during the same pass.

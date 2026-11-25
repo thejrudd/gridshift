@@ -159,6 +159,12 @@ A successful build or unit-test run does not replace this gate.
 
 ## KNOWN_BUGS.md
 
+Every bug reported through GitHub is recorded in Open once it is confirmed as a
+real bug and not a duplicate. Attribute it to the version that is live when it
+is recorded (the latest release tag, which matches `package.json`) by writing
+"Open (found in vX.Y.Z)" in the Status column. Duplicates and reports that are
+not bugs are not recorded.
+
 Add a bug to Open before fixing it when it is user-visible, a regression, may
 survive the current session, or has separate tracking value.
 
