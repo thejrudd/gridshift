@@ -86,9 +86,8 @@ export async function fetchKtcPlayers(format = 'dynasty') {
   if (CACHE[format]) return CACHE[format];
   if (PENDING[format]) return PENDING[format];
 
-  const path = format === 'dynasty'
-    ? '/ktc-proxy/dynasty-rankings'
-    : '/ktc-proxy/fantasy-rankings';
+  const route = format === 'dynasty' ? 'dynasty' : 'fantasy';
+  const path = `/ktc-proxy/${route}-rankings`;
 
   PENDING[format] = fetch(path, {
     headers: { Accept: 'text/html,application/xhtml+xml' },
@@ -96,7 +95,13 @@ export async function fetchKtcPlayers(format = 'dynasty') {
     .then(async (res) => {
       if (!res.ok) throw new Error(`KTC proxy returned HTTP ${res.status}`);
       const html = await res.text();
-      const players = extractPlayersArray(html);
+      let players = extractPlayersArray(html);
+      // KTC now serves the page with an empty player list and loads the pool
+      // from a versioned endpoint, the same way its own page does.
+      if (!players.length) {
+        players = await fetchKtcPlayerPool(route, extractPlayersVersion(html));
+      }
+      if (!players.length) throw new Error('KTC returned no player values');
       CACHE[format] = players;
       delete PENDING[format];
       return players;
@@ -107,6 +112,23 @@ export async function fetchKtcPlayers(format = 'dynasty') {
     });
 
   return PENDING[format];
+}
+
+/** Reads the player-pool version KTC publishes in the rankings page. */
+export function extractPlayersVersion(html) {
+  return /\bplayersVersion\s*=\s*['"]([^'"]+)['"]/.exec(html ?? '')?.[1] ?? null;
+}
+
+async function fetchKtcPlayerPool(route, version) {
+  if (!version) return [];
+  const url = `/ktc-proxy/${route}-rankings/player-pool?v=${encodeURIComponent(version)}&sr=2`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', 'X-KTC-Players-Version': version },
+    credentials: 'same-origin',
+  });
+  if (!res.ok) throw new Error(`KTC player pool returned HTTP ${res.status}`);
+  const pool = await res.json();
+  return Array.isArray(pool) ? pool : [];
 }
 
 // ── Player matching ───────────────────────────────────────────────────────────
