@@ -73,6 +73,11 @@ Commits to any other branch keep the no-push rule.
 
 ## Version-bump checklist
 
+Releases that contain only bug fixes (a patch bump, for example v9.4.7 to
+v9.4.8) skip the new-feature confirmation and the What's New tour gate below,
+and add no What's New entry. A release with any new user-facing capability
+follows the full checklist.
+
 For every commit that bumps the version, update all applicable release files:
 
 1. CHANGELOG.md
