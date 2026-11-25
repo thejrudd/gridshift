@@ -109,6 +109,20 @@ describe('player defense performance', () => {
     assert.equal(rows.reduce((sum, row) => sum + row.points, 0) / rows.length, 15);
   });
 
+  it('leaves out weeks Sleeper lists with no games played and no stats', () => {
+    const players = { target: { position: 'DE', team: 'OFF' } };
+    const weeklyStats = { target: [
+      { week: 1, team: 'OFF', opp: 'DEF', gp: 1, gms_active: 1, def_snp: 40 },
+      { week: 2, team: 'OFF', opp: 'DEF', gms_active: 1, pos_rank_ppr: 999 },
+      { week: 3, team: 'OFF', opp: 'DEF', gp: 1, gms_active: 1, idp_sack: 3 },
+    ] };
+    const rows = buildPlayerFormRows({
+      playerId: 'target', player: players.target, weeklyStats, scheduleMap: twoTeamSchedule([1, 2, 3]),
+      scoringSettings: { idp_sack: 4 }, throughWeek: 3,
+    });
+    assert.deepEqual(rows.map(row => row.week), [1, 3]);
+  });
+
   it('includes the selected week once at least one game has finished', () => {
     const players = { target: { position: 'RB', team: 'OFF' } };
     const weeklyStats = { target: [{ week: 2, team: 'OFF', rush_yd: 40 }] };

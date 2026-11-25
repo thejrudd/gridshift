@@ -6,6 +6,7 @@ import {
   buildFilteredHeatmapMatchupTables,
   getCachedOffenseAllowedTable,
   getHeatmapCompletedGameCount,
+  isHeatmapInactiveWeek,
   sortHeatmapRowsByMatchupRank,
 } from '../../src/utils/fantasyHeatmapData.js';
 
@@ -368,5 +369,18 @@ describe('Fantasy Heatmap upcoming schedule rank', () => {
     assert.equal(ratings[3].C.WR.scheduleRank, 3);
     assert.equal(ratings[2].D.WR.scheduleRank, 1);
     assert.equal(ratings[3].A.WR.scheduleRankedTeamCount, 4);
+  });
+});
+
+describe('Heatmap inactive weeks', () => {
+  it('separates Sleeper bookkeeping-only rows from played games', () => {
+    const played = { week: 9, gp: 1, gms_active: 1, def_snp: 37, idp_sack: 3, pos_rank_ppr: 999 };
+    const playedZeroStats = { week: 10, gp: 1, gms_active: 1, def_snp: 17, pos_rank_ppr: 999 };
+    const injuredReserve = { week: 5, team: 'LAR', opp: 'BUF', gms_active: 1, pos_rank_ppr: 999, pos_rank_std: 999 };
+
+    assert.equal(isHeatmapInactiveWeek(played), false);
+    assert.equal(isHeatmapInactiveWeek(playedZeroStats), false);
+    assert.equal(isHeatmapInactiveWeek(injuredReserve), true);
+    assert.equal(isHeatmapInactiveWeek({ week: 6, gp: 0 }), true);
   });
 });
