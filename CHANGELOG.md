@@ -1637,3 +1637,8 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Fantasy Schedule export** - Stats Export can include the league’s remaining regular-season matchups and byes in the downloaded JSON.
 - **Fantasy navigation** - Heatmap appears immediately after Rankings.
 - **Draft default** - Opening Draft goes to Results after the selected league year’s draft finishes. Before and during the draft, it opens War Room.
+
+## v9.4.8 - Trade Pick Values Fix
+*2026-11-25*
+
+- **Dynasty draft pick values** - Trade loads KTC player values from its versioned data when the rankings page has no inline player list, so draft pick values no longer show as unavailable.
