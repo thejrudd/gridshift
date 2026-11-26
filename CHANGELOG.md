@@ -1663,3 +1663,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Scores latest play** - The Latest play row under the game header follows every game event, including timeouts, official timeouts, and the two-minute warning, instead of skipping from the last snap to the next.
 - **Live game clock** - When no new play arrives for 45 seconds, the clock holds and shows Waiting for update instead of running on through a review, injury, or other unposted stoppage.
 - **Timeout labels** - Team timeouts name the team (GB TIMEOUT), and stoppages called by the officials, such as TV breaks and injuries, read OFFICIAL TIMEOUT.
+
+## v9.4.12 - IDP Matchup Slots
+*2026-11-26*
+
+- **Matchups VS drilldown** - Leagues that start individual defensive players now get their own DL, LB, DB, and IDP FLEX rows in the slot comparison. IDP FLEX no longer counts toward the FLEX row.
+- **Scoring pace and Game flow** - A running total pushed below zero by a deduction, such as a lost fumble or an interception, now draws below a labeled zero line instead of flattening at 0.
