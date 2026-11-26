@@ -27,6 +27,7 @@
 - Match the solution to the request. Do not introduce abstractions, cleanup, or speculative follow-up work without a reason.
 - Before creating a component, hook, utility, formatter, token, data model, or shared pattern, search for an equivalent and extend it only when responsibilities genuinely align.
 - Once the requested behavior and proportionate checks are complete, stop editing.
+- Investigation replies open with a concise summary of the findings, followed by a breakdown organized into labeled sections.
 
 ### Decisions and authority
 
@@ -34,6 +35,7 @@
 - The user’s explicit request and choices take precedence over guidelines in a skill.
 - For a material product, design, architecture, security, data-integrity, billing, irreversible-action, or validation-boundary choice, ask before implementation. Present concise options, identify a recommendation, and let the user accept it or choose another.
 - For low-risk reversible implementation details, choose the lowest-risk interpretation and state the assumption; do not ask preference questions merely to offload routine decisions.
+- Ask questions interactively, or as a numbered list the user can answer in one line ("1. [answer], 2. [answer]"); never bury questions in prose.
 - After a scoped change is authorized, carry it through implementation and appropriate checks without repeated approval stops.
 - If a skill causes a pause, permission request, unfinished work, or divergence, name the exact SKILL.md, distinguish its requirement from your interpretation, and explain the effect.
 
@@ -48,6 +50,9 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Astra may be used for a demanding, clearly bounded end-to-end workflow, architectural reconciliation, or high-ambiguity cross-surface work when its stronger synthesis is likely to reduce rework. State Astra and its effort explicitly in the routing handoff. Do not use it for routine or one-file work.
 - Delegate only when the work is independently separable and the expected confidence, latency, or rework benefit justifies the context and coordination cost.
 - Normal fan-out is zero to two read-only investigators, one implementation owner, and a reviewer only when a risk trigger applies. Do not recursively delegate without a new parent-owned decision.
+- Work on several items for one branch runs as one orchestrator thread plus a sub thread per item, so each item's history stays collated. The orchestrator owns the branch, integration, and status, and archives its sub threads together with itself once the branch's work ships.
+- The orchestrator assesses each sub thread's task for model capability and effort and uses the minimum viable model. Sonnet covers most evaluative work: tests, e2e checks, and validation. Opus covers reasoning, diagnosis, and heavy data analysis. Where this conflicts with the Luna/Terra/Sol/Astra routing above, this rule wins.
+- Prefer subagents to new threads. When a new thread is needed, hand the work off to it completely and archive the originating thread, unless that thread is the parent orchestrator.
 - Assign one writer per file or tightly coupled file set. The parent owns final integration, evidence synthesis, and the task status.
 - Keep delegated prompts compact, and include the purpose, selected model and effort, applicable skillset, and expected deliverable.
 
@@ -56,6 +61,7 @@ Use docs/Agent Workflow.md for the full routing rubric, output contracts, comple
 - Use proportionate checks; do not require a full suite or build for every copy, documentation, or isolated edit.
 - Local tests with disposable fixtures may run without repeated approval. Repair and rerun failures caused by the requested change.
 - For actual UI work, Codex verifies underlying behavior and basic interaction; the user owns detailed live UI testing unless a different boundary is explicitly agreed.
+- For visual changes, have Sonnet or Haiku subagents capture screenshots of the implementation at desktop and mobile sizes in both light and dark mode, and present them for the user's review.
 - A blocked browser or environment launch is not a passing check. Report the exact gap and the user-owned scenario that remains.
 - Use the three statuses from docs/Agent Workflow.md: Implemented, Validated, and Complete. Do not imply that implementation, validation, user acceptance, or shipping are the same thing.
 
