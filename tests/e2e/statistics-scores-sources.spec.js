@@ -742,8 +742,10 @@ test('the canonical BALLDONTLIE snapshot keeps the scorecard clock and latest pl
   awayTimeouts = 0;
   laterPlay = { id: 'latest-timeout', text: 'Timeout #3 by TEN', type_slug: 'timeout', clock_display: '3:40' };
   await page.clock.fastForward(8_000);
-  await expect(heroReason).toHaveText('Timeout');
+  await expect(heroReason).toHaveText('TEN timeout');
   await expect(heroTime).toHaveText('Q1 · 3:40');
+  // A stoppage is part of the game's sequence: the latest-play row follows it.
+  await expect(page.locator('.scores-detail-latest')).toContainText('Timeout');
   await expectCenteredUnderClock();
   await expect(awayTimeoutMarkers).toHaveAccessibleName('Tennessee Titans 0 timeouts remaining');
   await expect(awayTimeoutMarkers.locator('span')).toHaveCount(3);

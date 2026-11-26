@@ -172,7 +172,7 @@ test('an older ordinary play never rolls the clock up, a timeout does and holds 
   const ticker = createLiveClockTicker({ now: () => T0 + 6000, documentTarget: null, windowTarget: null, navigatorTarget: null });
   const resolved = ticker.resolveGame(held);
   assert.equal(resolved.label, 'Q1 · 9:34');
-  assert.equal(resolved.stopReason, 'Timeout');
+  assert.equal(resolved.stopReason, 'BAL timeout');
 });
 
 test('a play that lands before its games keeps its sample for the first games poll', () => {
