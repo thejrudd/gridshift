@@ -790,7 +790,8 @@
   gap: 4px;
 }
 
-.scores-detail-clock .live-game-clock__reason:is([data-reason="Flag"], [data-reason="Timeout"]) {
+/* Timeout reasons: "Timeout", "GB timeout", "Official timeout". */
+.scores-detail-clock .live-game-clock__reason:is([data-reason="Flag"], [data-reason$="timeout" i]) {
   padding: 3px 10px;
   border-radius: 3px;
   background: var(--color-bg-secondary);

@@ -1,6 +1,7 @@
 import { parseClockSeconds } from './playByPlay/gameClock.js';
 import { isNonSnapPlay, isKickFiledUnderFumble, isKickPossessionPlay, isTurnoverOnDowns } from './nflPlays/fieldGeometry.js';
 import { replayReviewLabel } from './nflPlays/playNarrative.js';
+import { canonicalTeam } from './nflPlays/fieldSpots.js';
 
 // Legacy name kept for the anchor's `staleAfterMs` field and existing callers.
 export const PROVIDER_CLOCK_STALE_AFTER_MS = 10_000;
@@ -13,6 +14,13 @@ export const PROVIDER_CLOCK_AGE_CAP_MAX_MS = 15_000;
 // that the clock has visibly run since the play, so the play no longer says
 // why the clock is held.
 export const STOPPAGE_SAMPLE_TOLERANCE_SECONDS = 8;
+// How long the display may run past one provider clock reading. The provider
+// reports the clock only with a new play, and between real snaps the clock
+// rarely runs longer than the 40-second play clock plus the play itself. Past
+// this, a play the provider has not posted yet (a score under review, an
+// injury, a long stoppage) is likelier than a running clock, so the display
+// holds and says it is waiting instead of guessing minutes ahead.
+export const PROVIDER_CLOCK_QUIET_LIMIT_SECONDS = 45;
 // A same-period display that is behind the sample by more than this snaps;
 // smaller gaps ease down over a few ticks.
 const EASE_DOWN_SNAP_SECONDS = 10;
@@ -79,7 +87,13 @@ export function classifyClockStoppage(play) {
   if (/^end[- ](?:of[- ])?half\b/im.test(marker)) return stop('End of half');
   if (/^end[- ](?:of[- ])?game\b/im.test(marker)) return stop('End of game');
   if (/^end[- ](?:of[- ])?(?:period|quarter)\b/im.test(marker)) return stop('End of quarter');
-  if (/(?:^|-)timeout(?:$|-)/.test(slug) || /^(?:official[- ]|team[- ])?time ?out\b/im.test(marker)) return stop('Timeout');
+  // Officials' stoppages (TV breaks, injuries, measurements) and team
+  // timeouts read differently so a stop is never charged to the wrong side.
+  if (slug === 'official-timeout' || /^official[- ]time ?out\b/im.test(marker)) return stop('Official timeout');
+  if (/(?:^|-)timeout(?:$|-)/.test(slug) || /^(?:team[- ])?time ?out\b/im.test(marker)) {
+    const team = /\btime ?out #\d+ by ([A-Z]{2,3})\b/i.exec(text)?.[1];
+    return stop(team ? `${canonicalTeam(team)} timeout` : 'Timeout');
+  }
   if (/^coin[- ]toss\b/im.test(marker)) return stop('Coin toss');
   if (isNonSnapPlay(play)) return stop(null);
 
@@ -155,6 +169,8 @@ function easeDown(previousSeconds, targetSeconds) {
  * - Ticks down one second per second from `anchorChangedAt` only while the
  *   clock is running (live, feed fresh, not stopped, not paused, above 0:00).
  * - Holds `ageCapMs` after the last verified feed response.
+ * - Holds `PROVIDER_CLOCK_QUIET_LIMIT_SECONDS` after the reading last changed
+ *   (`frozenReason: 'awaiting-update'`).
  * - Never crosses 2:00 in Q2/Q4/OT or 0:00, and never changes period locally.
  * - With a remembered display for the same period:
  *   - a new sample above the display (it ran ahead) snaps up once;
@@ -200,7 +216,9 @@ export function resolveProviderAnchoredGameClock({
     || (isTwoMinuteWarningPeriod(period) && providerSeconds === TWO_MINUTES && !resumedAtWarning);
   const running = !statusFrozen && !feedStale && !providerClockFrozen && !stopped && !paused && !atBoundary;
 
-  const elapsedSeconds = running ? Math.floor(Math.max(0, Math.min(nowMs, deadline) - changedAt) / 1000) : 0;
+  const runSeconds = running ? Math.floor(Math.max(0, Math.min(nowMs, deadline) - changedAt) / 1000) : 0;
+  const awaitingUpdate = runSeconds > PROVIDER_CLOCK_QUIET_LIMIT_SECONDS;
+  const elapsedSeconds = Math.min(runSeconds, PROVIDER_CLOCK_QUIET_LIMIT_SECONDS);
   let targetSeconds = Math.max(0, providerSeconds - elapsedSeconds);
   if (holdsAtTwoMinutes && targetSeconds < TWO_MINUTES) targetSeconds = TWO_MINUTES;
 
@@ -232,6 +250,7 @@ export function resolveProviderAnchoredGameClock({
   else if (providerClockFrozen || stopped) frozenReason = 'stoppage';
   else if (paused) frozenReason = 'paused';
   else if (atBoundary || (holdsAtTwoMinutes && displaySeconds === TWO_MINUTES) || displaySeconds === 0) frozenReason = 'boundary';
+  else if (awaitingUpdate) frozenReason = 'awaiting-update';
   else if (capped) frozenReason = 'stale';
 
   return {

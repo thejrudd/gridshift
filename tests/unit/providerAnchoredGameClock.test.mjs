@@ -271,8 +271,11 @@ function play(typeSlug, text = '', extra = {}) {
 
 test('classifies clock-stopping play types with short broadcast reasons', () => {
   const cases = [
-    [play('timeout', 'Timeout #1 by DAL'), 'Timeout'],
-    [play('official-timeout', 'OFFICIAL TIMEOUT'), 'Timeout'],
+    [play('timeout', 'Timeout #1 by DAL'), 'DAL timeout'],
+    [play('timeout', 'Timeout #2 by LA at 01:54.'), 'LAR timeout'],
+    [play('timeout', 'Timeout'), 'Timeout'],
+    [play('official-timeout', 'OFFICIAL TIMEOUT'), 'Official timeout'],
+    [play(null, 'Official Timeout at 03:47.'), 'Official timeout'],
     [play('two-minute-warning', 'Two-Minute Warning'), '2-min warning'],
     [play('end-period', 'END QUARTER 1'), 'End of quarter'],
     [play('end-of-half', 'END OF 2ND HALF'), 'End of half'],
@@ -347,7 +350,21 @@ test('a stopping play explains the sample only from its period and near its cloc
 
 test('a timeout is cleared by a more recent game-clock reading or quarter', () => {
   const timeout = play('timeout', 'Timeout #1 by DAL', { period: 3, time: '9:34' });
-  assert.deepEqual(resolveSampleStoppage(timeout, { period: 3, clock: '9:34' }), { stopped: true, reason: 'Timeout' });
+  assert.deepEqual(resolveSampleStoppage(timeout, { period: 3, clock: '9:34' }), { stopped: true, reason: 'DAL timeout' });
   assert.deepEqual(resolveSampleStoppage(timeout, { period: 3, clock: '9:33' }), { stopped: false, reason: null });
   assert.deepEqual(resolveSampleStoppage(timeout, { period: 4, clock: '15:00' }), { stopped: false, reason: null });
+});
+
+test('a reading the feed has not advanced for 45 seconds holds and waits for an update', () => {
+  // Fresh responses keep verifying the same reading (the provider repeats it
+  // until the next play is posted), so only the quiet limit stops the run.
+  const at = (ms) => resolve({ now: START + ms, verifiedAt: START + ms });
+  assert.equal(at(45_000).clock, '12:57');
+  assert.equal(at(45_000).frozen, false);
+  const held = at(46_000);
+  assert.equal(held.clock, '12:57');
+  assert.equal(held.frozenReason, 'awaiting-update');
+  assert.equal(at(150_000).clock, '12:57');
+  // A stoppage already holds the clock; the quiet limit never relabels it.
+  assert.equal(resolve({ stopped: true, now: START + 90_000, verifiedAt: START + 90_000 }).frozenReason, 'stoppage');
 });

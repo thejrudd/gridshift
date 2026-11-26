@@ -22,7 +22,7 @@ import { getLatestPlayPresentation } from '../../../utils/nflPlays/latestPlayPre
 import { sortPlaysChronologically } from '../../../utils/playByPlay/playOrder.js';
 import { PlayerAvatar } from '../../shared/PlayerAvatar.jsx';
 import { LivePosChip } from '../../companion/live/LiveAtoms.jsx';
-import { getDriveNetYards, isFieldFlipped, isNonSnapPlay, teamLogo } from '../../../utils/nflPlays/fieldGeometry.js';
+import { getDriveNetYards, isFieldFlipped, teamLogo } from '../../../utils/nflPlays/fieldGeometry.js';
 import { DriveField } from '../../nflPlays/DriveField.jsx';
 import { PlayCard } from './PlayCard.jsx';
 import GameRecapPanel from './GameRecapPanel.jsx';
@@ -384,12 +384,14 @@ function TeamStats({ detail, awayTheme, homeTheme, participants = null, onOpenPl
   );
 }
 
-// The newest play, directly under the hero, while the game is on or just ended.
+// The newest game event, directly under the hero, while the game is on or just
+// ended. Stoppages (timeouts, the two-minute warning, period ends) count: the
+// row follows the game's sequence, not only its snaps.
 function LatestPlay({ game, detail, onSelectPlay }) {
   if (detail.status === 'scheduled') return null;
-  const latestDetailPlay = detail.drives.flatMap((drive) => drive.plays).findLast((entry) => entry.id && !isNonSnapPlay(entry));
+  const latestDetailPlay = detail.drives.flatMap((drive) => drive.plays).findLast((entry) => entry.id);
   const liveSample = game.latestPlay;
-  const livePlay = detail.status === 'live' && !liveSample?.stale && !isNonSnapPlay(liveSample?.play)
+  const livePlay = detail.status === 'live' && !liveSample?.stale
     ? liveSample?.play
     : null;
   const play = livePlay && livePlay.id !== latestDetailPlay?.id
