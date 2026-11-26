@@ -286,6 +286,34 @@ button.tsd-legend__item[aria-pressed='true'] { background: var(--color-fill); co
 }
 .tsd-table tbody th { font-weight: 600; }
 .tsd-table .is-num { text-align: right; padding-left: 10px; }
+.tsd-table .tsd-cat-detail[hidden] { display: none; }
+.tsd-cat-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tsd-cat-chevron {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-right: 2px solid var(--color-label-secondary);
+  border-bottom: 2px solid var(--color-label-secondary);
+  transform: rotate(-45deg);
+}
+.tsd-cat-chevron--spacer { display: inline-block; border-color: transparent; vertical-align: middle; }
+.tsd-cat-toggle[aria-expanded='true'] .tsd-cat-chevron { transform: rotate(45deg); }
+.tsd-cat-detail th, .tsd-cat-detail td { font-size: var(--type-meta); }
+.tsd-cat-detail th { font-weight: 400; }
+.tsd-cat-player { padding-left: 24px; }
+@media (pointer: coarse) { .tsd-cat-toggle { min-height: 44px; } }
 .tsd-list { margin: 0; padding: 0; list-style: none; }
 .tsd-list__row {
   display: grid;

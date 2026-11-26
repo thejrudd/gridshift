@@ -1663,3 +1663,8 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Scores latest play** - The Latest play row under the game header follows every game event, including timeouts, official timeouts, and the two-minute warning, instead of skipping from the last snap to the next.
 - **Live game clock** - When no new play arrives for 45 seconds, the clock holds and shows Waiting for update instead of running on through a review, injury, or other unposted stoppage.
 - **Timeout labels** - Team timeouts name the team (GB TIMEOUT), and stoppages called by the officials, such as TV breaks and injuries, read OFFICIAL TIMEOUT.
+
+## v9.4.13 - Scoring Category Totals
+*2026-11-26*
+
+- **Team scoring drilldown** - The final Scoring categories table lists each scoring category once with its total, instead of one row per player. A category scored by several players expands to show each one, largest first.

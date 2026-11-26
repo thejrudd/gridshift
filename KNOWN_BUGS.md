@@ -562,3 +562,4 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Statistics Scores Latest play skipped timeouts, official timeouts, and the two-minute warning, jumping from the last snap to the next. | v9.4.11 |
 | The live game clock kept running for minutes when the play feed went quiet, such as during a replay review, instead of holding. | v9.4.11 |
 | Official timeouts (TV, injury, and measurement stoppages) showed the same TIMEOUT label as a team's timeout. | v9.4.11 |
+| The team scoring drilldown listed one row per player per scoring category after the game, so it read as a list of player actions instead of scoring categories. | v9.4.13 |

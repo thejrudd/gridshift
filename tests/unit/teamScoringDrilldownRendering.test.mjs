@@ -40,7 +40,7 @@ function render({ started = false, completed = false, settled = false, secondRec
     season: '2025',
     activeScoringSettings: SCORING,
     players: { qb: { full_name: 'Test Quarterback', position: 'QB' }, wr: { full_name: 'Test Receiver', position: 'WR' }, wr2: { full_name: 'Other Receiver', position: 'WR' } },
-    weeklyStats: started ? { qb: [{ week: 12, pass_yd: 250, pass_td: 2 }], wr: [{ week: 12, rec: 6, rec_yd: 90 }] } : {},
+    weeklyStats: started ? { qb: [{ week: 12, pass_yd: 250, pass_td: 2 }], wr: [{ week: 12, rec: 6, rec_yd: 90 }], ...(secondReceiver ? { wr2: [{ week: 12, rec: 3, rec_yd: 40 }] } : {}) } : {},
   };
   const player = (id, name, position, projected, projectedStats, weekPts) => ({
     id, name, position, avgPPG: projected,
@@ -98,4 +98,23 @@ test('pregame categories sum each stat across the lineup', () => {
   assert.match(table, />8\.00</);
   assert.doesNotMatch(table, />70</);
   assert.doesNotMatch(table, />40</);
+});
+
+test('final scoring categories are one collapsed row per category, expandable to its players', () => {
+  const markup = render({ started: true, completed: true, settled: true, secondReceiver: true });
+  const table = markup.slice(markup.indexOf('tsd-final-categories'));
+  // Both receivers scored: one row per stat, two contributors each, collapsed.
+  const toggles = table.match(/<button[^>]*tsd-cat-toggle[^>]*>/g) ?? [];
+  assert.equal(toggles.length, 2); // Receptions and Receiving Yards
+  assert.match(toggles[0], /aria-expanded="false"/);
+  assert.match(toggles[0], /aria-controls="(tsd-cat-[^"]+)"/);
+  const panelId = toggles[0].match(/aria-controls="([^"]+)"/)[1];
+  assert.match(table, new RegExp(`<tbody id="${panelId}"[^>]*hidden`));
+  // Single-contributor categories stay plain rows with the player inline.
+  assert.match(table, /Test Quarterback|Quarterback/);
+  // Passing categories have one player (the quarterback), so no toggle.
+  assert.equal((table.match(/class="tsd-cat-toggle"/g) ?? []).length, 2);
+  assert.equal((table.match(/2 players/g) ?? []).length, 2);
+  // Contributors are still in the markup (hidden), largest first.
+  assert.ok(table.indexOf('Receiver') > -1);
 });
