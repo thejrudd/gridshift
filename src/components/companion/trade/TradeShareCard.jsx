@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fmtTradeValue } from '../../../utils/tradeValueScale';
+import { fmtTradeValue, formatUnvaluedCount } from '../../../utils/tradeValueScale';
 import { getDraftPickLabel } from '../../../utils/draftPickDisplay';
 import {
   formatTradeProposalExpiry,
@@ -120,6 +120,8 @@ export default function TradeShareCard({
   const displaySnapshot = getViewerRelativeSnapshot(snapshot, viewerUserId);
   const senderTotal = displaySnapshot?.totals?.sender ?? null;
   const recipientTotal = displaySnapshot?.totals?.recipient ?? null;
+  const senderPartial = displaySnapshot?.partial?.sender ?? null;
+  const recipientPartial = displaySnapshot?.partial?.recipient ?? null;
   const isLegacyScale = isLegacyTradeProposalValueScale(displaySnapshot);
   const senderName = displaySnapshot?.sender?.name || displaySnapshot?.sender?.teamName || 'Sender';
   const recipientName = displaySnapshot?.recipient?.name || displaySnapshot?.recipient?.teamName || 'Recipient';
@@ -160,8 +162,8 @@ export default function TradeShareCard({
 
       <footer className="trade-share-card__footer">
         <div className="trade-share-card__totals">
-          <span><b>{senderTotal != null ? fmtTradeValue(senderTotal) : '—'}</b> offered</span>
-          <span><b>{recipientTotal != null ? fmtTradeValue(recipientTotal) : '—'}</b> requested</span>
+          <span><b>{senderTotal != null ? fmtTradeValue(senderTotal) : senderPartial ? `${fmtTradeValue(senderPartial.value)}+` : '—'}</b> offered{senderPartial ? <small> · {formatUnvaluedCount(senderPartial.unvalued)}</small> : null}</span>
+          <span><b>{recipientTotal != null ? fmtTradeValue(recipientTotal) : recipientPartial ? `${fmtTradeValue(recipientPartial.value)}+` : '—'}</b> requested{recipientPartial ? <small> · {formatUnvaluedCount(recipientPartial.unvalued)}</small> : null}</span>
         </div>
         {qrImage && (
           <div className="trade-share-card__qr-wrap">

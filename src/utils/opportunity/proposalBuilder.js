@@ -19,6 +19,7 @@ import {
   hasSustainableTradeAwayDepth,
   isBenchPlayer,
   sumAssetValues,
+  hasUnvaluedAsset,
   toFixedNumber,
 } from './opportunityShared';
 import {
@@ -1416,5 +1417,11 @@ export function buildPartnerTradeIntelligence({
     })
     : [];
 
-  return { analysesByRosterId, tradeProposals, surplusTradeProposals, resolvedNeeds: includeTradeProposals, resolvedSurplus: includeSurplusTradeProposals };
+  return {
+    analysesByRosterId,
+    tradeProposals: tradeProposals.filter((proposal) => !hasUnvaluedAsset(proposal)),
+    surplusTradeProposals: surplusTradeProposals.filter((proposal) => !hasUnvaluedAsset(proposal)),
+    resolvedNeeds: includeTradeProposals,
+    resolvedSurplus: includeSurplusTradeProposals,
+  };
 }

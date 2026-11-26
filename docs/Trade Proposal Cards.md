@@ -61,6 +61,8 @@ Required content, in order:
 
 Trade value color must be uniform across players and picks. Do not color trade values by team palette because that can imply a semantic value difference. Keep team colors in decorative areas such as backgrounds, borders, glows, left highlights, and logo treatment.
 
+An asset with no value shows `No value` in the value slot (mobile rows and cards alike), never `0`. A side total that leaves one out reads `62+` with `N without a value`; the share card and Intelligence/Upgrade side totals follow the same wording.
+
 Current value color:
 
 ```jsx
