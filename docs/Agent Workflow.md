@@ -25,6 +25,12 @@ defined slice correctly on its first useful pass.
 - For reversible low-risk implementation details, choose the lowest-risk
   interpretation and state the assumption; do not ask preference questions
   merely to offload routine decisions.
+- Ask questions interactively, or as a numbered list the user can answer in one
+  line ("1. [answer], 2. [answer]"); never bury questions in prose. Give a
+  recommendation for every question so the user can reply with a single
+  approval of all of them.
+- Investigation replies open with a concise summary of the findings, followed by
+  a breakdown organized into labeled sections.
 - Once a scoped change is authorized, continue through implementation,
   inspection, repair, and proportionate checks without repeated approval stops.
 - If a skill causes a pause, permission request, unfinished work, or divergence,
@@ -49,6 +55,11 @@ defined slice correctly on its first useful pass.
 Model escalation must answer a concrete question: what uncertainty, missed
 dependency, or rework risk does the higher tier remove? If there is no answer,
 stay at the lower-cost tier. Task size alone is not an escalation reason.
+
+Sub thread and subagent work is also assessed for the minimum viable model.
+Sonnet covers most evaluative work: tests, e2e checks, and validation. Opus
+covers reasoning, diagnosis, and heavy data analysis. Where this conflicts with
+the Luna/Terra/Sol/Astra rubric above, this rule wins.
 
 Sol/high is allowed as an implementation owner when first-pass quality matters
 for a complex multi-file slice. It is not the default for ordinary large or
@@ -117,6 +128,21 @@ does not need a long explanation.
 
 The parent remains responsible for conflict resolution, final integration,
 evidence synthesis, and declaring the task state.
+
+### Threads for multi-item branches
+
+Work on several items for one branch runs as one orchestrator thread plus a sub
+thread per item, so each item's history stays collated. The orchestrator:
+
+- owns the branch, integration, and task status;
+- assesses each sub thread's task for model capability and effort;
+- archives its sub threads together with itself once the branch's work ships,
+  which is consistent with archiving shipped sessions in
+  docs/Release Workflow.md.
+
+Prefer subagents to new threads. When a new thread is needed, hand the work off
+to it completely and archive the originating thread, unless that thread is the
+parent orchestrator.
 
 ## Independent review triggers
 
@@ -188,6 +214,10 @@ affected checks.
 For UI work, Codex verifies underlying behavior and basic interaction; the user
 owns detailed live UI testing unless a different boundary is agreed. Give the
 user exact setup, action, expected result, and edge cases for that follow-up.
+
+For visual changes, have Sonnet or Haiku subagents capture screenshots of the
+implementation at desktop and mobile sizes in both light and dark mode, and
+present them for the user's review.
 
 ## Routing trial log
 
