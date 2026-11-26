@@ -24,7 +24,7 @@ function random(seed) {
   return () => { state = (state * 16807) % 2147483647; return state / 2147483647; };
 }
 
-export function buildFixture({ phase = 'pregame', source = 'balldontlie', bench = true, bdl = true, sparse = false, now = Date.now() } = {}) {
+export function buildFixture({ phase = 'pregame', source = 'balldontlie', bench = true, bdl = true, sparse = false, dip = false, now = Date.now() } = {}) {
   const rand = random(7);
   // A live game that kicked off 70 minutes ago sits in the second half.
   const kickoff = phase === 'pregame' ? new Date(now + 2 * 864e5).toISOString()
@@ -80,7 +80,9 @@ export function buildFixture({ phase = 'pregame', source = 'balldontlie', bench 
 
   const scheduleEntry = scheduleMap[WEEK].CIN;
   const elapsed = getDrilldownElapsedFraction({ phase, scheduleEntry, now });
-  const events = PLAYS.map(([clock, minute, desc, pts, stats], index) => ({
+  // dip: an opening lost fumble drops the running total below zero.
+  const plays = dip ? [['Q1 14:00', 1, 'Fumble lost', -2, { fum_lost: 1 }], ...PLAYS] : PLAYS;
+  const events = plays.map(([clock, minute, desc, pts, stats], index) => ({
     id: `play-${index}`, progress: minute / 60, order: index, pts, desc, glance: { clock }, stats, kind: stats.rec_td ? 'td' : 'rec',
   }));
   // The week's stat line is exactly the plays the clock has reached, so the

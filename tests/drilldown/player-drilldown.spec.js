@@ -408,6 +408,19 @@ test.describe('pregame interactions', () => {
 });
 
 for (const phase of ['live', 'final']) {
+  test(`the ${phase} pace chart draws a negative running total below the zero line`, async ({ page }) => {
+    await page.goto(`/?phase=${phase}&dip=1`);
+    await expect(page.locator('.pmd-body')).toHaveAttribute('data-game-phase', phase);
+    await page.waitForTimeout(250);
+    const chart = section(page, phase === 'live' ? 'Scoring pace' : 'Game flow');
+    const svg = chart.locator('.pdd-scrub');
+    await svg.scrollIntoViewIfNeeded();
+    await expect(svg.locator('text', { hasText: /^-10$/ })).toHaveCount(1);
+    const zero = await svg.locator('text', { hasText: /^0$/ }).boundingBox();
+    const dip = await svg.locator('circle[r="3"]').first().boundingBox();
+    expect(dip.y + dip.height / 2).toBeGreaterThan(zero.y + zero.height / 2);
+  });
+
   test.describe(`${phase} interactions`, () => {
     test('the pace chart scrub readout follows the pointer and arrow keys', async ({ page }, testInfo) => {
       await openDrilldown(page, { phase });
