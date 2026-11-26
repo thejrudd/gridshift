@@ -46,7 +46,7 @@ BALLDONTLIE is optional. Core predictions and many Sleeper league tools work wit
 
 ## What's New
 
-- **v9.4.9 — Trade shows partial totals and estimated pick values when an asset has no value.** See the [changelog](CHANGELOG.md) for details and history.
+- **v9.4.10 — Heatmap and Matchups averages leave out weeks a player sat out.** See the [changelog](CHANGELOG.md) for details and history.
 
 ## Privacy, license, and more
 

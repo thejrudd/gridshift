@@ -1650,3 +1650,9 @@ All notable changes, oldest first. Add new entries at the bottom.
 - **Trade Intelligence and Upgrades** - Packages with a player or pick that has no value are left out instead of being ranked as if it were free.
 - **Dynasty pick values** - If KTC lists no pick values, picks are estimated from this year's rookie class and marked with ~.
 - **Sent proposals** - Proposals keep their totals for older versions and add the partial total so the share card shows it.
+
+## v9.4.10 - Inactive Week Averages
+*2026-11-25*
+
+- **Heatmap and Matchups averages** - Weeks a player sat out on injured reserve or as inactive no longer count as 0-point games, so points per game reflects only the games they played.
+- **Heatmap game log** - A missed game's note (DNP, or a status and injury such as IR - Knee) fills the empty stat cells instead of stacking under the opponent. A long note ends in an ellipsis, and a tap shows the full reason.

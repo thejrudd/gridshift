@@ -557,3 +557,5 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Statistics quarter splits could omit an interception returned for a touchdown from the passer's stats. | v9.4.6 |
 | Global Search could not open a team D/ST profile for team names followed by Defense or D/ST. | v9.4.6 |
 | Trades in Dynasty leagues showed "Values Unavailable" whenever they included draft picks: the picks had no value because the market rankings page no longer included its player list, and one pick without a value blanked its whole side. (#9) | v9.4.8 |
+| Heatmap and Matchups points per game counted weeks a player sat out on injured reserve or as inactive as 0-point games. | v9.4.10 |
+| Heatmap game-log notes for missed games stacked under the opponent and stretched the row. | v9.4.10 |
