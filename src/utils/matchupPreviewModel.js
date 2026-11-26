@@ -57,7 +57,12 @@ const SLOT_GROUPS = [
   { label: 'RB', match: ['RB'] },
   { label: 'WR', match: ['WR'] },
   { label: 'TE', match: ['TE'] },
-  { label: 'FLEX', match: ['FLEX', 'REC_FLEX', 'WRRBTE_FLEX', 'WRT_FLEX', 'WRRB_FLEX', 'SUPER_FLEX', 'IDP_FLEX'] },
+  { label: 'FLEX', match: ['FLEX', 'REC_FLEX', 'WRRBTE_FLEX', 'WRT_FLEX', 'WRRB_FLEX', 'SUPER_FLEX'] },
+  // Individual defensive players. A group only appears when the league starts the slot.
+  { label: 'DL', match: ['DL'] },
+  { label: 'LB', match: ['LB'] },
+  { label: 'DB', match: ['DB'] },
+  { label: 'IDP FLEX', match: ['IDP_FLEX'] },
   { label: 'K + DEF', match: ['K', 'DEF', 'DST'] },
 ];
 

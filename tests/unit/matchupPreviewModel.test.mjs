@@ -382,3 +382,32 @@ test('the comeback key states where the projected finish lands, in the trailing 
   assert.match(text, /40\.0 pts/);
   assert.match(text, /projected to score .* (more|fewer) than/);
 });
+
+test('adds individual defensive player groups only when the league starts those slots', () => {
+  const noIdp = buildMatchupPreviewModel(baseInput);
+  assert.deepEqual(noIdp.slotGroups.map((group) => group.label), ['QB', 'RB', 'TE', 'FLEX']);
+
+  const model = buildMatchupPreviewModel({
+    ...baseInput,
+    slots: [
+      ...slots,
+      { slotPos: 'DL', mine: player('Hutchinson', 'DL', 11.2), opp: player('Crosby', 'DL', 12.4) },
+      { slotPos: 'LB', mine: player('Campbell', 'LB', 13.1), opp: player('Wilson', 'LB', 10.3) },
+      { slotPos: 'DB', mine: player('Reed', 'DB', 8.4), opp: player('Hamilton', 'DB', 9.9) },
+      { slotPos: 'IDP_FLEX', mine: player('Lloyd', 'LB', 9.7), opp: player('Bosa', 'DL', 7.2) },
+      { slotPos: 'DEF', mine: player('Falcons', 'DEF', 7), opp: player('Panthers', 'DEF', 6) },
+    ],
+  });
+  assert.deepEqual(
+    model.slotGroups.map((group) => group.label),
+    ['QB', 'RB', 'TE', 'FLEX', 'DL', 'LB', 'DB', 'IDP FLEX', 'K + DEF'],
+  );
+  const flex = model.slotGroups.find((group) => group.label === 'FLEX');
+  assert.equal(flex.starters, 1, 'an IDP flex starter must not count toward offensive FLEX');
+  assert.equal(flex.aNames, 'Waddle');
+  const idpFlex = model.slotGroups.find((group) => group.label === 'IDP FLEX');
+  assert.equal(idpFlex.a, 9.7);
+  assert.equal(idpFlex.aNames, 'Lloyd');
+  assert.equal(idpFlex.lead, 'a');
+  assert.equal(model.slotGroups.find((group) => group.label === 'DL').lead, 'b');
+});
