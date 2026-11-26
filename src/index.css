@@ -18061,10 +18061,37 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   .companion-heatmap-game-season-total { display: table-footer-group; }
 }
 
-.companion-heatmap-game-absence {
-  max-inline-size: 11em;
+.companion-heatmap-game-log td.companion-heatmap-game-absence {
+  max-inline-size: 0;
   color: var(--color-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companion-heatmap-game-absence-note {
+  display: block;
+  inline-size: 100%;
+  min-block-size: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: end;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.companion-heatmap-game-absence-note.is-open {
+  white-space: normal;
   overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .companion-heatmap-game-absence-note { min-block-size: 44px; }
 }
 
 .companion-heatmap-score-breakdown {

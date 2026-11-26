@@ -1,5 +1,5 @@
 import { calcPoints } from './scoringEngine.js';
-import { getCachedOffenseAllowedTable, getHeatmapPlayerGameTeam } from './fantasyHeatmapData.js';
+import { getCachedOffenseAllowedTable, getHeatmapPlayerGameTeam, isHeatmapInactiveWeek } from './fantasyHeatmapData.js';
 import { isFullGameWeekComplete } from './matchupTaleOfTape.js';
 
 const METRICS = [
@@ -126,7 +126,7 @@ function buildPlayerGameRows(playerId, player, weeklyStats, scheduleMap, complet
   const rows = [];
   for (const wEntry of playerWeeks) {
     const week = asWeek(wEntry?.week);
-    if (week == null || !completedWeekSet.has(week) || (wEntry.gp != null && Number(wEntry.gp) === 0)) continue;
+    if (week == null || !completedWeekSet.has(week) || isHeatmapInactiveWeek(wEntry)) continue;
     const team = getHeatmapPlayerGameTeam(wEntry, player, playerWeeks);
     const opponent = team
       ? normalizedTeam(scheduleMap?.[week]?.[team]?.opp ?? scheduleMap?.[String(week)]?.[team]?.opp)
@@ -148,7 +148,7 @@ function buildPlayerGameRows(playerId, player, weeklyStats, scheduleMap, complet
  * league-wide completed-week gate used for peer ranks and defense tiers.
  *
  * A weekly stats row is the participation evidence here. An explicit zero
- * games-played value still excludes the row, while a reported zero fantasy
+ * games-played value or a Sleeper no-stats row still excludes the row, while a reported zero fantasy
  * score remains a valid game. This is intentionally a presentation contract:
  * callers decide the last week they are allowed to show, so a live selected
  * week can stay out of the season average until it settles.
@@ -167,8 +167,7 @@ export function buildPlayerFormRows({
     .map((wEntry) => {
       const week = asWeek(wEntry?.week);
       if (week == null || (lastWeek != null && week > lastWeek)) return null;
-      const gamesPlayed = wEntry?.gp ?? wEntry?.games_played ?? wEntry?.gamesPlayed;
-      if (gamesPlayed != null && Number(gamesPlayed) === 0) return null;
+      if (isHeatmapInactiveWeek(wEntry)) return null;
       const team = getHeatmapPlayerGameTeam(wEntry, player, playerWeeks);
       const scheduleWeek = scheduleMap?.[week] ?? scheduleMap?.[String(week)] ?? {};
       const scheduleEntry = team ? scheduleWeek?.[team] ?? scheduleWeek?.[String(team)] ?? null : null;

@@ -25,6 +25,8 @@ import { createVisiblePoller, isPageActive } from './visiblePolling.js';
 
 const BALLDONTLIE = 'balldontlie';
 const MEMORY_TTL_MS = 10 * 60_000;
+// Clock label while the countdown holds because the feed has gone quiet.
+export const AWAITING_UPDATE_REASON = 'Waiting for update';
 
 export function getLiveClockGameKey(game) {
   const id = game?.bdlGameId ?? game?.providerGameId ?? game?.id;
@@ -224,7 +226,9 @@ export function createLiveClockTicker({
       clock: displayClock,
       period: resolved.period,
       frozen: resolved.frozen,
-      stopReason: resolved.frozen && stoppage.stopped ? stoppage.reason : null,
+      stopReason: resolved.frozen && stoppage.stopped
+        ? stoppage.reason
+        : resolved.frozenReason === 'awaiting-update' ? AWAITING_UPDATE_REASON : null,
       stale: resolved.stale,
     };
     entry.base = base;

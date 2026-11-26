@@ -187,7 +187,7 @@ test('a held clock shows the latest play reason, and nothing when unknown', () =
   env.advance(4_000);
   assert.deepEqual(
     { clock: ticker.resolveGame(timeout).clock, reason: ticker.resolveGame(timeout).stopReason },
-    { clock: '8:14', reason: 'Timeout' },
+    { clock: '8:14', reason: 'DAL timeout' },
   );
 
   const running = liveGame({
@@ -338,4 +338,34 @@ test('a fresh fetch of the same value preserves the countdown origin of a cached
   game.live.providerClockAnchor.sampleAgeMs = 0;
   game.live.providerClockAnchor.verifiedAt = env.time;
   assert.equal(ticker.resolveGame(game).clock, '8:07');
+});
+
+test('a quiet feed holds the clock with a waiting label until the next reading', () => {
+  const env = fakeEnvironment();
+  const ticker = createLiveClockTicker(env.api);
+  ticker.subscribe(() => {});
+  const snapshot = (verifiedAt, { clock = '8:34', key = null } = {}) => {
+    const game = liveGame({
+      clock,
+      period: '3',
+      key,
+      latestPlay: { verifiedAt, play: { typeSlug: 'rush', period: 3, time: clock } },
+    });
+    game.live.providerClockAnchor.verifiedAt = verifiedAt;
+    return game;
+  };
+  assert.equal(ticker.resolveGame(snapshot(START)).clock, '8:34');
+  for (let i = 0; i < 20; i += 1) {
+    env.advance(8_000);
+    ticker.resolveGame(snapshot(env.time));
+  }
+  const held = ticker.resolveGame(snapshot(env.time));
+  assert.equal(held.clock, '7:49');
+  assert.equal(held.stopReason, 'Waiting for update');
+  // The next posted play replaces the hold with its own reading.
+  const nextSample = snapshot(env.time, { clock: '7:46', key: '3|7:46|next' });
+  assert.equal(ticker.resolveGame(nextSample).stopReason, null);
+  // A small gap eases down over a tick rather than jumping.
+  env.advance(1_000);
+  assert.equal(ticker.resolveGame(nextSample).clock, '7:45');
 });
