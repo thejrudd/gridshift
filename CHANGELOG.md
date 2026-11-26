@@ -1656,3 +1656,10 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Heatmap and Matchups averages** - Weeks a player sat out on injured reserve or as inactive no longer count as 0-point games, so points per game reflects only the games they played.
 - **Heatmap game log** - A missed game's note (DNP, or a status and injury such as IR - Knee) fills the empty stat cells instead of stacking under the opponent. A long note ends in an ellipsis, and a tap shows the full reason.
+
+## v9.4.11 - Live Clock Stoppages
+*2026-11-25*
+
+- **Scores latest play** - The Latest play row under the game header follows every game event, including timeouts, official timeouts, and the two-minute warning, instead of skipping from the last snap to the next.
+- **Live game clock** - When no new play arrives for 45 seconds, the clock holds and shows Waiting for update instead of running on through a review, injury, or other unposted stoppage.
+- **Timeout labels** - Team timeouts name the team (GB TIMEOUT), and stoppages called by the officials, such as TV breaks and injuries, read OFFICIAL TIMEOUT.
