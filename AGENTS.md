@@ -35,7 +35,7 @@
 - The user’s explicit request and choices take precedence over guidelines in a skill.
 - For a material product, design, architecture, security, data-integrity, billing, irreversible-action, or validation-boundary choice, ask before implementation. Present concise options, identify a recommendation, and let the user accept it or choose another.
 - For low-risk reversible implementation details, choose the lowest-risk interpretation and state the assumption; do not ask preference questions merely to offload routine decisions.
-- Ask questions interactively, or as a numbered list the user can answer in one line ("1. [answer], 2. [answer]"); never bury questions in prose.
+- Ask questions interactively, or as a numbered list the user can answer in one line ("1. [answer], 2. [answer]"); never bury questions in prose. Give a recommendation for every question so the user can reply with a single approval of all of them.
 - After a scoped change is authorized, carry it through implementation and appropriate checks without repeated approval stops.
 - If a skill causes a pause, permission request, unfinished work, or divergence, name the exact SKILL.md, distinguish its requirement from your interpretation, and explain the effect.
 
