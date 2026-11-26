@@ -1538,7 +1538,8 @@ test('Heatmap matchup filters keep historical scores and drilldowns consistent',
   await expect(log.locator('tbody tr')).toHaveCount(4);
   const inactive = log.getByRole('row', { name: /^3 / });
   await expect(inactive).toContainText('IR - Concussion');
-  await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(3);
+  await expect(inactive.getByRole('cell')).toHaveCount(2);
+  await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(0);
   await expect(log.getByText('v PHI', { exact: true })).toBeVisible();
   await expect(log.getByText('@SF', { exact: true }).first()).toBeVisible();
   const opponentLogo = log.locator('tbody tr').first().locator('img');
@@ -1690,7 +1691,8 @@ test('Heatmap prioritizes each defensive position stat and keeps inactive games 
   await expect(lbLog.getByRole('columnheader')).toHaveText(['Week', 'Opponent', 'Snap %', 'Tkl', 'Pts']);
   const inactive = lbLog.getByRole('row', { name: /^1 / });
   await expect(inactive.getByText('DNP', { exact: true })).toBeVisible();
-  await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(3);
+  await expect(inactive.getByRole('cell')).toHaveCount(2);
+  await expect(inactive.getByRole('cell').filter({ hasText: /^—$/ })).toHaveCount(0);
 
   await dialog.getByRole('button', { name: 'Close heatmap drilldown' }).click();
   await page.getByRole('button', { name: 'Show Filters' }).click();

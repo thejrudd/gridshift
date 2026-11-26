@@ -49,10 +49,16 @@ export function getHeatmapPlayerActivity(column, entry, officialStats) {
     ?? (column.sparse && entry && Object.keys(entry).some(key => key.startsWith('idp_')) ? 0 : null);
 }
 
+// Sleeper keeps a row for a scheduled week the player sat out (injured reserve,
+// inactive): it carries only these bookkeeping keys, with no gp and no stats.
+const SLEEPER_BOOKKEEPING_KEYS = new Set(['week', 'team', 'opp', '_teamSource', 'gms_active']);
+const isBookkeepingKey = key => SLEEPER_BOOKKEEPING_KEYS.has(key) || key.startsWith('pos_rank_');
+
 export function isHeatmapInactiveWeek(entry) {
   const gamesPlayed = entry?.gp ?? entry?.games_played ?? entry?.gamesPlayed;
-  return entry?._isInactive === true || entry?.isInactive === true
-    || (gamesPlayed != null && gamesPlayed !== '' && Number(gamesPlayed) === 0);
+  if (entry?._isInactive === true || entry?.isInactive === true) return true;
+  if (gamesPlayed != null && gamesPlayed !== '') return Number(gamesPlayed) === 0;
+  return entry != null && entry.gms_active != null && Object.keys(entry).every(isBookkeepingKey);
 }
 
 /** Designations are keyed to the game week. Current roster injuries cannot explain past absences. */

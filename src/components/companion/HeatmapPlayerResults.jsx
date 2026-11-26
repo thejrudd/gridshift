@@ -78,6 +78,29 @@ function useInactiveReasons(games, { name, position }, season) {
   return reasons;
 }
 
+// An inactive game has no numbers, so its note takes the empty stat columns and
+// stays on the opponent's line. A long note ends in an ellipsis; tapping it
+// (touch has no hover) wraps the full reason in place.
+function AbsenceCell({ colSpan, note }) {
+  const [open, setOpen] = useState(false);
+  const detailed = note.includes(' - ');
+  return (
+    <td colSpan={colSpan} className="companion-heatmap-game-absence">
+      {detailed ? (
+        <button
+          type="button"
+          className={'companion-heatmap-game-absence-note gs-focusable' + (open ? ' is-open' : '')}
+          aria-expanded={open}
+          title={note}
+          onClick={() => setOpen(value => !value)}
+        >
+          {note}
+        </button>
+      ) : note}
+    </td>
+  );
+}
+
 function GameLog({ row, season, counts }) {
   const { espnId, team, position, isTeamDefense, logGames, activityColumns } = row;
   const [officialLog, setOfficialLog] = useState(EMPTY);
@@ -140,17 +163,21 @@ function GameLog({ row, season, counts }) {
                   <span>{opponent ? site + opponent : MISSING}</span>
                   {url && <img src={url} width="18" height="18" alt="" loading="lazy" />}
                 </span>
-                {game.inactive && (
-                  <div className="companion-heatmap-game-absence">
-                    {inactiveReasons[game.week + ':' + game.team] ?? 'DNP'}
-                  </div>
-                )}
               </td>
-              {!isTeamDefense && <td>{formatSnap(snap)}</td>}
-              {activityColumns.map(column => (
-                <td key={column.label}>{formatValue(game.inactive ? null : getHeatmapPlayerActivity(column, game.entry, officialStats))}</td>
-              ))}
-              <td>{formatValue(game.inactive ? null : game.points)}</td>
+              {game.inactive ? (
+                <AbsenceCell
+                  colSpan={(isTeamDefense ? 0 : 1) + activityColumns.length + 1}
+                  note={inactiveReasons[game.week + ':' + game.team] ?? 'DNP'}
+                />
+              ) : (
+                <>
+                  {!isTeamDefense && <td>{formatSnap(snap)}</td>}
+                  {activityColumns.map(column => (
+                    <td key={column.label}>{formatValue(getHeatmapPlayerActivity(column, game.entry, officialStats))}</td>
+                  ))}
+                  <td>{formatValue(game.points)}</td>
+                </>
+              )}
             </tr>
           );
         })}
