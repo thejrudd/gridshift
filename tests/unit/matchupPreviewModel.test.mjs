@@ -400,7 +400,7 @@ test('adds individual defensive player groups only when the league starts those 
   });
   assert.deepEqual(
     model.slotGroups.map((group) => group.label),
-    ['QB', 'RB', 'TE', 'FLEX', 'DL', 'LB', 'DB', 'IDP FLEX', 'K + DEF'],
+    ['QB', 'RB', 'TE', 'FLEX', 'DL', 'LB', 'DB', 'IDP FLEX', 'DEF'],
   );
   const flex = model.slotGroups.find((group) => group.label === 'FLEX');
   assert.equal(flex.starters, 1, 'an IDP flex starter must not count toward offensive FLEX');
@@ -410,4 +410,23 @@ test('adds individual defensive player groups only when the league starts those 
   assert.equal(idpFlex.aNames, 'Lloyd');
   assert.equal(idpFlex.lead, 'a');
   assert.equal(model.slotGroups.find((group) => group.label === 'DL').lead, 'b');
+});
+
+test('names the Superflex row and the kicker and defense row after the slots the league starts', () => {
+  const labels = (positions) => buildMatchupPreviewModel({
+    ...baseInput,
+    slots: positions.map((slotPos, index) => ({
+      slotPos,
+      mine: player(`Mine${index}`, slotPos === 'SUPER_FLEX' ? 'QB' : slotPos, 10 + index),
+      opp: player(`Opp${index}`, slotPos === 'SUPER_FLEX' ? 'QB' : slotPos, 9 + index),
+    })),
+  }).slotGroups.map((group) => `${group.label}×${group.starters}`);
+
+  assert.deepEqual(labels(['QB', 'SUPER_FLEX']), ['QB×1', 'SUPER FLEX×1'], 'Superflex alone is not labelled FLEX');
+  assert.deepEqual(labels(['FLEX', 'SUPER_FLEX']), ['FLEX×1', 'SUPER FLEX×1'], 'FLEX and Superflex stay separate rows');
+  assert.deepEqual(labels(['QB', 'K']), ['QB×1', 'K×1']);
+  assert.deepEqual(labels(['QB', 'DEF']), ['QB×1', 'DEF×1']);
+  assert.deepEqual(labels(['QB', 'DST']), ['QB×1', 'DEF×1'], 'DST reads as DEF');
+  assert.deepEqual(labels(['QB', 'K', 'DEF']), ['QB×1', 'K + DEF×2']);
+  assert.deepEqual(labels(['QB', 'QB', 'RB']), ['QB×2', 'RB×1']);
 });

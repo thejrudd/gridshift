@@ -562,5 +562,5 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Statistics Scores Latest play skipped timeouts, official timeouts, and the two-minute warning, jumping from the last snap to the next. | v9.4.11 |
 | The live game clock kept running for minutes when the play feed went quiet, such as during a replay review, instead of holding. | v9.4.11 |
 | Official timeouts (TV, injury, and measurement stoppages) showed the same TIMEOUT label as a team's timeout. | v9.4.11 |
-| The Matchups VS drilldown folded IDP FLEX into the FLEX row and showed no rows for DL, LB, or DB starters. | v9.4.12 |
+| The Matchups VS drilldown folded IDP FLEX and Superflex into the FLEX row, showed no rows for DL, LB, or DB starters, and labeled the kicker and defense row K + DEF even when the league started only one. | v9.4.12 |
 | The Scoring pace and Game flow chart flattened a negative running total at 0 instead of drawing it below the zero line. | v9.4.12 |

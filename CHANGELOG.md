@@ -1667,5 +1667,5 @@ All notable changes, oldest first. Add new entries at the bottom.
 ## v9.4.12 - IDP Matchup Slots
 *2026-11-26*
 
-- **Matchups VS drilldown** - Leagues that start individual defensive players now get their own DL, LB, DB, and IDP FLEX rows in the slot comparison. IDP FLEX no longer counts toward the FLEX row.
+- **Matchups VS drilldown** - Leagues that start individual defensive players now get their own DL, LB, DB, and IDP FLEX rows in the slot comparison. IDP FLEX and Superflex no longer count toward the FLEX row, and the kicker and defense row is named for the slots the league starts (K, DEF, or K + DEF).
 - **Scoring pace and Game flow** - A running total pushed below zero by a deduction, such as a lost fumble or an interception, now draws below a labeled zero line instead of flattening at 0.
