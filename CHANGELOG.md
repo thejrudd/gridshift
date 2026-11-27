@@ -1669,3 +1669,8 @@ All notable changes, oldest first. Add new entries at the bottom.
 
 - **Matchups VS drilldown** - Leagues that start individual defensive players now get their own DL, LB, DB, and IDP FLEX rows in the slot comparison. IDP FLEX and Superflex no longer count toward the FLEX row, and the kicker and defense row is named for the slots the league starts (K, DEF, or K + DEF).
 - **Scoring pace and Game flow** - A running total pushed below zero by a deduction, such as a lost fumble or an interception, now draws below a labeled zero line instead of flattening at 0.
+
+## v9.4.13 - Scoring Category Totals
+*2026-11-26*
+
+- **Team scoring drilldown** - The final Scoring categories table lists each scoring category once with its total, instead of one row per player. A category scored by several players expands to show each one, largest first.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useSleeperBase } from '../../context/SleeperContext';
 import Modal from '../Modal';
 import { CompanionSelectorButton } from './CompanionSelectorControls.jsx';
@@ -26,6 +26,7 @@ const signed = (value) => `${value > EPS ? '+' : value < -EPS ? '−' : ''}${Mat
 const tone = (value) => (value > EPS ? 'is-up' : value < -EPS ? 'is-down' : '');
 const pct = (value, max) => `${Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0)).toFixed(2)}%`;
 const formatStat = (value) => (value == null ? '—' : Math.abs(value - Math.round(value)) < 1e-9 ? String(Math.round(value)) : value.toFixed(1));
+const round2 = (value) => Math.round(value * 100) / 100;
 const spotName = (spot) => (spot ? `${spot.label} ${spot.player?.lastName ?? ''}`.trim() : '');
 
 function Swatch({ group }) {
@@ -124,19 +125,23 @@ function StatePill({ state }) {
   return <span className="tsd-pill" data-state={state}>{STATE_LABEL[state] ?? state}</span>;
 }
 
-/* One row per scoring category: projected stat and points summed across the
-   given starters' rows. A missing stat on every row stays null. */
-function sumCategoriesAcrossSpots(rows) {
+/* One row per scoring category: stat and points (`field` "projected" or
+   "actual") summed across the given starters' rows. A missing stat on every
+   row stays null. `contributors` keeps the per-player rows it was built from. */
+function sumCategoriesAcrossSpots(rows, field = 'projected') {
+  const statKey = `${field}Stat`;
+  const ptsKey = `${field}Pts`;
   const byCategory = new Map();
   for (const row of rows) {
     const id = `${row.group}:${row.key}`;
     const total = byCategory.get(id);
     if (!total) {
-      byCategory.set(id, { ...row, id });
+      byCategory.set(id, { ...row, id, contributors: [row] });
       continue;
     }
-    total.projectedPts += row.projectedPts;
-    if (row.projectedStat != null) total.projectedStat = (total.projectedStat ?? 0) + row.projectedStat;
+    total.contributors.push(row);
+    total[ptsKey] = round2(total[ptsKey] + row[ptsKey]);
+    if (row[statKey] != null) total[statKey] = (total[statKey] ?? 0) + row[statKey];
   }
   return [...byCategory.values()];
 }
@@ -345,6 +350,61 @@ function LiveBoard({ model, selection, toggleSpot, clearSpot }) {
   );
 }
 
+/* Final scoring table: one row per category with its total. A category scored
+   by several players expands to show each one; a single-player (or team-level)
+   category stays a plain row with the player inline. Open rows reset when the
+   filters change (the parent keys this by selection). */
+function ScoringCategoryTable({ rows, showPlayer }) {
+  const [open, setOpen] = useState(() => new Set());
+  const toggle = (id) => setOpen((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
+  const down = (pts) => (pts < -EPS ? 'is-down' : '');
+  return (
+    <table className="tsd-table tsd-table--categories">
+      <thead><tr><th scope="col">Category</th>{showPlayer && <th scope="col">Player</th>}<th scope="col" className="is-num">Stat</th><th scope="col" className="is-num">Pts</th></tr></thead>
+      {rows.map((row) => {
+        const expandable = showPlayer && row.contributors.length > 1;
+        const isOpen = expandable && open.has(row.id);
+        const panelId = `tsd-cat-${row.id.replace(/[^a-z0-9]+/gi, '-')}`;
+        return (
+          <Fragment key={row.id}>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  {expandable ? (
+                    <button type="button" className="tsd-cat-toggle" aria-expanded={isOpen} aria-controls={panelId} onClick={() => toggle(row.id)}>
+                      <i className="tsd-cat-chevron" aria-hidden="true" />
+                      <Swatch group={row.group} />{row.label}
+                    </button>
+                  ) : <>{showPlayer && <i className="tsd-cat-chevron tsd-cat-chevron--spacer" aria-hidden="true" />}<Swatch group={row.group} />{row.label}</>}
+                </th>
+                {showPlayer && <td className="tsd-muted">{expandable ? `${row.contributors.length} players` : row.playerName ?? 'Team'}</td>}
+                <td className="is-num tsd-num tsd-muted">{formatStat(row.actualStat)}</td>
+                <td className={`is-num tsd-num tsd-strong ${down(row.actualPts)}`}>{fmt(row.actualPts)}</td>
+              </tr>
+            </tbody>
+            {expandable && (
+              <tbody id={panelId} className="tsd-cat-detail" hidden={!isOpen}>
+                {row.contributors.map((player) => (
+                  <tr key={player.id}>
+                    <th scope="row"><span className="tsd-cat-player">{player.playerName ?? 'Team'}</span></th>
+                    <td />
+                    <td className="is-num tsd-num tsd-muted">{formatStat(player.actualStat)}</td>
+                    <td className={`is-num tsd-num ${down(player.actualPts)}`}>{fmt(player.actualPts)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            )}
+          </Fragment>
+        );
+      })}
+    </table>
+  );
+}
+
 /* ── Final · Beat or missed ──
    Every point is shown. The difference from projection sits under the final
    score; "Where the points came from" splits the final by scoring group and
@@ -361,10 +421,15 @@ function FinalBoard({ model, selection, toggleSpot, toggleGroup, clearSpot, clea
   const max = Math.max(0.01, ...spots.map((spot) => Math.max(spot.projected, gross(spot.actualByGroup)))) * 1.04;
   const played = spots.filter((spot) => !spot.empty);
   const won = played.filter((spot) => (spot.actual ?? 0) - spot.projected > EPS).length;
-  const rows = categories
+  // One row per scoring category (its total across the lineup); each keeps the
+  // players behind it, largest first.
+  const byPoints = (a, b) => (selection.group === 'negative' ? a.actualPts - b.actualPts : b.actualPts - a.actualPts);
+  const rows = sumCategoriesAcrossSpots(categories
     .filter((row) => Math.abs(row.actualPts) > EPS)
-    .filter((row) => (!selection.spot || row.spotKey === selection.spot) && (!selection.group || row.group === selection.group))
-    .sort((a, b) => (selection.group === 'negative' ? a.actualPts - b.actualPts : b.actualPts - a.actualPts));
+    .filter((row) => (!selection.spot || row.spotKey === selection.spot) && (!selection.group || row.group === selection.group)), 'actual')
+    .filter((row) => Math.abs(row.actualPts) > EPS)
+    .map((row) => ({ ...row, contributors: row.contributors.sort(byPoints) }))
+    .sort(byPoints);
   const title = [selectedSpot && spotName(selectedSpot), selection.group && GROUP_LABEL[selection.group]].filter(Boolean).join(' · ');
   const spotValue = (spot, field) => (selection.group ? spot[field][selection.group] ?? 0 : field === 'actualByGroup' ? spot.actual ?? 0 : spot.projected);
 
@@ -446,21 +511,8 @@ function FinalBoard({ model, selection, toggleSpot, toggleGroup, clearSpot, clea
               {selection.group && <FilterChip label={GROUP_LABEL[selection.group]} group={selection.group} onClear={clearGroup} />}
             </span>
           </div>
-          <p className="tsd-note">Every category that scored, largest first.</p>
           {rows.length ? (
-            <table className="tsd-table">
-              <thead><tr><th scope="col">Category</th>{!selectedSpot && <th scope="col">Player</th>}<th scope="col" className="is-num">Stat</th><th scope="col" className="is-num">Pts</th></tr></thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <th scope="row"><Swatch group={row.group} />{row.label}</th>
-                    {!selectedSpot && <td className="tsd-muted">{row.playerName ?? 'Team'}</td>}
-                    <td className="is-num tsd-num tsd-muted">{formatStat(row.actualStat)}</td>
-                    <td className={`is-num tsd-num tsd-strong ${row.actualPts < -EPS ? 'is-down' : ''}`}>{fmt(row.actualPts)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ScoringCategoryTable key={`${selection.spot ?? ''}|${selection.group ?? ''}`} rows={rows} showPlayer={!selectedSpot} />
           ) : <p className="tsd-empty">No points for this filter.</p>}
         </section>
       </div>

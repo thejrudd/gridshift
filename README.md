@@ -46,7 +46,7 @@ BALLDONTLIE is optional. Core predictions and many Sleeper league tools work wit
 
 ## What's New
 
-- **v9.4.12 — Matchups compare defensive players slot by slot, and the scoring chart shows negative totals.** See the [changelog](CHANGELOG.md) for details and history.
+- **v9.4.13 — The final team scoring table lists each scoring category once, with the players behind it.** See the [changelog](CHANGELOG.md) for details and history.
 
 ## Privacy, license, and more
 

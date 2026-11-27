@@ -564,3 +564,4 @@ Open bugs are listed first, deferred work next, fixed bugs below. Add new entrie
 | Official timeouts (TV, injury, and measurement stoppages) showed the same TIMEOUT label as a team's timeout. | v9.4.11 |
 | The Matchups VS drilldown folded IDP FLEX and Superflex into the FLEX row, showed no rows for DL, LB, or DB starters, and labeled the kicker and defense row K + DEF even when the league started only one. | v9.4.12 |
 | The Scoring pace and Game flow chart flattened a negative running total at 0 instead of drawing it below the zero line. | v9.4.12 |
+| The team scoring drilldown listed one row per player per scoring category after the game, so it read as a list of player actions instead of scoring categories. | v9.4.13 |
