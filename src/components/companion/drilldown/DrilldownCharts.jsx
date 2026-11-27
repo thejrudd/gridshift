@@ -436,9 +436,14 @@ export function PaceChart({ pace, ariaLabel, fill = false }) {
   const iw = Math.max(60, width - L - R);
   const ih = H - T - B;
   const { final, now, marks, total, estimate, projected, low, high, unexplained } = pace;
-  const yMax = Math.max(10, Math.ceil(Math.max(final ? projected ?? 0 : high ?? projected ?? 0, total ?? 0, estimate ?? 0, ...marks.map(mark => mark.cum)) * 1.08 / 10) * 10);
+  const values = [total ?? 0, estimate ?? 0, ...marks.map(mark => mark.cum)];
+  const yMax = Math.max(10, Math.ceil(Math.max(final ? projected ?? 0 : high ?? projected ?? 0, ...values) * 1.08 / 10) * 10);
+  // A deduction (fumble, interception) can take the running total below zero, so
+  // the scale drops under the zero line instead of flattening the dip.
+  const lowest = Math.min(0, ...values, ...(!final && Number.isFinite(low) ? [low] : []));
+  const yMin = lowest < 0 ? Math.floor(lowest * 1.08 / 10) * 10 : 0;
   const x = minute => L + minute / 60 * iw;
-  const y = value => T + ih - Math.max(0, value) / yMax * ih;
+  const y = value => T + ih - (value - yMin) / (yMax - yMin) * ih;
   const points = marks.map(mark => ({ ...mark, px: r1(x(mark.minute)), py: r1(y(mark.cum)) }));
   const path = [
     `M${x(0)},${y(0)}`,
@@ -447,7 +452,7 @@ export function PaceChart({ pace, ariaLabel, fill = false }) {
     unexplained ? `V${r1(y(total))}` : '',
   ].join(' ');
   const grid = [];
-  for (let value = 0; value <= yMax; value += 10) grid.push(value);
+  for (let value = yMin; value <= yMax; value += 10) grid.push(value);
   let yp = y(projected ?? 0) + 4;
   let ye = y(estimate ?? 0) + 4;
   if (Math.abs(yp - ye) < 16) {
@@ -524,7 +529,7 @@ export function PaceChart({ pace, ariaLabel, fill = false }) {
       >
         {grid.map(value => (
           <g key={value}>
-            <line x1={L} x2={L + iw} y1={y(value)} y2={y(value)} stroke="var(--color-separator)" />
+            <line x1={L} x2={L + iw} y1={y(value)} y2={y(value)} stroke={value === 0 && yMin < 0 ? 'var(--color-label-tertiary)' : 'var(--color-separator)'} />
             <text x={L - 8} y={y(value) + 4} textAnchor="end">{value}</text>
           </g>
         ))}

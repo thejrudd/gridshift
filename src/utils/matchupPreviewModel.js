@@ -57,8 +57,15 @@ const SLOT_GROUPS = [
   { label: 'RB', match: ['RB'] },
   { label: 'WR', match: ['WR'] },
   { label: 'TE', match: ['TE'] },
-  { label: 'FLEX', match: ['FLEX', 'REC_FLEX', 'WRRBTE_FLEX', 'WRT_FLEX', 'WRRB_FLEX', 'SUPER_FLEX', 'IDP_FLEX'] },
-  { label: 'K + DEF', match: ['K', 'DEF', 'DST'] },
+  { label: 'FLEX', match: ['FLEX', 'REC_FLEX', 'WRRBTE_FLEX', 'WRT_FLEX', 'WRRB_FLEX'] },
+  { label: 'SUPER FLEX', match: ['SUPER_FLEX'] },
+  // Individual defensive players. A group only appears when the league starts the slot.
+  { label: 'DL', match: ['DL'] },
+  { label: 'LB', match: ['LB'] },
+  { label: 'DB', match: ['DB'] },
+  { label: 'IDP FLEX', match: ['IDP_FLEX'] },
+  // Named after the slots the league starts: K, DEF, or K + DEF.
+  { label: 'K + DEF', match: ['K', 'DEF', 'DST'], labelFor: (positions) => [positions.has('K') ? 'K' : null, positions.has('DEF') || positions.has('DST') ? 'DEF' : null].filter(Boolean).join(' + ') },
 ];
 
 const isRealPlayer = (player) => Boolean(player?.id) && player.name !== 'Empty' && !player.isUnavailable;
@@ -291,6 +298,9 @@ function buildSlotGroups(slots, phase) {
   return SLOT_GROUPS.map((group) => {
     const members = slots.filter((slot) => group.match.includes(String(slot.slotPos ?? '').toUpperCase()));
     if (!members.length) return null;
+    const label = group.labelFor
+      ? group.labelFor(new Set(members.map((slot) => String(slot.slotPos).toUpperCase())))
+      : group.label;
     const totals = ['a', 'b'].map((side) => {
       const values = members.map((slot) => num(valueOf(slot[side]))).filter((value) => value != null);
       return values.length === members.length ? round1(values.reduce((total, value) => total + value, 0)) : null;
@@ -301,7 +311,7 @@ function buildSlotGroups(slots, phase) {
       .filter(Boolean)
       .join(' · ') || null);
     return {
-      label: group.label,
+      label,
       starters: members.length,
       a,
       b,

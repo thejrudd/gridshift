@@ -11,6 +11,7 @@ const fixture = buildFixture({
   bench: params.get('bench') !== '0',
   bdl: params.get('bdl') !== '0',
   sparse: params.get('sparse') === '1',
+  dip: params.get('dip') === '1',
 });
 // ?status=Q tags the player with an injury designation.
 if (params.get('status')) fixture.props.enrichedPlayer = { ...fixture.props.enrichedPlayer, availabilityStatus: params.get('status') };
