@@ -297,6 +297,14 @@ test('overlays ESPN broadcast metadata without replacing BALLDONTLIE game state'
   assert.equal(game.live.awayTimeouts, 0);
   assert.equal(game.live.homeTimeouts, 1);
   assert.equal(game.live.next.downDistance, '2nd & 3');
+
+  // Counts from the play feed win: ESPN's scoreboard can take a bar away a
+  // minute before the timeout reaches the plays.
+  bdlGame.live = { ...bdlGame.live, awayTimeouts: 2, homeTimeouts: 3, timeoutsFromPlays: true };
+  const fromPlays = overlayEspnGameMetadataWeek(season, { events: [liveEvent] }, 1).weeks[0].games[0];
+  assert.equal(fromPlays.live.awayTimeouts, 2);
+  assert.equal(fromPlays.live.homeTimeouts, 3);
+  bdlGame.live = { period: '3', clock: '8:00', possession: null, awayTimeouts: null, homeTimeouts: null };
   assert.deepEqual(game.records, { away: '0-0', home: '0-0' });
 
   const finalOverlay = overlayEspnGameMetadataWeek(season, {

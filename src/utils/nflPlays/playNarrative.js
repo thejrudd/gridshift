@@ -348,14 +348,19 @@ export function parsePenaltyClause(rawText) {
   // is the flag the play is about, and a declined flag only when it is all
   // there was. Reading the play as a whole marked an accepted flag declined
   // whenever any other flag on the snap was.
-  const text = String(rawText ?? '');
-  const clauses = [...text.matchAll(/PENALTY on [^]*?(?=PENALTY on |$)/gi)].map((match) => match[0]);
-  const flags = clauses.map(parseOneFlag).filter(Boolean);
+  const flags = parseFlags(rawText);
   if (!flags.length) return null;
   // Flags on both teams that cancel out: no yards, the down is replayed.
   const offsetting = flags.filter((flag) => flag.offsetting);
   if (offsetting.length > 1) return { ...offsetting[0], offsetting };
   return flags.find((flag) => !flag.declined) ?? flags[0];
+}
+
+function parseFlags(rawText) {
+  const text = String(rawText ?? '');
+  return [...text.matchAll(/PENALTY on [^]*?(?=PENALTY on |$)/gi)]
+    .map((match) => parseOneFlag(match[0]))
+    .filter(Boolean);
 }
 
 function parseOneFlag(clause) {
@@ -1680,6 +1685,16 @@ function flagClause(penalty, play, shortText) {
   return `${flaggedWho(penalty, play, shortText)} was flagged for ${foulWords(penalty.infraction)}${yards}`;
 }
 
+// Declined flags changed nothing, but they happened: the live feed tells them
+// after the play ("Green Bay was flagged for defensive too many men on field,
+// declined."). Only the standing text counts after a replay reversal.
+function declinedFlagNote(rawText, play, shortText) {
+  return parseFlags(authoritativeText(rawText))
+    .filter((flag) => flag.declined)
+    .map((flag) => ` ${capitalize(flaggedWho(flag, play, shortText))} was flagged for ${foulWords(flag.infraction)}, declined.`)
+    .join('');
+}
+
 function capitalize(text) {
   return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
 }
@@ -1909,7 +1924,7 @@ export function parsePlayNarrative(play) {
         administrative: false,
         playKind: 'penalty',
         label: KIND_LABELS.penalty,
-        sentence: finishSentence(`${capitalize(flagClause(penalty, play, compact))}.${penalty.offsetting?.length > 1 ? ' The down is replayed.' : placed}`),
+        sentence: finishSentence(`${capitalize(flagClause(penalty, play, compact))}.${penalty.offsetting?.length > 1 ? ' The down is replayed.' : placed}${declinedFlagNote(rawText, play, compact)}`),
         actors: penalty.name
           ? [{ role: PLAY_ROLES.PENALIZED, name: penalty.name, abbreviated: true, detail: penalty.infraction }]
           : [],
@@ -2134,9 +2149,9 @@ export function parsePlayNarrative(play) {
   // and a play that lost nothing (an incompletion) just gains the flag.
   const flag = penalty && !penalty.declined ? flagClause(penalty, play, compact) : null;
   const spotAfter = flag ? ballSpot(play, penalty) : '';
-  const sentence = finishSentence(negated
+  const sentence = finishSentence(`${negated
     ? wipedOutSentence({ kind, parsed, built, flag, spotAfter, touchdown, rawText })
-    : `${built}${qbHit}${tryResult}${flag ? ` ${capitalize(flag)}.${spotAfter}` : ''}`);
+    : `${built}${qbHit}${tryResult}${flag ? ` ${capitalize(flag)}.${spotAfter}` : ''}`}${declinedFlagNote(rawText, play, compact)}`);
 
   // The scoring summary appends the extra point to the touchdown row
   // ("Cam Skattebo 16 Yd Run (Dominic Zvada Kick)"). The kicker is credited

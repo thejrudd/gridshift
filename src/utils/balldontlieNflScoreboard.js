@@ -346,6 +346,20 @@ export function normalizeBdlScoreboardSeason(payload, {
   };
 }
 
+// Timeouts counted from the play feed apply only to the half they were counted
+// in; across halftime the scoreboard's own period decides.
+function withPlayFeedTimeouts(game, timeouts) {
+  const counted = Number(timeouts?.period);
+  const current = Number(game?.live?.period);
+  if (!game?.live || !Number.isFinite(counted) || !Number.isFinite(current)) return game;
+  const half = (period) => (period <= 2 ? 1 : period <= 4 ? 2 : period);
+  if (half(counted) !== half(current)) return game;
+  return {
+    ...game,
+    live: { ...game.live, awayTimeouts: timeouts.away, homeTimeouts: timeouts.home, timeoutsFromPlays: true },
+  };
+}
+
 export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
   observedAt = Date.now(),
   providerFetchedAt = payload?.freshness?.providerFetchedAt
@@ -403,13 +417,13 @@ export function overlayBdlScoreboardWeek(seasonData, payload, weekNumber, {
           stale: liveSnapshot.freshness?.stale === true || liveSnapshot.cache?.stale === true,
         })
         : null;
-      return resolveBdlLiveClockGame(previousGame, merged, {
+      return withPlayFeedTimeouts(resolveBdlLiveClockGame(previousGame, merged, {
         observedAt,
         providerFetchedAt,
         ageMs,
         feedStale,
         latestPlay,
-      });
+      }), liveSnapshot?.timeouts);
     });
 
     (week.games ?? []).forEach((game) => {

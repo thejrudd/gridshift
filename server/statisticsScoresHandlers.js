@@ -7,6 +7,7 @@ import { createPublicRequestGuard } from './publicRequestGuard.js';
 import { isNflSeasonCompleted } from '../src/utils/nflSeason.js';
 import { isNflGameActive } from '../src/utils/nflGameStatus.js';
 import { isFinalGame } from '../src/utils/liveScoringFeed.js';
+import { countTimeoutsRemaining } from '../src/utils/playByPlay/timeoutCounts.js';
 
 const ESPN_NFL_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const DEFAULT_PER_PAGE = 100;
@@ -620,6 +621,13 @@ export async function fetchStatisticsScoresLiveWeek({
           return {
             gameId: String(game.id),
             latestPlay: plays.latestPlay,
+            // Counted from the same rows as the latest play, so the timeout
+            // bars never run ahead of the play feed.
+            timeouts: countTimeoutsRemaining(plays.plays, {
+              awayTeam: game.visitor_team?.abbreviation,
+              homeTeam: game.home_team?.abbreviation,
+              postseason: game.postseason === true,
+            }),
             playsVersion: plays.latestPlay?.id == null ? null : String(plays.latestPlay.id),
             freshness: plays.freshness,
             cache: toCompatCache(plays),

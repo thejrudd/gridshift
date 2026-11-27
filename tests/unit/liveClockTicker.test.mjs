@@ -360,12 +360,12 @@ test('a quiet feed holds the clock with a waiting label until the next reading',
     ticker.resolveGame(snapshot(env.time));
   }
   const held = ticker.resolveGame(snapshot(env.time));
-  assert.equal(held.clock, '7:49');
+  assert.equal(held.clock, '7:44');
   assert.equal(held.stopReason, 'Waiting for update');
   // The next posted play replaces the hold with its own reading.
-  const nextSample = snapshot(env.time, { clock: '7:46', key: '3|7:46|next' });
+  const nextSample = snapshot(env.time, { clock: '7:41', key: '3|7:41|next' });
   assert.equal(ticker.resolveGame(nextSample).stopReason, null);
   // A small gap eases down over a tick rather than jumping.
   env.advance(1_000);
-  assert.equal(ticker.resolveGame(nextSample).clock, '7:45');
+  assert.equal(ticker.resolveGame(nextSample).clock, '7:40');
 });

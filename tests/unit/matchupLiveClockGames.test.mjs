@@ -220,3 +220,21 @@ test('the same sample shows the same second on Scores and Fantasy', () => {
   const fromFantasy = ticker.resolveGame(fantasyGame);
   assert.equal(fromScores.label, fromFantasy.label);
 });
+
+test('Scores timeout bars follow the play feed\'s counts for the current half only', () => {
+  const season = normalizeBdlScoreboardSeason({ data: [rawGame()] }, { season: 2026, phase: NFL_SEASON_PHASES.REGULAR });
+  const payload = (timeouts) => ({
+    data: [rawGame()],
+    freshness: { providerFetchedAt: '2026-09-06T01:02:03.000Z', ageMs: 400, stale: false },
+    liveGameSnapshots: [{ gameId: '7001', latestPlay: rawPlay(), timeouts }],
+  });
+  const counted = overlayBdlScoreboardWeek(season, payload({ period: 1, away: 2, home: 3 }), 1, { observedAt: T0 }).weeks[0].games[0];
+  assert.equal(counted.live.awayTimeouts, 2);
+  assert.equal(counted.live.homeTimeouts, 3);
+  assert.equal(counted.live.timeoutsFromPlays, true);
+  // Counts from the other half (the feed still on the first half while the
+  // scoreboard has moved on, or the reverse) are left to the scoreboard.
+  const otherHalf = overlayBdlScoreboardWeek(season, payload({ period: 3, away: 3, home: 3 }), 1, { observedAt: T0 }).weeks[0].games[0];
+  assert.equal(otherHalf.live.awayTimeouts, null);
+  assert.equal(otherHalf.live.timeoutsFromPlays, undefined);
+});

@@ -10,6 +10,11 @@ const DEFAULT_STALE_MS = 5 * 60_000;
 const GAME_STATUS_TTL_MS = 60_000;
 const GAME_STATUS_STALE_MS = 4 * 60 * 60_000;
 export const PLAY_CORRECTION_WINDOW_MS = 48 * 60 * 60_000;
+// Inside that window a stored copy is refetched once it is this old, so a
+// play rewritten after the final whistle (a tackler added minutes later, a
+// stat correction) reaches Scores and Matchups the same day rather than when
+// the window closes. Only on request: an unwatched game costs nothing.
+export const PLAY_CORRECTION_RECHECK_MS = 15 * 60_000;
 // Kickoff to final whistle, for estimating when a finished game ended.
 const GAME_LENGTH_ESTIMATE_MS = 4 * 60 * 60_000;
 
@@ -135,15 +140,24 @@ export function createLiveGameSnapshotStore({
       // Verified rows are permanent: no provider call at all.
       if (row?.verified) return archivedSnapshot(row, ids);
       // Only finished games are archived, so a stored row needs no status
-      // check: inside the correction window it is served as stored.
-      if (row && now() - row.gameEndedAt < PLAY_CORRECTION_WINDOW_MS) return archivedSnapshot(row, ids);
+      // check: inside the correction window it is served as stored until it is
+      // due a recheck.
+      const recheckDue = row && now() - row.fetchedAt >= PLAY_CORRECTION_RECHECK_MS;
+      if (row && now() - row.gameEndedAt < PLAY_CORRECTION_WINDOW_MS && !recheckDue) return archivedSnapshot(row, ids);
       const finished = row ? { endedAt: row.gameEndedAt } : await getFinishedGame(parsedGameId);
       if (finished) {
         const correctionsSettled = now() - finished.endedAt >= PLAY_CORRECTION_WINDOW_MS;
-        // Archived inside the correction window: serve it until the window
-        // closes, then refetch once and mark it permanent.
-        if (row && !correctionsSettled) return archivedSnapshot(row, ids);
-        const result = await fetchPlays({ ...ids, params });
+        // Archived inside the correction window: serve it until a recheck is
+        // due, and refetch once more when the window closes to mark it
+        // permanent.
+        if (row && !correctionsSettled && !recheckDue) return archivedSnapshot(row, ids);
+        let result;
+        try {
+          result = await fetchPlays({ ...ids, params });
+        } catch (error) {
+          if (row) return archivedSnapshot(row, ids);
+          throw error;
+        }
         const plays = Array.isArray(result.payload?.data) ? result.payload.data : [];
         // An empty answer for a finished game is not archived; it is retried.
         if (plays.length) {
