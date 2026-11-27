@@ -293,6 +293,44 @@ test('player drilldown presents a responsive pregame start-sit briefing', async 
   await expect(dialog).toHaveCount(0);
 });
 
+test('jersey number shows on the Matchups card and the drilldown header, apart from the positional rank', async ({ page }) => {
+  await page.goto('/fantasy/matchups?week=6');
+  const dismissTour = page.getByRole('button', { name: 'Dismiss' });
+  if (await dismissTour.count()) await dismissTour.click();
+  await expect(page.getByRole('button', { name: 'Open Pocket Commander', exact: true })).toBeVisible();
+
+  const card = page.locator('.companion-matchup-player-row', { has: page.getByRole('button', { name: 'Open Pocket Commander', exact: true }) });
+  const cardNumber = card.locator('.companion-player-row__number');
+  await expect(cardNumber).toHaveText('Jersey number #1');
+  // Inside its card, and adding it never truncates a name: phones lead the game
+  // line with it, desktop sets it beside the name.
+  const geometry = await card.evaluate((row) => {
+    const rowRect = row.getBoundingClientRect();
+    const number = row.querySelector('.companion-player-row__number').getBoundingClientRect();
+    return {
+      withinRow: number.left >= rowRect.left && number.right <= rowRect.right && number.bottom <= rowRect.bottom + 1,
+      rowOverflows: row.scrollWidth > row.clientWidth + 1,
+    };
+  });
+  expect(geometry).toEqual({ withinRow: true, rowOverflows: false });
+  const truncatedNames = await page.evaluate(() => [...document.querySelectorAll('.companion-matchup-player-row .companion-player-row__identity-label')]
+    .filter(el => el.scrollWidth > el.clientWidth + 1).length);
+  expect(truncatedNames).toBe(0);
+
+  await page.getByRole('button', { name: 'Open Pocket Commander', exact: true }).click({ position: { x: 4, y: 4 } });
+  const dialog = page.getByRole('dialog', { name: 'Player matchup breakdown' });
+  await expect(dialog.locator('.pmd-hd__number')).toHaveText('Jersey number #1');
+  // The number, name and status badge never push the close button off the avatar's row.
+  const headerRows = await dialog.evaluate((el) => {
+    const header = el.querySelector('.pmd-hd').getBoundingClientRect();
+    const close = el.querySelector('.pmd-hd__close').getBoundingClientRect();
+    const avatar = el.querySelector('.pmd-hd__avatar').getBoundingClientRect();
+    return { closeBesideAvatar: close.top < avatar.bottom, closeInside: close.right <= header.right + 1 };
+  });
+  expect(headerRows).toEqual({ closeBesideAvatar: true, closeInside: true });
+  await expect(dialog.locator('.pmd-hd__meta')).not.toContainText('#1');
+});
+
 test('player comparison aligns the game rail with the split hero without a center graphic', async ({ page }, testInfo) => {
   await page.goto('/fantasy/matchups?week=6');
   const dismissTour = page.getByRole('button', { name: 'Dismiss' });

@@ -641,6 +641,7 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
   const phase = getPlayerMatchupPhase({ scheduleEntry, gameStarted: enrichedPlayer?.gameStarted, now });
   const isPregame = phase === 'pregame';
   const position = player?.position ?? enrichedPlayer?.position ?? null;
+  const jerseyNumber = String(player?.number ?? enrichedPlayer?.jersey ?? '').trim();
   const espnId = player?.espn_id ?? espnIdOverrides?.[playerId];
   const scoring = activeScoringSettings ?? DEFAULT_SCORING;
 
@@ -1229,6 +1230,11 @@ export default function PlayerMatchupBreakdown({ playerId, week, projection, bas
         <div className="pmd-hd__identity">
           <div className="pmd-hd__name">
             <strong>{player?.full_name ?? 'Unknown Player'}</strong>
+            {jerseyNumber !== '' && (
+              <span className="pmd-hd__number">
+                <span className="sr-only">Jersey number </span>#{jerseyNumber}
+              </span>
+            )}
             {enrichedPlayer?.availabilityStatus && <PlayerStatusBadge status={enrichedPlayer.availabilityStatus} localContrast={false} />}
           </div>
           <span className="pmd-hd__meta">{player?.position} · {player?.team ?? 'FA'} · Week {week}</span>

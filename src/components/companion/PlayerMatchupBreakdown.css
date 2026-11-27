@@ -58,7 +58,9 @@
   border: 1.5px solid color-mix(in srgb, var(--matchup-header-fg) 42%, transparent);
 }
 
-.pmd-hd__identity { flex: 1 1 auto; min-width: 0; }
+/* Zero basis: a long name with its number and status badge wraps inside the
+   identity block instead of pushing the close button onto its own row. */
+.pmd-hd__identity { flex: 1 1 0; min-width: 0; }
 
 .pmd-hd__name {
   display: flex;
@@ -80,6 +82,22 @@
   line-height: 1.02;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Jersey number: an outlined chip, unlike the filled position and rank marks,
+   so "#16" is never read as a positional rank. */
+.pmd-hd__number {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--matchup-header-fg) 42%, transparent);
+  border-radius: 5px;
+  color: var(--matchup-header-fg);
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .pmd-hd__meta {

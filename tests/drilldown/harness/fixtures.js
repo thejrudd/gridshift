@@ -48,7 +48,7 @@ export function buildFixture({ phase = 'pregame', source = 'balldontlie', bench 
     scheduleMap[week] = games;
   }
 
-  const players = { receiver: { full_name: 'Test Receiver', position: 'WR', team: 'CIN', years_exp: 5 } };
+  const players = { receiver: { full_name: 'Test Receiver', position: 'WR', team: 'CIN', years_exp: 5, number: 9 } };
   const weeklyStats = {};
   TEAMS.forEach((team) => {
     ['WR', 'WR', 'RB', 'TE', 'QB'].forEach((position, index) => {

@@ -195,6 +195,25 @@ for (const theme of THEMES) {
   }
 }
 
+test.describe('header jersey number', () => {
+  // The number sits beside the name as "#9" in an outlined chip, apart from the
+  // position in the meta line, so it is never read as a positional rank.
+  for (const phase of ['pregame', 'live', 'final']) {
+    test(`${phase}: shows the jersey number beside the name, inside the header`, async ({ page }) => {
+      await openDrilldown(page, { phase });
+      const chip = page.locator('.pmd-hd__name .pmd-hd__number');
+      await expect(chip).toHaveText('Jersey number #9');
+      await expect(chip.locator('.sr-only')).toHaveText('Jersey number');
+      await expect(page.locator('.pmd-hd__meta')).not.toContainText('#9');
+      const header = await page.locator('.pmd-hd').boundingBox();
+      const box = await chip.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(header.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(header.x + header.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(header.y + header.height);
+    });
+  }
+});
+
 test.describe('hero points breakdown', () => {
   // Live and final games show the breakdown in the hero, one tap from the
   // Matchups row; the total is plain text there.

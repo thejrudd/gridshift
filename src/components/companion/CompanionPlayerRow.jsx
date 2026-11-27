@@ -185,6 +185,11 @@ export default function CompanionPlayerRow({
   columnGridTemplate = undefined,
   name = undefined,
   identityAccessory = null,
+  // Jersey number, shown as "#16". Not a rank. 'identity' sets it after the
+  // position chip; 'meta' leads the meta line, for narrow cards whose name line
+  // has no room to spare.
+  number = null,
+  numberPlacement = 'identity',
   title = null,
   ariaLabel = null,
   ariaExpanded = undefined,
@@ -287,6 +292,12 @@ export default function CompanionPlayerRow({
 
   if (!player) return null;
 
+  const hasNumber = number != null && String(number).trim() !== '';
+  const numberChip = hasNumber ? (
+    <span className="companion-player-row__number">
+      <span className="sr-only">Jersey number </span>#{number}
+    </span>
+  ) : null;
   const positionInline = positionPlacement === 'identity';
   const positionChip = showPosition ? (
     <span
@@ -402,14 +413,16 @@ export default function CompanionPlayerRow({
         <div className="companion-player-row__identity" style={{ color: rowForeground }}>
           <span className="companion-player-row__identity-label">{label}</span>
           {positionInline && positionChip}
+          {numberPlacement === 'identity' && numberChip}
           {identityAccessory ? (
             <span className="companion-player-row__identity-accessory">
               {identityAccessory}
             </span>
           ) : null}
         </div>
-        {normalizedMeta.length > 0 && (
+        {(normalizedMeta.length > 0 || (numberPlacement === 'meta' && numberChip)) && (
           <div className="companion-player-row__meta">
+            {numberPlacement === 'meta' && numberChip}
             {metaPrefix && <span className="companion-player-row__meta-prefix">{metaPrefix}</span>}
             {normalizedMeta.map((segment, index) => (
               <span

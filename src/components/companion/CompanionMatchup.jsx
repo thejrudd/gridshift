@@ -1129,6 +1129,7 @@ function CompanionMatchupView({
       id,
       name: p.full_name || `${p.first_name} ${p.last_name}`,
       position: p.position,
+      jersey: p.number ?? '',
       team: myTeam,
       weekPts: preferStatWeekPts ? statWeekPts : (fallbackWeekPts ?? statWeekPts),
       avgPPG: hasAdvancedStats ? getAvgPPG(weekly, activeScoringSettings, p.position) : null,
@@ -3885,6 +3886,9 @@ function MatchupPlayerRow({ player, lineupUnavailable = false, darkMode, compact
         />,
       ] : scoreColumns}
       identityAccessory={compact ? null : injuryStatus}
+      // Phones lead the game line with it; the name line has no spare width.
+      number={isTeamDefense ? null : player.jersey}
+      numberPlacement={compact ? 'meta' : 'identity'}
       gridTemplate={gridTemplate}
       columnGridTemplate={compact ? 'minmax(34px, auto)' : undefined}
       separateAction={Boolean(onOpenInjuries && player.availabilityStatus && player.id != null)}

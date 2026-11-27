@@ -20388,6 +20388,31 @@ button.team-dash-tape__col:hover { background: var(--color-fill-tertiary); }
   justify-content: center;
 }
 
+/* Jersey number after the position chip: outlined, so it never reads as a rank. */
+.companion-player-row__number {
+  flex: none;
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: var(--companion-player-fg, var(--color-label));
+  font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+  font-size: var(--type-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.companion-player-row__meta > .companion-player-row__number {
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-size: var(--type-micro);
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  opacity: 1;
+}
+
 .companion-player-row__identity {
   min-width: 0;
   overflow: visible;
