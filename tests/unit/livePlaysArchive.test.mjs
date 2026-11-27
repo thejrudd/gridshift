@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLivePlaysArchive } from '../../server/livePlaysArchive.js';
-import { createLiveGameSnapshotStore, PLAY_CORRECTION_WINDOW_MS } from '../../server/liveGameSnapshots.js';
+import { createLiveGameSnapshotStore, PLAY_CORRECTION_RECHECK_MS, PLAY_CORRECTION_WINDOW_MS } from '../../server/liveGameSnapshots.js';
 
 const HOUR = 60 * 60 * 1000;
 const KICKOFF = Date.parse('2026-10-18T17:00:00.000Z');
@@ -59,33 +59,45 @@ test('a game final for over 48 hours is fetched once and then served from the ar
   assert.deepEqual(gateway.calls, { status: 1, plays: 1 }, 'a verified row asks the provider nothing');
 });
 
-test('a recently finished game is served from the archive, refetched once after the correction window, then permanent', async () => {
+test('a recently finished game is served from the archive, rechecked inside the correction window, refetched once after it, then permanent', async () => {
   const scenario = { status: 'Final', plays: makePlays(3, 'original') };
   const { gateway, store, clock } = setup(scenario, KICKOFF + 5 * HOUR);
 
   await store.getPlays({ gameId: 7 });
   assert.deepEqual(gateway.calls, { status: 1, plays: 1 });
 
-  // Inside the window: the archived copy is served with no provider call at
-  // all — an archived game is known to be final, so not even a status check.
-  clock.advance(10 * HOUR);
+  // Inside the window and before a recheck is due: the archived copy is served
+  // with no provider call at all, not even a status check.
+  clock.advance(PLAY_CORRECTION_RECHECK_MS - 1);
   const inside = await store.getPlays({ gameId: 7 });
   assert.equal(inside.cache.archived, true);
   assert.deepEqual(gateway.calls, { status: 1, plays: 1 });
+
+  // The provider rewrites a play after the final whistle; the next request
+  // past the recheck interval picks it up, the same day.
+  scenario.plays = makePlays(3, 'rewritten');
+  clock.advance(1);
+  const rechecked = await store.getPlays({ gameId: 7 });
+  assert.equal(rechecked.plays[0].id, 'rewritten-0');
+  assert.equal(gateway.calls.plays, 2);
+  const served = await store.getPlays({ gameId: 7 });
+  assert.equal(served.cache.archived, true);
+  assert.equal(gateway.calls.plays, 2);
 
   // A correction lands; after the window the play list is refetched once.
   scenario.plays = makePlays(3, 'corrected');
   clock.advance(PLAY_CORRECTION_WINDOW_MS);
   const after = await store.getPlays({ gameId: 7 });
   assert.equal(after.plays[0].id, 'corrected-0');
-  assert.equal(gateway.calls.plays, 2);
+  assert.equal(gateway.calls.plays, 3);
 
   // Permanent from here: no provider calls of either kind.
   const statusCalls = gateway.calls.status;
+  clock.advance(30 * 24 * HOUR);
   const later = await store.getPlays({ gameId: 7 });
   assert.equal(later.plays[0].id, 'corrected-0');
   assert.equal(later.cache.archived, true);
-  assert.equal(gateway.calls.plays, 2);
+  assert.equal(gateway.calls.plays, 3);
   assert.equal(gateway.calls.status, statusCalls);
 });
 

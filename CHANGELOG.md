@@ -1674,3 +1674,11 @@ All notable changes, oldest first. Add new entries at the bottom.
 *2026-11-26*
 
 - **Team scoring drilldown** - The final Scoring categories table lists each scoring category once with its total, instead of one row per player. A category scored by several players expands to show each one, largest first.
+
+## v9.4.14 - Live Feed Corrections
+*2026-11-27*
+
+- **Declined penalties** - Scores play-by-play notes a flag the other team declined, such as "Green Bay was flagged for defensive too many men on field, declined.", instead of leaving it out.
+- **Timeout bars** - The Scores header counts timeouts from the play feed, so a bar goes away when the timeout appears in the plays instead of before.
+- **Corrected plays in Matchups** - When a play's description is rewritten after the fact, its fantasy points are re-scored everywhere the original counted, and finished games are rechecked for corrections every 15 minutes.
+- **Live game clock** - The clock runs for 50 seconds without a new play before it holds and shows Waiting for update.

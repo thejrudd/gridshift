@@ -355,16 +355,16 @@ test('a timeout is cleared by a more recent game-clock reading or quarter', () =
   assert.deepEqual(resolveSampleStoppage(timeout, { period: 4, clock: '15:00' }), { stopped: false, reason: null });
 });
 
-test('a reading the feed has not advanced for 45 seconds holds and waits for an update', () => {
+test('a reading the feed has not advanced for 50 seconds holds and waits for an update', () => {
   // Fresh responses keep verifying the same reading (the provider repeats it
   // until the next play is posted), so only the quiet limit stops the run.
   const at = (ms) => resolve({ now: START + ms, verifiedAt: START + ms });
-  assert.equal(at(45_000).clock, '12:57');
-  assert.equal(at(45_000).frozen, false);
-  const held = at(46_000);
-  assert.equal(held.clock, '12:57');
+  assert.equal(at(50_000).clock, '12:52');
+  assert.equal(at(50_000).frozen, false);
+  const held = at(51_000);
+  assert.equal(held.clock, '12:52');
   assert.equal(held.frozenReason, 'awaiting-update');
-  assert.equal(at(150_000).clock, '12:57');
+  assert.equal(at(150_000).clock, '12:52');
   // A stoppage already holds the clock; the quiet limit never relabels it.
   assert.equal(resolve({ stopped: true, now: START + 90_000, verifiedAt: START + 90_000 }).frozenReason, 'stoppage');
 });

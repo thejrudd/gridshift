@@ -312,7 +312,7 @@ test('a flag on a play that stands names the player, team, number, yards, and ne
   // The accepted flag stands even with a declined one on the same snap.
   assert.equal(play.narrative.penalty.declined, false);
   assert.equal(play.narrative.sentence,
-    'Bo Nix found Marvin Mims Jr. for 8 yards, tackled by B.Murphy. Byron Murphy II (Seattle, #91) was flagged for a face mask, 15 yards. Ball at the Denver 44.');
+    'Bo Nix found Marvin Mims Jr. for 8 yards, tackled by B.Murphy. Byron Murphy II (Seattle, #91) was flagged for a face mask, 15 yards. Ball at the Denver 44. Byron Murphy II (Seattle, #91) was flagged for offside, declined.');
 });
 
 test('a flag that wipes out a score leads with the score it cost', () => {
@@ -871,4 +871,24 @@ test('a blocked extra point is the defense\'s blocked kick (week 1 of 2026, WAS 
     new Map(starters.map((row) => [row.id, row.player.position])), new Map([[game.id, game]]));
   assert.deepEqual(statsOf(events, 'carter'), { idp_blk_kick: 1 });
   assert.deepEqual(statsOf(events, 'dst-PHI'), { blk_kick: 1 });
+});
+
+test('a declined flag is told after the play, and only from the standing text', () => {
+  // Week 13 GB at LAR: a team flag declined on a run that counted.
+  const declined = parsePlayNarrative({
+    typeSlug: 'rush',
+    rawText: 'B.Corum left tackle to GB 44 for 5 yards (E.Williams). PENALTY on GB, Defensive Too Many Men on Field, 5 yards, declined.',
+    shortText: 'Blake Corum 5 Yd Rush',
+    team: 'LAR',
+  });
+  assert.equal(declined.sentence, 'Blake Corum ran for 5 yards, tackled by E.Williams. Green Bay was flagged for defensive too many men on field, declined.');
+
+  // A declined flag in the overturned ruling is not repeated after a reversal.
+  const reversed = parsePlayNarrative({
+    typeSlug: 'penalty',
+    rawText: '(Shotgun) M.Stafford pass short right to K.Mumpfield for 2 yards, TOUCHDOWN [B.Cisse].Penalty on GB-J.Bullard, Defensive Holding, declined.The Replay Official reviewed the pass completion ruling, and the play was REVERSED.(Shotgun) M.Stafford pass incomplete short right to K.Mumpfield (K.Nixon) [B.Cisse].PENALTY on GB-J.Bullard, Defensive Holding, 1 yard, enforced at GB 2 - No Play.',
+    shortText: 'Matthew Stafford Incomplete Pass, Intended For Konata Mumpfield Javon Bullard 1 Yd Pnlty',
+    team: 'LAR',
+  });
+  assert.doesNotMatch(reversed.sentence, /declined/);
 });

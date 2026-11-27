@@ -435,8 +435,10 @@ function overlayEspnGameMetadata(baseGame, espnGame) {
     },
     live: sameHalf ? {
       ...live,
-      awayTimeouts: espnLive.awayTimeouts ?? live.awayTimeouts,
-      homeTimeouts: espnLive.homeTimeouts ?? live.homeTimeouts,
+      // Play-feed counts keep the bars in step with the plays; ESPN fills in
+      // for a game without play-by-play.
+      awayTimeouts: live.timeoutsFromPlays ? live.awayTimeouts : espnLive.awayTimeouts ?? live.awayTimeouts,
+      homeTimeouts: live.timeoutsFromPlays ? live.homeTimeouts : espnLive.homeTimeouts ?? live.homeTimeouts,
       possession: live.possession ?? possession ?? null,
       next: live.next ?? (canUseEspnDown && espnLive.downDistance ? {
         downDistance: espnLive.downDistance,

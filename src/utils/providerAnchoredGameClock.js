@@ -20,7 +20,7 @@ export const STOPPAGE_SAMPLE_TOLERANCE_SECONDS = 8;
 // this, a play the provider has not posted yet (a score under review, an
 // injury, a long stoppage) is likelier than a running clock, so the display
 // holds and says it is waiting instead of guessing minutes ahead.
-export const PROVIDER_CLOCK_QUIET_LIMIT_SECONDS = 45;
+export const PROVIDER_CLOCK_QUIET_LIMIT_SECONDS = 50;
 // A same-period display that is behind the sample by more than this snaps;
 // smaller gaps ease down over a few ticks.
 const EASE_DOWN_SNAP_SECONDS = 10;

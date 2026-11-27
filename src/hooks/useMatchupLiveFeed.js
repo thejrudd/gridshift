@@ -107,17 +107,20 @@ const PLAYS_RETRY_MS = 4_000;
 const FINAL_RECONCILIATION_RETRY_MS = 30000;
 const NO_GAMES = Object.freeze([]);
 const NO_PLAYS = Object.freeze({});
-// A finished game's plays never change within a visit (the server archives
-// them and absorbs post-game corrections), so they are kept per tab: going
-// back to a week, or switching matchups, does not ask the server again.
-// Keyed by BALLDONTLIE game id; bounded so a long session cannot grow it
-// without limit. Dev sandbox and mock plays never use it.
+// A finished game's plays are kept per tab: going back to a week, or
+// switching matchups, does not ask the server again. The provider still
+// rewrites plays after the final whistle (tacklers, yards, stat corrections),
+// so a kept copy is asked for again once it is FINAL_PLAYS_RECHECK_MS old,
+// matching the server's own recheck of its archive. Keyed by BALLDONTLIE game
+// id; bounded so a long session cannot grow it without limit. Dev sandbox and
+// mock plays never use it.
 const FINAL_GAME_PLAYS = new Map();
 const FINAL_GAME_PLAYS_LIMIT = 400;
+const FINAL_PLAYS_RECHECK_MS = 15 * 60_000;
 
 function rememberFinalGamePlays(gameId, plays) {
   FINAL_GAME_PLAYS.delete(gameId);
-  FINAL_GAME_PLAYS.set(gameId, plays);
+  FINAL_GAME_PLAYS.set(gameId, { plays, at: Date.now() });
   if (FINAL_GAME_PLAYS.size > FINAL_GAME_PLAYS_LIMIT) FINAL_GAME_PLAYS.delete(FINAL_GAME_PLAYS.keys().next().value);
 }
 // Typical wall-clock length of an NFL game, for placing a finished game's
@@ -1279,12 +1282,14 @@ export default function useMatchupLiveFeed({
           const now = Date.now();
           const shouldFetch = sandbox?.replay
             ? marker?.progress !== sandbox.progress
-            : !marker || (final && !marker.final) || (!final && now - marker.at >= PLAYS_REFRESH_MIN_MS);
+            : !marker || (final && !marker.final) || (!final && now - marker.at >= PLAYS_REFRESH_MIN_MS)
+              || (final && now - marker.at >= FINAL_PLAYS_RECHECK_MS);
           if (!shouldFetch) return;
           const sessionCacheable = final && !sandbox && !mockPlays;
-          if (sessionCacheable && FINAL_GAME_PLAYS.has(gameId)) {
-            playsFetchedRef.current.set(gameId, { at: Date.now(), final, progress: null });
-            const cachedPlays = FINAL_GAME_PLAYS.get(gameId);
+          const kept = sessionCacheable ? FINAL_GAME_PLAYS.get(gameId) : null;
+          if (kept && now - kept.at < FINAL_PLAYS_RECHECK_MS) {
+            playsFetchedRef.current.set(gameId, { at: kept.at, final, progress: null });
+            const cachedPlays = kept.plays;
             storeGamePlays(requestFeedKey, gameId, cachedPlays);
             traceLiveMilestone(`plays in: game ${gameId}`, { detail: `${cachedPlays.length} plays, kept from this visit` });
             return;
@@ -1430,6 +1435,18 @@ export default function useMatchupLiveFeed({
 
   const observedPlayPoints = useMemo(() => buildObservedPlayerPoints(playEvents), [playEvents]);
 
+  // Provider ids of the plays in this poll, so the reconciler can tell a
+  // rewritten play that no longer credits a starter from a play that simply
+  // was not in this response.
+  const presentPlayIds = useMemo(() => {
+    const ids = new Set();
+    Object.entries(playsByGame).forEach(([gameId, rows]) => {
+      if (!gamesById.has(String(gameId))) return;
+      (rows ?? []).forEach((row) => { if (row?.id != null) ids.add(String(row.id)); });
+    });
+    return ids;
+  }, [gamesById, playsByGame]);
+
   // Starters whose game is officially over: the reconciler places Sleeper
   // points their plays do not explain right away instead of waiting for a
   // second stat-line fetch that a finished game never triggers. Keyed by
@@ -1485,6 +1502,7 @@ export default function useMatchupLiveFeed({
     const now = sandboxReplay ? sandbox.instantAt(sandbox.progress) : Date.now();
     const next = traceLiveWork('reconcile with Sleeper', () => reconcileLivePlays(reconciliationRef.current, {
       playEvents,
+      presentPlayIds,
       sleeperPointsById: currentStarterPointsById,
       sleeperStatsById: starterSleeperStats,
       sleeperStatsFetchedAt,
@@ -1499,7 +1517,7 @@ export default function useMatchupLiveFeed({
     // lastUpdatedAt: unchanged Sleeper rows now keep their identity, so the
     // tick itself re-runs this step, keeping its time rules (stat-line
     // freshness, pending expiry) on the same clock as before.
-  }, [activeScoringSettings, currentMatchup, currentStarterPointsById, finalGameIds, lastUpdatedAt, playEvents, positionsById, reconcilerEnabled, sandbox, sandboxReplay, settledStarterIds, starterSleeperStats, sleeperStatsFetchedAt]);
+  }, [activeScoringSettings, currentMatchup, currentStarterPointsById, finalGameIds, lastUpdatedAt, playEvents, positionsById, presentPlayIds, reconcilerEnabled, sandbox, sandboxReplay, settledStarterIds, starterSleeperStats, sleeperStatsFetchedAt]);
 
   // One stream for the feed, the chart and the hover cards, each event placed
   // on the kickoff-window axis as `progress`; `gameProgress` stays per game.

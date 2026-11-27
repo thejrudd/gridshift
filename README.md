@@ -46,7 +46,7 @@ BALLDONTLIE is optional. Core predictions and many Sleeper league tools work wit
 
 ## What's New
 
-- **v9.4.13 — The final team scoring table lists each scoring category once, with the players behind it.** See the [changelog](CHANGELOG.md) for details and history.
+- **v9.4.14 — Declined penalties in the play-by-play, timeout bars in step with the plays, and corrected plays re-scored in Matchups.** See the [changelog](CHANGELOG.md) for details and history.
 
 ## Privacy, license, and more
 

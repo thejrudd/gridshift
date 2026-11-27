@@ -1232,3 +1232,65 @@ test('a first down Sleeper did not credit never holds back a play it has counted
   });
   assert.equal(next.players.get('qb1').pendingPoints, 1.5);
 });
+
+test('a rewritten play replaces its points everywhere and keeps its confirmation', () => {
+  // Week 13 GB at LAR: a kickoff return first posted as 20 yards, corrected to 19.
+  const first = makePlay({ playerId: 'wr1', stats: { kr_yd: 20 }, pts: 2, order: 1 });
+  let state = step(createReconciliationState(), {
+    playEvents: [first],
+    presentPlayIds: [first.sharedPlayId],
+    sleeperPointsById: { wr1: 2 },
+    now: 1_000,
+  });
+  assert.equal(state.players.get('wr1').plays[0].status, 'confirmed');
+
+  const corrected = { ...first, stats: { kr_yd: 19 }, pts: 1.9, desc: 'returned 19 yards' };
+  state = step(state, {
+    playEvents: [corrected],
+    presentPlayIds: [first.sharedPlayId],
+    sleeperPointsById: { wr1: 1.9 },
+    now: 2_000,
+  });
+  const [play] = state.players.get('wr1').plays;
+  assert.equal(play.pts, 1.9);
+  assert.equal(play.desc, 'returned 19 yards');
+  assert.equal(play.status, 'confirmed');
+  // The feed row carries the corrected value, and no correction row is needed.
+  assert.equal(state.feedEvents.find((event) => event.id === first.id).displayPts, 1.9);
+  assert.equal(state.players.get('wr1').adjustment, 0);
+  assert.equal(state.firstSeen.get(first.id), 1_000);
+});
+
+test('a player the rewritten play no longer names drops out of every total', () => {
+  // A run first credited to lb1, then rewritten with another tackler.
+  const tackle = makePlay({ playerId: 'lb1', stats: { idp_tkl_solo: 1 }, pts: 1, order: 1, position: 'LB' });
+  let state = step(createReconciliationState(), {
+    playEvents: [tackle],
+    presentPlayIds: [tackle.sharedPlayId],
+    now: 1_000,
+  });
+  assert.equal(state.players.get('lb1').plays.length, 1);
+
+  // The play is still listed but no longer credits lb1.
+  state = step(state, { playEvents: [], presentPlayIds: [tackle.sharedPlayId], now: 2_000 });
+  assert.equal(state.plays.has(tackle.id), false);
+  assert.equal(state.feedEvents.some((event) => event.id === tackle.id), false);
+  assert.equal(state.players.get('lb1')?.plays.length ?? 0, 0);
+});
+
+test('a play missing from one poll is kept rather than dropped', () => {
+  const play = makePlay({ playerId: 'wr1', stats: { rec: 1, rec_yd: 10 }, pts: 2, order: 1 });
+  let state = step(createReconciliationState(), {
+    playEvents: [play],
+    presentPlayIds: [play.sharedPlayId],
+    sleeperPointsById: { wr1: 2 },
+    now: 1_000,
+  });
+  // An outage or a partial list: the play is not in this response at all.
+  state = step(state, { playEvents: [], presentPlayIds: [], sleeperPointsById: { wr1: 2 }, now: 2_000 });
+  assert.equal(state.plays.has(play.id), true);
+  assert.equal(state.players.get('wr1').plays[0].status, 'confirmed');
+  // Without the list of present plays (older callers) nothing is pruned either.
+  state = step(state, { playEvents: [], sleeperPointsById: { wr1: 2 }, now: 3_000 });
+  assert.equal(state.plays.has(play.id), true);
+});

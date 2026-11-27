@@ -379,9 +379,17 @@ export function retireCoveredFallbacks(rows, playStats, scoringSettings, positio
 /**
  * @param {object} previousState from createReconciliationState() or a prior call.
  * @param {object} inputs { playEvents, sleeperPointsById, sleeperStatsById,
- *   sleeperStatsFetchedAt, scoringSettings, positionsById, finalGameIds, now }
+ *   sleeperStatsFetchedAt, scoringSettings, positionsById, finalGameIds,
+ *   presentPlayIds, now }
  * @returns {object} new state: { players: Map, feedEvents, ...bookkeeping }
  */
+// What a play involvement says: a rewrite that changes any of it replaces the
+// stored version. Placement fields (`at`, `timelineAt`) are left out because
+// replay restamps them every tick.
+function playRevision(event) {
+  return JSON.stringify([event.pts, event.stats, event.desc, event.role, event.progress, event.play?.rawDescription ?? null]);
+}
+
 export function reconcileLivePlays(previousState, inputs = {}) {
   const previous = previousState ?? createReconciliationState();
   const {
@@ -396,6 +404,12 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     // them, so a stat-line surplus needs no grace period, and Sleeper points
     // that nothing explains still get a row to land on (rule 13).
     settledPlayerIds = null,
+    // Provider play ids in this poll's play lists. The provider rewrites plays
+    // after posting them (tacklers added or swapped, yards corrected); a stored
+    // involvement whose play is still listed but no longer credits that player
+    // is dropped. A play missing from a poll is kept: an outage or a partial
+    // list must not erase confirmed plays.
+    presentPlayIds = null,
     now = 0,
   } = inputs;
 
@@ -413,10 +427,34 @@ export function reconcileLivePlays(previousState, inputs = {}) {
   // residual that stood in for a play must not keep that play from confirming.
   const carriedAdjustments = new Map(previous.adjustments);
 
+  // A rewritten play is re-read: its involvements come back with new points
+  // and stats under the same id, and players the corrected text no longer
+  // names drop out. Status and first-seen time carry over; the residual is
+  // recomputed below from the current points, so nothing double counts.
+  const currentIds = new Set(playEvents.map((event) => event?.id).filter(Boolean));
+  const present = presentPlayIds ? new Set([...presentPlayIds].map(String)) : null;
+  if (present) {
+    [...plays.values()].forEach((stored) => {
+      if (currentIds.has(stored.id) || stored.sharedPlayId == null) return;
+      if (!present.has(String(stored.sharedPlayId))) return;
+      plays.delete(stored.id);
+      firstSeen.delete(stored.id);
+      status.delete(stored.id);
+    });
+  }
+
   // Ingest. A play id already seen keeps its first-seen record, so replaying
-  // the same poll twice changes nothing.
+  // the same poll twice changes nothing; a revised version replaces it.
   playEvents.forEach((event) => {
-    if (!event?.id || plays.has(event.id)) return;
+    if (!event?.id) return;
+    const stored = plays.get(event.id);
+    if (stored) {
+      if (playRevision(stored) === playRevision(event)) return;
+      plays.set(event.id, event);
+      // The corrected stats may now cover a stat-update row.
+      retireFallbacksFor(event);
+      return;
+    }
     plays.set(event.id, event);
     // When the play entered the feed, not when it happened: the TTL measures
     // how long Sleeper has had this play in front of it, and a backfilled play
@@ -433,6 +471,10 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     }
     // Plays that finally arrive for a stat line already explained by a
     // fallback row retire it (spec rule 6).
+    retireFallbacksFor(event);
+  });
+
+  function retireFallbacksFor(event) {
     let rows = fallbacks.get(event.playerId);
     if (!rows?.length) return;
     // A points-only row (rule 13) stood in for plays that had not arrived; the
@@ -449,7 +491,7 @@ export function reconcileLivePlays(previousState, inputs = {}) {
     const kept = retireCoveredFallbacks(rows, event.stats, scoringSettings, position);
     if (kept.length) fallbacks.set(event.playerId, kept);
     else fallbacks.delete(event.playerId);
-  });
+  }
 
   const playsByPlayer = new Map();
   plays.forEach((event) => {
